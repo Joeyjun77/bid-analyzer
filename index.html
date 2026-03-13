@@ -181,6 +181,7 @@ tr:hover td { background:#fafaf8; }
       <div class="search-box">
         <input type="text" id="agencySearch" placeholder="발주처명 검색 (건수 제한 무시, 전체 검색)...">
         <select id="sortBy">
+          <option value="name_asc" selected>가나다순</option>
           <option value="count_desc">건수 많은순</option>
           <option value="winrate_desc">상위10 비율 높은순</option>
           <option value="std_asc">사정율 변동 작은순</option>
@@ -220,12 +221,13 @@ tr:hover td { background:#fafaf8; }
 
     <!-- Tab: Simulate -->
     <div id="tab-simulate" class="hidden">
-      <div class="panel"><div class="panel-header">투찰 시뮬레이션</div><div class="panel-body">
-        <p style="font-size:12px;color:var(--text2);margin-bottom:14px;">발주처와 투찰율 선택 → 과거 데이터 기반 예상 순위/낙찰 확률</p>
+      <div class="panel"><div class="panel-header">투찰 시뮬레이션 &amp; 전략 리포트</div><div class="panel-body">
+        <p style="font-size:12px;color:var(--text2);margin-bottom:14px;">발주처를 선택하면 과거 데이터를 기반으로 최적 투찰 전략과 낙찰 확률을 분석합니다.</p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
           <select id="simAgency" style="padding:8px 12px;border:.5px solid var(--border);border-radius:var(--radius);font-size:13px;min-width:260px;"><option value="">발주처 선택</option></select>
-          <input type="number" id="simRate" value="87.745" step="0.001" style="padding:8px 12px;border:.5px solid var(--border);border-radius:var(--radius);font-size:13px;width:130px;">
-          <button class="btn btn-accent" onclick="runSimulation()">실행</button>
+          <input type="number" id="simRate" value="87.745" step="0.001" style="padding:8px 12px;border:.5px solid var(--border);border-radius:var(--radius);font-size:13px;width:130px;" placeholder="투찰율">
+          <button class="btn btn-accent" onclick="runSimulation()">분석 실행</button>
+          <button class="btn" onclick="runFullReport()">전체 종합 리포트</button>
         </div>
         <div id="simResult"></div>
       </div></div>
@@ -856,6 +858,7 @@ function getFilteredAgencyStats() {
     return matchesSearch && matchesCount;
   });
   switch(sortBy) {
+    case 'name_asc': filtered.sort((a,b) => a.name.localeCompare(b.name, 'ko')); break;
     case 'count_desc': filtered.sort((a,b) => b.count - a.count); break;
     case 'winrate_desc': filtered.sort((a,b) => b.top10pct - a.top10pct); break;
     case 'std_asc': filtered.sort((a,b) => a.std - b.std); break;
@@ -1022,7 +1025,7 @@ function renderTrend() {
 function populateSimAgency() {
   const sel = document.getElementById('simAgency');
   sel.innerHTML = '<option value="">발주처 선택</option>';
-  agencyStats.filter(s=>s.count>=20).sort((a,b)=>b.count-a.count).forEach(s => {
+  agencyStats.slice().sort((a,b) => a.name.localeCompare(b.name, 'ko')).forEach(s => {
     sel.innerHTML += `<option value="${s.name}">${s.name} (${s.count}건, ${s.grade})</option>`;
   });
 }
@@ -1030,37 +1033,341 @@ function populateSimAgency() {
 function runSimulation() {
   const name = document.getElementById('simAgency').value;
   const bidRate = parseFloat(document.getElementById('simRate').value);
-  if(!name||isNaN(bidRate)) { document.getElementById('simResult').innerHTML='<p style="color:var(--red)">발주처와 투찰율을 입력하세요.</p>'; return; }
+  if(!name) { document.getElementById('simResult').innerHTML='<p style="color:var(--red)">발주처를 선택하세요.</p>'; return; }
   const stat = agencyStats.find(s=>s.name===name);
   if(!stat) return;
 
-  const simResults = [];
-  stat.items.forEach(d => {
-    if(isNaN(d._발주처사정율)||isNaN(d._사정율편차)||isNaN(d._투찰율)) return;
-    const delta = bidRate - d._투찰율;
-    const newDev = d._사정율편차 - delta * 0.8;
-    simResults.push({ dev:Math.abs(newDev) });
-  });
-  if(!simResults.length) { document.getElementById('simResult').innerHTML='<p>데이터 부족</p>'; return; }
+  const items = stat.items;
+  const rates = items.map(d=>d._발주처사정율).filter(v=>!isNaN(v));
+  const devs = items.map(d=>d._사정율편차).filter(v=>!isNaN(v));
+  const ranks = items.map(d=>d._자사순위).filter(v=>!isNaN(v));
+  const mean = rates.length ? rates.reduce((a,b)=>a+b,0)/rates.length : 0;
+  const std = rates.length ? Math.sqrt(rates.map(v=>(v-mean)**2).reduce((a,b)=>a+b,0)/rates.length) : 0;
+  const median = rates.length ? rates.sort((a,b)=>a-b)[Math.floor(rates.length/2)] : 0;
 
-  const w001 = simResults.filter(r=>r.dev<=0.01).length;
-  const w005 = simResults.filter(r=>r.dev<=0.05).length;
-  const w05 = simResults.filter(r=>r.dev<=0.5).length;
-  const avgDev = simResults.reduce((a,r)=>a+r.dev,0)/simResults.length;
+  // Recent trend (2023+)
+  const recent = items.filter(d=>d._연도>=2023);
+  const recentRates = recent.map(d=>d._발주처사정율).filter(v=>!isNaN(v));
+  const recentMean = recentRates.length>=3 ? recentRates.reduce((a,b)=>a+b,0)/recentRates.length : mean;
+  const recentStd = recentRates.length>=3 ? Math.sqrt(recentRates.map(v=>(v-recentMean)**2).reduce((a,b)=>a+b,0)/recentRates.length) : std;
+
+  // Year breakdown
+  const yearMap = {};
+  items.forEach(d=>{if(!d._연도||isNaN(d._발주처사정율))return; if(!yearMap[d._연도])yearMap[d._연도]={rates:[],devs:[],wins:0,top10:0}; yearMap[d._연도].rates.push(d._발주처사정율); if(!isNaN(d._사정율편차))yearMap[d._연도].devs.push(d._사정율편차); if(d._자사순위===1)yearMap[d._연도].wins++; if(d._자사순위>=1&&d._자사순위<=10)yearMap[d._연도].top10++;});
+
+  // Optimal bid rate search
+  const testRates = [85.745, 86.245, 86.745, 87.245, 87.495, 87.620, 87.745, 87.870, 87.995, 88.245, 88.745, 89.245, 89.745];
+  const rateResults = testRates.map(tr => {
+    let hits001=0, hits005=0, hits05=0, total=0;
+    items.forEach(d=>{
+      if(isNaN(d._사정율편차)||isNaN(d._투찰율)) return;
+      const delta = tr - d._투찰율;
+      const newDev = Math.abs(d._사정율편차 - delta * 0.8);
+      total++;
+      if(newDev<=0.01) hits001++;
+      if(newDev<=0.05) hits005++;
+      if(newDev<=0.5) hits05++;
+    });
+    return {rate:tr, hits001, hits005, hits05, total, pct001:total?(hits001/total*100):0, pct05:total?(hits05/total*100):0};
+  });
+  const bestRate = rateResults.reduce((a,b)=>b.hits001>a.hits001?b:a, rateResults[0]);
+  const best05 = rateResults.reduce((a,b)=>b.hits05>a.hits05?b:a, rateResults[0]);
+
+  // Current bid rate simulation
+  const currentRate = isNaN(bidRate) ? 87.745 : bidRate;
+  let curHits001=0, curHits005=0, curHits01=0, curHits05=0, curTotal=0, curAvgDev=0;
+  items.forEach(d=>{
+    if(isNaN(d._사정율편차)||isNaN(d._투찰율)) return;
+    const delta = currentRate - d._투찰율;
+    const newDev = Math.abs(d._사정율편차 - delta * 0.8);
+    curTotal++;
+    curAvgDev += newDev;
+    if(newDev<=0.01) curHits001++;
+    if(newDev<=0.05) curHits005++;
+    if(newDev<=0.1) curHits01++;
+    if(newDev<=0.5) curHits05++;
+  });
+  curAvgDev = curTotal ? curAvgDev/curTotal : 0;
+
+  // Size analysis
+  const amounts = items.map(d=>d._예비기초금액).filter(v=>!isNaN(v));
+  const avgAmount = amounts.length ? amounts.reduce((a,b)=>a+b,0)/amounts.length : 0;
+  const sizeRanges = [
+    {label:'5천만 미만', min:0, max:5e7},
+    {label:'5천만~1억', min:5e7, max:1e8},
+    {label:'1~3억', min:1e8, max:3e8},
+    {label:'3억 이상', min:3e8, max:Infinity}
+  ];
+  const sizeStats = sizeRanges.map(r=>{
+    const sub = items.filter(d=>!isNaN(d._예비기초금액)&&d._예비기초금액>=r.min&&d._예비기초금액<r.max);
+    const t10 = sub.filter(d=>d._자사순위>=1&&d._자사순위<=10).length;
+    return {label:r.label, count:sub.length, top10:t10, pct:sub.length?(t10/sub.length*100):0};
+  });
+
+  // Competitors
+  const compMap = {};
+  items.forEach(d=>{if(d['1순위업체']) compMap[d['1순위업체']]=(compMap[d['1순위업체']]||0)+1;});
+  const topComps = Object.entries(compMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // Win records from this agency
+  const wins = items.filter(d=>d._자사순위===1);
+  const top10Items = items.filter(d=>d._자사순위>=1&&d._자사순위<=10);
+
+  // Bias direction
+  const bias = recentMean - 100;
+  const biasText = bias > 0.3 ? '강한 상향' : bias > 0.1 ? '약한 상향' : bias < -0.3 ? '강한 하향' : bias < -0.1 ? '약한 하향' : '중립';
+  const biasColor = Math.abs(bias) > 0.3 ? 'var(--red)' : Math.abs(bias) > 0.1 ? 'var(--amber)' : 'var(--accent)';
+
+  // Risk level
+  const risk = std > 1.0 ? '높음' : std > 0.7 ? '보통' : '낮음';
+  const riskColor = std > 1.0 ? 'var(--red)' : std > 0.7 ? 'var(--amber)' : 'var(--accent)';
+
+  // Year trend rows
+  const yearRows = Object.entries(yearMap).sort((a,b)=>b[0]-a[0]).map(([y,v])=>{
+    const avg = v.rates.reduce((a,b)=>a+b,0)/v.rates.length;
+    const avgD = v.devs.length ? v.devs.reduce((a,b)=>a+b,0)/v.devs.length : 0;
+    return `<tr><td>${y}</td><td>${v.rates.length}</td><td>${avg.toFixed(4)}</td><td style="color:${Math.abs(avgD)<0.1?'var(--accent)':'var(--text)'}">${avgD.toFixed(4)}</td><td>${v.top10}</td></tr>`;
+  }).join('');
+
+  // Rate comparison rows
+  const rateRows = rateResults.map(r=>{
+    const isCur = r.rate === currentRate;
+    const isBest = r.rate === bestRate.rate;
+    const highlight = isBest ? 'background:#f0faf5;font-weight:500' : isCur ? 'background:#e6f1fb' : '';
+    return `<tr style="${highlight}">
+      <td>${r.rate.toFixed(3)}${isBest?' <span class="badge badge-green">최적</span>':''}${isCur?' <span class="badge badge-blue">현재</span>':''}</td>
+      <td style="color:${r.hits001>0?'var(--accent)':'var(--text3)'};font-weight:${r.hits001>0?'600':'400'}">${r.hits001}</td>
+      <td>${r.hits005}</td>
+      <td>${r.hits05}</td>
+      <td>${r.pct001.toFixed(1)}%</td></tr>`;
+  }).join('');
+
+  // Win detail rows
+  const winRows = wins.length ? wins.map(d=>
+    `<tr><td style="font-size:11px">${d.개찰일||'-'}</td><td style="font-size:11px">${(d.공고명||'').substring(0,30)}</td><td>${d._투찰율||'-'}</td><td style="color:var(--accent);font-weight:600">${isNaN(d._사정율편차)?'-':d._사정율편차.toFixed(4)}</td></tr>`
+  ).join('') : '<tr><td colspan="4" style="color:var(--text3);text-align:center">낙찰 기록 없음</td></tr>';
+
+  // Strategy recommendation
+  let strategy = '';
+  if(std < 0.6 && stat.near100 > 50) {
+    strategy = `<strong style="color:var(--accent)">A급 타겟 (적극 공략 권장)</strong><br>
+      사정율 변동폭이 작고(σ ${std.toFixed(3)}) 예측 가능성이 높습니다(100±0.5% 비율 ${stat.near100.toFixed(1)}%).<br>
+      최근 평균 사정율 <strong>${recentMean.toFixed(4)}</strong>에 맞춘 정밀 투찰이 핵심입니다.<br>
+      투찰율 <strong>${bestRate.rate.toFixed(3)}</strong>을 사용하면 과거 데이터 기준 ±0.01% 적중이 ${bestRate.hits001}회로 가장 높습니다.`;
+  } else if(std < 0.8) {
+    strategy = `<strong style="color:var(--blue)">B급 타겟 (선별 공략)</strong><br>
+      변동폭이 보통(σ ${std.toFixed(3)})이므로 최근 트렌드를 반영한 투찰이 유리합니다.<br>
+      최근 2년 평균 ${recentMean.toFixed(4)}이 전체 평균 ${mean.toFixed(4)}과 ${Math.abs(recentMean-mean)>0.1?'차이가 있으므로 최근값 우선':'유사하므로 안정적'}입니다.<br>
+      ${bias > 0.1 ? '상향 편향이 있으므로 투찰율을 소폭 높이는 것을 검토하세요.' : bias < -0.1 ? '하향 편향이 있으므로 투찰율을 소폭 낮추는 것을 검토하세요.' : '편향이 적어 기본 투찰율 유지가 적절합니다.'}`;
+  } else {
+    strategy = `<strong style="color:var(--amber)">C/D급 타겟 (리스크 관리 필요)</strong><br>
+      변동폭이 큽니다(σ ${std.toFixed(3)}). 사정율 예측이 어려워 낙찰 확률이 낮습니다.<br>
+      ${stat.count < 10 ? '데이터가 ' + stat.count + '건으로 적어 신뢰도가 낮습니다. 추가 데이터 축적 후 재분석을 권합니다.' : '다른 발주처를 우선 공략하고, 이 발주처는 분산 투찰 전략을 사용하세요.'}`;
+  }
+
+  // Amount recommendation
+  const bestSize = sizeStats.filter(s=>s.count>=2).sort((a,b)=>b.pct-a.pct)[0];
+  const sizeAdvice = bestSize && bestSize.pct > 0 ?
+    `금액대별로는 <strong>${bestSize.label}</strong> 구간이 상위 10위 진입률 ${bestSize.pct.toFixed(1)}%로 가장 유리합니다.` :
+    '금액대별 유의미한 차이는 발견되지 않았습니다.';
 
   document.getElementById('simResult').innerHTML = `
     <div class="metrics">
-      <div class="metric-card"><div class="label">시뮬레이션</div><div class="value">${simResults.length}건</div></div>
-      <div class="metric-card"><div class="label">평균 편차</div><div class="value">${avgDev.toFixed(4)}</div></div>
-      <div class="metric-card"><div class="label">±0.01% 이내</div><div class="value" style="color:var(--accent)">${w001}건</div><div class="sub">${(w001/simResults.length*100).toFixed(1)}%</div></div>
-      <div class="metric-card"><div class="label">±0.5% 이내</div><div class="value">${w05}건</div><div class="sub">${(w05/simResults.length*100).toFixed(1)}%</div></div>
+      <div class="metric-card"><div class="label">총 입찰 건수</div><div class="value">${stat.count}</div><div class="sub">최근2년 ${recent.length}건</div></div>
+      <div class="metric-card"><div class="label">낙찰 / 상위10위</div><div class="value" style="color:var(--accent)">${wins.length} / ${top10Items.length}</div></div>
+      <div class="metric-card"><div class="label">사정율 편향</div><div class="value" style="color:${biasColor}">${biasText}</div><div class="sub">${bias>=0?'+':''}${bias.toFixed(3)}</div></div>
+      <div class="metric-card"><div class="label">예측 리스크</div><div class="value" style="color:${riskColor}">${risk}</div><div class="sub">σ ${std.toFixed(4)}</div></div>
     </div>
-    <div class="recommendation"><h4>결과</h4><p>
-      <strong>${name}</strong> 투찰율 ${bidRate} 기준,
-      ±0.01% 적중 ${w001}건(${(w001/simResults.length*100).toFixed(1)}%),
-      ±0.5% ${w05}건(${(w05/simResults.length*100).toFixed(1)}%).<br>
-      ${w001>=3?'적중 빈도 양호':w005>=5?'근접 적중 양호. 미세 조정 권장':'편차 큼. 투찰율 변경 검토'}
-    </p></div>`;
+
+    <div class="recommendation">
+      <h4>📋 ${name} 맞춤 투찰 전략</h4>
+      <p>${strategy}<br><br>${sizeAdvice}</p>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+      <div class="panel-header">사정율 핵심 지표</div>
+      <div class="panel-body">
+        <div class="metrics">
+          <div class="metric-card"><div class="label">전체 평균 사정율</div><div class="value">${mean.toFixed(4)}</div></div>
+          <div class="metric-card"><div class="label">최근2년 평균</div><div class="value" style="color:var(--blue)">${recentMean.toFixed(4)}</div></div>
+          <div class="metric-card"><div class="label">중앙값</div><div class="value">${median.toFixed(4)}</div></div>
+          <div class="metric-card"><div class="label">100±0.5% 비율</div><div class="value">${stat.near100.toFixed(1)}%</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">투찰율별 사정율 편차 시뮬레이션</div>
+      <div class="panel-body">
+        <p style="font-size:11px;color:var(--text2);margin-bottom:10px;">각 투찰율을 사용했을 때 과거 ${curTotal}건 기준 사정율 ±0.01% 이내 적중 횟수</p>
+        <table><thead><tr><th>투찰율</th><th>±0.01%</th><th>±0.05%</th><th>±0.5%</th><th>적중률</th></tr></thead>
+        <tbody>${rateRows}</tbody></table>
+        ${bestRate.rate !== currentRate ? `<p style="font-size:12px;color:var(--accent);margin-top:10px;font-weight:500;">💡 투찰율 ${bestRate.rate.toFixed(3)}이 현재(${currentRate})보다 ±0.01% 적중이 ${bestRate.hits001 - (rateResults.find(r=>r.rate===currentRate)?.hits001||0)}건 더 많습니다.</p>` : ''}
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-header">연도별 사정율 추이</div>
+        <div class="panel-body"><table><thead><tr><th>연도</th><th>건수</th><th>평균</th><th>편차</th><th>상위10</th></tr></thead>
+        <tbody>${yearRows}</tbody></table></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">금액대별 상위 진입률</div>
+        <div class="panel-body"><table><thead><tr><th>금액대</th><th>건수</th><th>상위10</th><th>비율</th></tr></thead>
+        <tbody>${sizeStats.map(s=>`<tr><td>${s.label}</td><td>${s.count}</td><td>${s.top10}</td><td style="color:${s.pct>1?'var(--accent)':'var(--text)'}">${s.pct.toFixed(1)}%</td></tr>`).join('')}</tbody></table></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-header">자사 낙찰 기록</div>
+        <div class="panel-body"><table><thead><tr><th>개찰일</th><th>공고명</th><th>투찰율</th><th>사정율편차</th></tr></thead>
+        <tbody>${winRows}</tbody></table></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">주요 경쟁업체 (1순위 빈도)</div>
+        <div class="panel-body"><table><thead><tr><th>업체명</th><th>1순위 횟수</th></tr></thead>
+        <tbody>${topComps.map(([n,c])=>`<tr><td>${n}</td><td>${c}회</td></tr>`).join('')}</tbody></table></div>
+      </div>
+    </div>
+
+    <div class="recommendation" style="margin-top:16px;">
+      <h4>📌 실행 요약</h4>
+      <p>
+        <strong>투찰율:</strong> ${bestRate.hits001 > 0 ? `${bestRate.rate.toFixed(3)} 추천 (±0.01% 적중 ${bestRate.hits001}회/${curTotal}건)` : `${currentRate} 유지 (적중 데이터 부족, 추가 축적 필요)`}<br>
+        <strong>사정율 기준:</strong> 최근2년 평균 ${recentMean.toFixed(4)} ${recentRates.length<5?'(데이터 부족, 전체 평균 '+mean.toFixed(4)+' 병행 참고)':''}<br>
+        <strong>편향:</strong> ${biasText} (${bias>=0?'+':''}${bias.toFixed(3)}) — ${Math.abs(bias)>0.2?'편향 반영하여 투찰율 조정 권장':'기본 투찰율 유지 적절'}<br>
+        <strong>우선 금액대:</strong> ${bestSize && bestSize.pct > 0 ? bestSize.label + ' (' + bestSize.pct.toFixed(1) + '%)' : '특이 패턴 없음'}<br>
+        <strong>주의:</strong> ${std > 0.8 ? '변동폭이 커서 1회 투찰 결과에 의존하지 말고 누적 데이터로 판단하세요.' : '변동폭이 작아 정밀 투찰 효과가 높습니다.'}
+      </p>
+    </div>`;
+}
+
+// ===== Full Report =====
+function runFullReport() {
+  if(agencyStats.length === 0) { document.getElementById('simResult').innerHTML='<p style="color:var(--red)">데이터를 먼저 업로드하세요.</p>'; return; }
+
+  // Overall stats
+  const totalBids = allData.length;
+  const totalWins = allData.filter(d=>d._자사순위===1).length;
+  const totalTop10 = allData.filter(d=>d._자사순위>=1&&d._자사순위<=10).length;
+  const allDevs = allData.map(d=>d._사정율편차).filter(v=>!isNaN(v));
+  const avgDev = allDevs.length ? allDevs.reduce((a,b)=>a+b,0)/allDevs.length : 0;
+  const winItems = allData.filter(d=>d._자사순위===1);
+  const winAvgDev = winItems.length ? winItems.map(d=>d._사정율편차).filter(v=>!isNaN(v)).reduce((a,b)=>a+b,0) / winItems.filter(d=>!isNaN(d._사정율편차)).length : 0;
+
+  // Deviation analysis
+  const devBuckets = [0.01, 0.05, 0.1, 0.5, 1.0];
+  const devStats = devBuckets.map(b => {
+    const inRange = allDevs.filter(v=>Math.abs(v)<=b).length;
+    const winsInRange = winItems.filter(d=>!isNaN(d._사정율편차)&&Math.abs(d._사정율편차)<=b).length;
+    const top10InRange = allData.filter(d=>!isNaN(d._사정율편차)&&Math.abs(d._사정율편차)<=b&&d._자사순위>=1&&d._자사순위<=10).length;
+    return {bucket:b, total:inRange, wins:winsInRange, top10:top10InRange, winPct:inRange?(winsInRange/inRange*100):0, top10Pct:inRange?(top10InRange/inRange*100):0};
+  });
+
+  // Top agencies by win potential
+  const topAgencies = agencyStats
+    .filter(s=>s.count>=5)
+    .map(s=>({...s, efficiency: s.top10pct * (100 - s.std*50) / 100}))
+    .sort((a,b)=>b.efficiency-a.efficiency)
+    .slice(0,15);
+
+  // Bid rate analysis
+  const bidRateMap = {};
+  allData.forEach(d=>{if(isNaN(d._투찰율))return; const r=d._투찰율.toFixed(3); if(!bidRateMap[r])bidRateMap[r]={count:0,wins:0,top10:0}; bidRateMap[r].count++; if(d._자사순위===1)bidRateMap[r].wins++; if(d._자사순위>=1&&d._자사순위<=10)bidRateMap[r].top10++;});
+  const bidRateStats = Object.entries(bidRateMap).sort((a,b)=>b[1].count-a[1].count).slice(0,8);
+
+  // Amount analysis
+  const amtRanges = [{l:'5천만 미만',a:0,b:5e7},{l:'5천만~1억',a:5e7,b:1e8},{l:'1~3억',a:1e8,b:3e8},{l:'3~5억',a:3e8,b:5e8},{l:'5~10억',a:5e8,b:1e9},{l:'10억+',a:1e9,b:Infinity}];
+  const amtStats = amtRanges.map(r=>{
+    const sub = allData.filter(d=>!isNaN(d._예비기초금액)&&d._예비기초금액>=r.a&&d._예비기초금액<r.b);
+    const t10 = sub.filter(d=>d._자사순위>=1&&d._자사순위<=10).length;
+    return {label:r.l, count:sub.length, top10:t10, pct:sub.length?(t10/sub.length*100):0};
+  });
+
+  // Year trend
+  const yearMap = {};
+  allData.forEach(d=>{if(!d._연도||isNaN(d._발주처사정율))return; if(!yearMap[d._연도])yearMap[d._연도]={c:0,w:0,t10:0}; yearMap[d._연도].c++; if(d._자사순위===1)yearMap[d._연도].w++; if(d._자사순위>=1&&d._자사순위<=10)yearMap[d._연도].t10++;});
+
+  document.getElementById('simResult').innerHTML = `
+    <div class="recommendation" style="margin-bottom:20px;">
+      <h4>📊 전체 입찰 성공률 종합 분석 리포트</h4>
+      <p>${totalBids.toLocaleString()}건의 전기공사 입찰 데이터 분석 결과, 현재 낙찰률은 <strong>${(totalWins/totalBids*100).toFixed(2)}% (${totalWins}건)</strong>입니다.
+      상위 10위 진입은 ${totalTop10}건(${(totalTop10/totalBids*100).toFixed(2)}%)입니다.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">1. 사정율 편차가 핵심 — 0.01% 이내를 목표로</div>
+      <div class="panel-body">
+        <p style="font-size:13px;margin-bottom:12px;">낙찰 ${totalWins}건의 사정율 편차 평균은 <strong>${winAvgDev.toFixed(4)}</strong>로, 발주처 사정율을 거의 정확하게 맞춘 경우에만 낙찰됩니다.</p>
+        <table><thead><tr><th>편차 범위</th><th>해당 건수</th><th>낙찰</th><th>상위10위</th><th>상위10 확률</th></tr></thead>
+        <tbody>${devStats.map(d=>`<tr>
+          <td>±${d.bucket}%</td><td>${d.total}건</td>
+          <td style="color:var(--accent);font-weight:600">${d.wins}건</td>
+          <td>${d.top10}건</td>
+          <td style="color:${d.top10Pct>10?'var(--accent)':d.top10Pct>1?'var(--blue)':'var(--text3)'};font-weight:${d.top10Pct>10?'600':'400'}">${d.top10Pct.toFixed(1)}%</td>
+        </tr>`).join('')}</tbody></table>
+        <p style="font-size:12px;color:var(--accent);margin-top:10px;">💡 편차 ±0.01% 구간의 상위10위 확률이 ${devStats[0].top10Pct.toFixed(1)}%로, ±1% 구간(${devStats[4].top10Pct.toFixed(1)}%)의 ${(devStats[0].top10Pct/devStats[4].top10Pct).toFixed(0)}배입니다.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">2. 최적 타겟 발주처 — 예측 가능성 × 상위 진입률</div>
+      <div class="panel-body">
+        <p style="font-size:13px;margin-bottom:12px;">사정율 변동폭이 작고 상위 진입 실적이 있는 발주처를 우선 공략하세요.</p>
+        <table><thead><tr><th>#</th><th>발주처</th><th>건수</th><th>사정율σ</th><th>100±0.5%</th><th>상위10위</th><th>등급</th></tr></thead>
+        <tbody>${topAgencies.map((s,i)=>{
+          const gc=s.grade==='A'?'badge-green':s.grade==='B'?'badge-blue':s.grade==='C'?'badge-amber':'badge-gray';
+          return `<tr><td style="color:var(--accent);font-weight:500">${i+1}</td><td style="font-weight:500">${s.name}</td><td>${s.count}</td><td>${s.std.toFixed(3)}</td><td>${s.near100.toFixed(1)}%</td><td>${s.top10pct.toFixed(1)}% (${s.top10}건)</td><td><span class="badge ${gc}">${s.grade}</span></td></tr>`;
+        }).join('')}</tbody></table>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-header">3. 투찰율별 성과</div>
+        <div class="panel-body">
+          <table><thead><tr><th>투찰율</th><th>사용횟수</th><th>낙찰</th><th>상위10</th></tr></thead>
+          <tbody>${bidRateStats.map(([r,v])=>`<tr><td>${r}</td><td>${v.count}</td><td style="color:var(--accent)">${v.wins}</td><td>${v.top10}</td></tr>`).join('')}</tbody></table>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">4. 금액대별 상위 진입률</div>
+        <div class="panel-body">
+          <table><thead><tr><th>금액대</th><th>건수</th><th>상위10</th><th>비율</th></tr></thead>
+          <tbody>${amtStats.map(s=>`<tr><td>${s.label}</td><td>${s.count}</td><td>${s.top10}</td><td style="color:${s.pct>1?'var(--accent)':'var(--text)'};font-weight:${s.pct>1?'500':'400'}">${s.pct.toFixed(1)}%</td></tr>`).join('')}</tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">5. 연도별 성과 추이</div>
+      <div class="panel-body">
+        <table><thead><tr><th>연도</th><th>입찰건수</th><th>낙찰</th><th>상위10위</th><th>상위10 비율</th></tr></thead>
+        <tbody>${Object.entries(yearMap).sort((a,b)=>b[0]-a[0]).map(([y,v])=>
+          `<tr><td>${y}</td><td>${v.c}</td><td style="color:var(--accent)">${v.w}</td><td>${v.t10}</td><td>${(v.t10/v.c*100).toFixed(2)}%</td></tr>`
+        ).join('')}</tbody></table>
+      </div>
+    </div>
+
+    <div class="recommendation">
+      <h4>📌 종합 실행 전략</h4>
+      <p>
+        <strong>핵심 원칙:</strong> 사정율 편차 ±0.01% 이내 적중이 곧 낙찰입니다. 편차 구간별 상위10위 확률 차이가 ${(devStats[0].top10Pct/Math.max(devStats[4].top10Pct,0.1)).toFixed(0)}배이므로, 발주처별 사정율 예측 정확도를 높이는 것이 모든 전략의 기본입니다.<br><br>
+        <strong>단기 실행:</strong><br>
+        • 상위 타겟 발주처(${topAgencies.slice(0,3).map(s=>s.name).join(', ')}) 집중 투찰<br>
+        • 해당 발주처의 최근 6개월 사정율 평균을 기준값으로 활용<br>
+        • 소규모 공사(${amtStats.filter(s=>s.pct>0).sort((a,b)=>b.pct-a.pct)[0]?.label||'5천만 미만'}) 우선 참여<br><br>
+        <strong>중기 실행:</strong><br>
+        • 발주처별 사정율 DB를 이 도구로 지속 업데이트<br>
+        • A등급 발주처 ${agencyStats.filter(s=>s.grade==='A').length}개를 핵심 타겟으로 관리<br>
+        • 투찰율 미세 조정 (발주처별 시뮬레이션으로 최적값 탐색)<br><br>
+        <strong>장기 실행:</strong><br>
+        • 발주처·공사유형·금액대 조합별 사정율 예측 모델 구축<br>
+        • 데이터 축적 → 편차 ±0.01% 적중률 향상 → 낙찰률 체감 상승
+      </p>
+    </div>`;
 }
 
 // ===== Tab Switching =====
