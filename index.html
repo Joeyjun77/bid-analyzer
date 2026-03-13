@@ -134,46 +134,15 @@ tr:hover td { background:#fafaf8; }
   <!-- Main Content -->
   <div id="mainContent" class="hidden">
     <div class="tabs" id="mainTabs">
-      <div class="tab active" data-tab="data">데이터 관리</div>
+      <div class="tab active" data-tab="report" style="font-weight:600">종합 리포트</div>
       <div class="tab" data-tab="agency">발주처별 분석</div>
-      <div class="tab" data-tab="recommend">추천 타겟</div>
-      <div class="tab" data-tab="trend">사정율 트렌드</div>
       <div class="tab" data-tab="simulate">투찰 시뮬레이션</div>
+      <div class="tab" data-tab="data">데이터 관리</div>
     </div>
 
-    <!-- Tab: Data Management -->
-    <div id="tab-data">
-      <div class="search-box">
-        <input type="text" id="dataSearch" placeholder="공고번호, 공고명, 발주처 검색..." style="flex:2;">
-        <select id="dataYear"><option value="">전체 연도</option></select>
-        <select id="dataAgencyFilter"><option value="">전체 발주처</option></select>
-      </div>
-      <div class="panel">
-        <div class="panel-header">
-          <div class="toolbar">
-            <span>전체 데이터 (<span id="dataCount">0</span>건)</span>
-            <span class="count-badge" id="selectedCount">0건 선택</span>
-          </div>
-          <div class="toolbar">
-            <button class="btn btn-sm" onclick="selectAllVisible()">전체선택</button>
-            <button class="btn btn-sm" onclick="deselectAll()">선택해제</button>
-            <button class="btn btn-sm btn-red" onclick="deleteSelected()">선택 삭제</button>
-            <button class="btn btn-sm" onclick="exportAllData()">엑셀 내보내기</button>
-            <button class="btn btn-sm btn-red" onclick="clearAllData()">전체 초기화</button>
-          </div>
-        </div>
-        <div class="scroll-table" style="max-height:600px;">
-          <table>
-            <thead><tr>
-              <th class="checkbox-col"><input type="checkbox" id="checkAll" onchange="toggleCheckAll(this)"></th>
-              <th>입찰공고번호</th><th>공고명</th><th>발주처</th><th>개찰일</th>
-              <th>기초금액</th><th>발주처사정율</th><th>사정율편차</th><th>자사순위</th>
-              <th>작업</th>
-            </tr></thead>
-            <tbody id="dataBody"></tbody>
-          </table>
-        </div>
-      </div>
+    <!-- Tab: Report (default active) -->
+    <div id="tab-report">
+      <div id="reportContent" style="color:var(--text3);text-align:center;padding:40px;">데이터를 업로드하면 종합 리포트가 자동 생성됩니다.</div>
     </div>
 
     <!-- Tab: Agency -->
@@ -208,29 +177,54 @@ tr:hover td { background:#fafaf8; }
       </div>
     </div>
 
-    <!-- Tab: Recommend -->
-    <div id="tab-recommend" class="hidden">
-      <div class="panel"><div class="panel-header">최적 타겟 발주처</div><div class="panel-body" id="recommendContent"></div></div>
-    </div>
-
-    <!-- Tab: Trend -->
-    <div id="tab-trend" class="hidden">
-      <div class="panel"><div class="panel-header">연도별 사정율 트렌드</div><div class="panel-body"><div class="chart-container"><canvas id="trendChart"></canvas></div></div></div>
-      <div class="panel"><div class="panel-header">연도별 투찰율 변화</div><div class="panel-body"><div class="chart-container"><canvas id="bidRateChart"></canvas></div></div></div>
-    </div>
+    <!-- Tab: Trend removed - content in 종합 리포트 -->
 
     <!-- Tab: Simulate -->
     <div id="tab-simulate" class="hidden">
-      <div class="panel"><div class="panel-header">투찰 시뮬레이션 &amp; 전략 리포트</div><div class="panel-body">
-        <p style="font-size:12px;color:var(--text2);margin-bottom:14px;">발주처를 선택하면 과거 데이터를 기반으로 최적 투찰 전략과 낙찰 확률을 분석합니다.</p>
+      <div class="panel"><div class="panel-header">발주처별 투찰 시뮬레이션</div><div class="panel-body">
+        <p style="font-size:12px;color:var(--text2);margin-bottom:14px;">발주처를 선택하면 최적 투찰율, 사정율 편차 분석, 맞춤 전략을 제공합니다.</p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
           <select id="simAgency" style="padding:8px 12px;border:.5px solid var(--border);border-radius:var(--radius);font-size:13px;min-width:260px;"><option value="">발주처 선택</option></select>
           <input type="number" id="simRate" value="87.745" step="0.001" style="padding:8px 12px;border:.5px solid var(--border);border-radius:var(--radius);font-size:13px;width:130px;" placeholder="투찰율">
           <button class="btn btn-accent" onclick="runSimulation()">분석 실행</button>
-          <button class="btn" onclick="runFullReport()">전체 종합 리포트</button>
         </div>
         <div id="simResult"></div>
       </div></div>
+    </div>
+
+    <!-- Tab: Data Management -->
+    <div id="tab-data" class="hidden">
+      <div class="search-box">
+        <input type="text" id="dataSearch" placeholder="공고번호, 공고명, 발주처 검색..." style="flex:2;">
+        <select id="dataYear"><option value="">전체 연도</option></select>
+        <select id="dataAgencyFilter"><option value="">전체 발주처</option></select>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div class="toolbar">
+            <span>전체 데이터 (<span id="dataCount">0</span>건)</span>
+            <span class="count-badge" id="selectedCount">0건 선택</span>
+          </div>
+          <div class="toolbar">
+            <button class="btn btn-sm" onclick="selectAllVisible()">전체선택</button>
+            <button class="btn btn-sm" onclick="deselectAll()">선택해제</button>
+            <button class="btn btn-sm btn-red" onclick="deleteSelected()">선택 삭제</button>
+            <button class="btn btn-sm" onclick="exportAllData()">엑셀 내보내기</button>
+            <button class="btn btn-sm btn-red" onclick="clearAllData()">전체 초기화</button>
+          </div>
+        </div>
+        <div class="scroll-table" style="max-height:600px;">
+          <table>
+            <thead><tr>
+              <th class="checkbox-col"><input type="checkbox" id="checkAll" onchange="toggleCheckAll(this)"></th>
+              <th>입찰공고번호</th><th>공고명</th><th>발주처</th><th>개찰일</th>
+              <th>기초금액</th><th>발주처사정율</th><th>사정율편차</th><th>자사순위</th>
+              <th>작업</th>
+            </tr></thead>
+            <tbody id="dataBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- Agency Detail -->
@@ -407,7 +401,6 @@ function dbBulkPut(items) {
 // ===== Data Parsing =====
 let allData = [];
 let agencyStats = [];
-let charts = {};
 let selectedIds = new Set();
 let editingId = null;
 let pendingDups = [];
@@ -957,70 +950,6 @@ function showDetail(name) {
 
 function hideDetail() { document.getElementById('agencyDetail').classList.add('hidden'); document.getElementById('tab-agency').classList.remove('hidden'); }
 
-// ===== Recommendations =====
-function renderRecommendations() {
-  const top = agencyStats.filter(s=>s.count>=30).sort((a,b)=>b.score-a.score).slice(0,15);
-  let html = '<table><thead><tr><th>#</th><th>발주처</th><th>건수</th><th>등급</th><th>예측성</th><th>상위10%</th><th>사유</th></tr></thead><tbody>';
-  top.forEach((s,i) => {
-    const gc = s.grade==='A'?'badge-green':s.grade==='B'?'badge-blue':s.grade==='C'?'badge-amber':'badge-gray';
-    const reasons = [];
-    if(s.std<0.6) reasons.push('낮은 변동폭');
-    if(s.near100>50) reasons.push('높은 예측성');
-    if(s.top10pct>2) reasons.push('높은 진입률');
-    html += `<tr class="clickable" onclick="switchToAgencyAndShow('${s.name.replace(/'/g,"\\'")}')">
-      <td style="font-weight:500;color:var(--accent)">${i+1}</td><td style="font-weight:500">${s.name}</td>
-      <td>${s.count}</td><td><span class="badge ${gc}">${s.grade}</span></td>
-      <td>${s.near100.toFixed(1)}%</td><td>${s.top10pct.toFixed(1)}%</td>
-      <td style="font-size:11px;color:var(--text2)">${reasons.join(', ')}</td></tr>`;
-  });
-  html += '</tbody></table>';
-  document.getElementById('recommendContent').innerHTML = html;
-}
-
-function switchToAgencyAndShow(name) {
-  switchTab('agency');
-  showDetail(name);
-}
-
-// ===== Trend =====
-function renderTrend() {
-  const yearData = {};
-  allData.forEach(d => {
-    if(!d._연도||isNaN(d._발주처사정율)||d._발주처사정율<80||d._발주처사정율>120) return;
-    if(!yearData[d._연도]) yearData[d._연도] = {rates:[],wins:0,top10:0,count:0,nonFixed:0};
-    yearData[d._연도].rates.push(d._발주처사정율);
-    yearData[d._연도].count++;
-    if(d._자사순위===1) yearData[d._연도].wins++;
-    if(d._자사순위>=1&&d._자사순위<=10) yearData[d._연도].top10++;
-    if(d._투찰율!==87.745) yearData[d._연도].nonFixed++;
-  });
-  const years = Object.keys(yearData).sort();
-
-  Object.values(charts).forEach(c => { if(c) c.destroy(); });
-  charts = {};
-
-  setTimeout(() => {
-    const c1 = document.getElementById('trendChart');
-    if(c1) charts.trend = new Chart(c1, { type:'line', data:{ labels:years,
-      datasets:[
-        {label:'평균 사정율', data:years.map(y=>(yearData[y].rates.reduce((a,b)=>a+b,0)/yearData[y].rates.length).toFixed(4)),
-         borderColor:'#7F77DD', backgroundColor:'rgba(127,119,221,.1)', fill:true, tension:.3, yAxisID:'y'},
-        {label:'낙찰건수', data:years.map(y=>yearData[y].wins), borderColor:'#1D9E75', backgroundColor:'#1D9E75', type:'bar', yAxisID:'y1', barPercentage:.4}
-      ]}, options:{ responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{display:true,position:'top',labels:{font:{size:11}}}},
-        scales:{y:{position:'left',min:99,max:101,grid:{color:'rgba(0,0,0,.06)'}}, y1:{position:'right',min:0,grid:{display:false}}} } });
-
-    const c2 = document.getElementById('bidRateChart');
-    if(c2) charts.bidRate = new Chart(c2, { type:'bar', data:{ labels:years,
-      datasets:[
-        {label:'87.745', data:years.map(y=>yearData[y].count-yearData[y].nonFixed), backgroundColor:'#378ADD', stack:'a'},
-        {label:'기타', data:years.map(y=>yearData[y].nonFixed), backgroundColor:'#EF9F27', stack:'a'}
-      ]}, options:{ responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{display:true,position:'top',labels:{font:{size:11}}}},
-        scales:{x:{stacked:true},y:{stacked:true,grid:{color:'rgba(0,0,0,.06)'}}} } });
-  }, 100);
-}
-
 // ===== Simulation =====
 function populateSimAgency() {
   const sel = document.getElementById('simAgency');
@@ -1245,8 +1174,8 @@ function runSimulation() {
 }
 
 // ===== Full Report =====
-function runFullReport() {
-  if(agencyStats.length === 0) { document.getElementById('simResult').innerHTML='<p style="color:var(--red)">데이터를 먼저 업로드하세요.</p>'; return; }
+function renderFullReport() {
+  if(agencyStats.length === 0) { document.getElementById('reportContent').innerHTML='<p style="color:var(--text3);text-align:center;padding:40px;">데이터를 업로드하면 종합 리포트가 자동 생성됩니다.</p>'; return; }
 
   // Overall stats
   const totalBids = allData.length;
@@ -1290,9 +1219,9 @@ function runFullReport() {
   const yearMap = {};
   allData.forEach(d=>{if(!d._연도||isNaN(d._발주처사정율))return; if(!yearMap[d._연도])yearMap[d._연도]={c:0,w:0,t10:0}; yearMap[d._연도].c++; if(d._자사순위===1)yearMap[d._연도].w++; if(d._자사순위>=1&&d._자사순위<=10)yearMap[d._연도].t10++;});
 
-  document.getElementById('simResult').innerHTML = `
+  document.getElementById('reportContent').innerHTML = `
     <div class="recommendation" style="margin-bottom:20px;">
-      <h4>📊 전체 입찰 성공률 종합 분석 리포트</h4>
+      <h4>전체 입찰 성공률 종합 분석 리포트</h4>
       <p>${totalBids.toLocaleString()}건의 전기공사 입찰 데이터 분석 결과, 현재 낙찰률은 <strong>${(totalWins/totalBids*100).toFixed(2)}% (${totalWins}건)</strong>입니다.
       상위 10위 진입은 ${totalTop10}건(${(totalTop10/totalBids*100).toFixed(2)}%)입니다.</p>
     </div>
@@ -1373,13 +1302,12 @@ function runFullReport() {
 // ===== Tab Switching =====
 function switchTab(tabName) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
-  ['data','agency','recommend','trend','simulate'].forEach(t => {
+  ['data','report','agency','simulate'].forEach(t => {
     const el = document.getElementById('tab-'+t);
     if(el) el.classList.toggle('hidden', t !== tabName);
   });
   document.getElementById('agencyDetail').classList.add('hidden');
-  if(tabName==='recommend') renderRecommendations();
-  if(tabName==='trend') renderTrend();
+  if(tabName==='report') renderFullReport();
 }
 
 document.getElementById('mainTabs').addEventListener('click', function(e) {
@@ -1390,21 +1318,22 @@ document.getElementById('mainTabs').addEventListener('click', function(e) {
 
 // ===== Refresh All =====
 function refreshAll() {
+  computeAgencyStats();
+
   const totalWins = allData.filter(d=>d._자사순위===1).length;
   const totalTop10 = allData.filter(d=>d._자사순위>=1&&d._자사순위<=10).length;
-  const gradeA = agencyStats.filter(s=>s.grade==='A').length;
 
-  computeAgencyStats();
   populateFilters();
   renderDataTable();
   renderAgencyList();
   populateSimAgency();
+  renderFullReport();
 
   document.getElementById('overviewMetrics').innerHTML = `
     <div class="metric-card"><div class="label">총 데이터</div><div class="value">${allData.length.toLocaleString()}</div></div>
     <div class="metric-card"><div class="label">발주처</div><div class="value">${agencyStats.length}</div></div>
     <div class="metric-card"><div class="label">낙찰</div><div class="value" style="color:var(--accent)">${totalWins}건</div><div class="sub">상위10위 ${totalTop10}건</div></div>
-    <div class="metric-card"><div class="label">A등급</div><div class="value">${agencyStats.filter(s=>s.grade==='A').length}개</div></div>
+    <div class="metric-card" style="cursor:pointer" onclick="switchTab('report')"><div class="label">종합 리포트</div><div class="value" style="color:var(--blue)">보기 →</div></div>
   `;
 
   document.getElementById('statusBar').classList.remove('hidden');
