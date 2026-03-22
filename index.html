@@ -52,30 +52,26 @@ function gss(mean,std,w,h,pr){w=w||640;h=h||120;var padL=6,padB=24,padT=16;var p
 
 function prd(on){const rc=R.filter(r=>r[0]===on).sort((a,b)=>b[2].localeCompare(a[2]));if(rc.length<2){const s=S.find(o=>o.n===on);return s?{p:s.m,c:'낮음',r:[s.m-1,s.m+1],s:s.s,tr:'부족'}:null}const rt=rc.slice(0,20).map(r=>r[3]),wt=rt.map((_,i)=>Math.exp(-i*.25)),wS=wt.reduce((a,b)=>a+b,0),wM=rt.reduce((a,v,i)=>a+v*wt[i],0)/wS,tr=rt.length>=5?(rt.slice(0,3).reduce((a,b)=>a+b,0)/3-rt.slice(-3).reduce((a,b)=>a+b,0)/3)*.2:0,p=Math.round((wM+tr)*1e4)/1e4,sm=S.find(o=>o.n===on),sd=sm?.s||.5;return{p,c:sd<.55?'높음':sd<.8?'보통':'낮음',r:[Math.round((p-sd)*1e4)/1e4,Math.round((p+sd)*1e4)/1e4],s:sd,tr:tr>.02?'상승':tr<-.02?'하락':'보합'}}
 
-// 낙찰하한율 자동산출 (업종+추정가격+부족점수 기반)
+// 낙찰하한율 자동산출 (조달청 적격심사기준서 명시값)
+// A값 제외 산식: (입찰가격-A)/(예정가격-A) ≥ 하한율
 function calcRate(type,est,shortage){
   shortage=parseInt(shortage)||0;
-  // 전기/통신/소방 기준 (교육자료 기반)
-  if(['전기','통신','소방'].includes(type)){
-    if(est<80000000){// 8천만 미만: 90점 배점
-      var target=85+shortage; // 만점시 85, 1점부족시 86 ...
-      // 90-20×|(0.88-x)×100|=target → x=0.88-(90-target)/2000
-      return Math.round((0.88-(90-target)/2000)*100000)/1000;
-    }else if(est<150000000){// 1.5억 미만 (조달청 8천만~3억)
-      var target=85+shortage;
-      return Math.round((0.88-(90-target)/2000)*100000)/1000;
-    }else if(est<300000000){// 1.5억~3억 (지자체: 80점배점)
-      var target=75+shortage;
-      return Math.round((0.88-(80-target)/2000)*100000)/1000;
-    }else{// 3억 이상: 70점 배점
-      var target=65+shortage;
-      // 70-4×|(0.88-x)×100|=target → x=0.88-(70-target)/400
-      return Math.round((0.88-(70-target)/400)*100000)/1000;
-    }
+  // 기준서 명시 낙찰하한율 (부족점수 0점 기준)
+  var baseRate;
+  if(['전기','통신','소방','국가유산'].includes(type)){
+    if(est>=1000000000)baseRate=88.745;// 10~50억
+    else baseRate=89.745;// 10억미만 (3~10억, 8천만~3억, 8천만미만 모두 동일)
+  }else{
+    // 종합·전문 (토목/건축 등)
+    if(est>=5000000000)baseRate=87.495;// 50~100억
+    else if(est>=1000000000)baseRate=88.745;// 10~50억
+    else baseRate=89.745;// 10억미만
   }
-  // 건축/토목 기본값
-  if(est<300000000)return shortage?87.795:87.745;
-  return shortage?86.795:86.745;
+  // 부족점수 보완: 1점당 0.05%p 상승 (산식 역산)
+  // 70-20×|{90/100-x}×100|=(65+shortage) → x=90-(5-shortage)/20 = 89.75+shortage/20
+  // 차이: shortage×0.05%p (대략적)
+  if(shortage>0)baseRate=Math.round((baseRate+shortage*0.05)*1000)/1000;
+  return baseRate;
 }
 
 // 예가폭 보정 예측
@@ -121,7 +117,7 @@ let TAB='dashboard', ORG=null, PG=0;
 // 탭별 입력값 캐시
 const _ts={
   orgs:{isrch:'',ityp:'전체',isort:'name',PG:0,ORG:null,scroll:0},
-  predict:{ipsrch:'',iporg:'',ipbase:'',ipest:'',ipaval:'',iplimit:'',iptype:'전기',ipspread:'',ipshort:'0',ipjoint:'no',scroll:0},
+  predict:{ipsrch:'',iporg:'',ipbase:'',ipest:'',ipaval:'',iptype:'전기',ipspread:'',iprate:'auto',ipratecustom:'',ipshort:'0',ipjoint:'no',scroll:0},
   upload:{mgSrch:'',mgTyp:'전체',PG:0,scroll:0},
   dashboard:{scroll:0},
   guide:{scroll:0}
@@ -131,7 +127,7 @@ function _saveTab(){
   var s=_ts[TAB];if(!s)return;
   s.scroll=document.getElementById('out').scrollTop||window.scrollY||0;
   if(TAB==='orgs'){s.isrch=getV('isrch');s.ityp=getV('ityp');s.isort=getV('isort');s.PG=PG;s.ORG=ORG}
-  else if(TAB==='predict'){s.ipsrch=getV('ipsrch');s.iporg=getV('iporg');s.ipbase=getV('ipbase');s.ipest=getV('ipest');s.ipaval=getV('ipaval');s.iplimit=getV('iplimit');s.iptype=getV('iptype');s.ipspread=getV('ipspread');s.ipshort=getV('ipshort');s.ipjoint=getV('ipjoint')}
+  else if(TAB==='predict'){s.ipsrch=getV('ipsrch');s.iporg=getV('iporg');s.ipbase=getV('ipbase');s.ipest=getV('ipest');s.ipaval=getV('ipaval');s.iptype=getV('iptype');s.ipspread=getV('ipspread');s.iprate=getV('iprate');s.ipratecustom=getV('ipratecustom');s.ipshort=getV('ipshort');s.ipjoint=getV('ipjoint')}
   else if(TAB==='upload'){s.mgSrch=getV('mgSrch');s.mgTyp=getV('mgTyp');s.PG=PG}
 }
 function _restoreTab(){
@@ -142,7 +138,7 @@ function _restoreTab(){
 function _restoreInputs(){
   var s=_ts[TAB];if(!s)return;
   if(TAB==='orgs'){_setV('isrch',s.isrch);_setV('ityp',s.ityp);_setV('isort',s.isort)}
-  else if(TAB==='predict'){_setV('ipsrch',s.ipsrch);_setV('iporg',s.iporg);_setV('ipbase',s.ipbase);_setV('ipest',s.ipest);_setV('ipaval',s.ipaval);_setV('iplimit',s.iplimit);_setV('iptype',s.iptype);_setV('ipspread',s.ipspread);_setV('ipshort',s.ipshort);_setV('ipjoint',s.ipjoint)}
+  else if(TAB==='predict'){_setV('ipsrch',s.ipsrch);_setV('iporg',s.iporg);_setV('ipbase',s.ipbase);_setV('ipest',s.ipest);_setV('ipaval',s.ipaval);_setV('iptype',s.iptype);_setV('ipspread',s.ipspread);_setV('iprate',s.iprate);_setV('ipratecustom',s.ipratecustom);_setV('ipshort',s.ipshort);_setV('ipjoint',s.ipjoint);var _prc=document.getElementById('ipratecustom');if(_prc)_prc.style.display=s.iprate==='custom'?'block':'none'}
   else if(TAB==='upload'){_setV('mgSrch',s.mgSrch);_setV('mgTyp',s.mgTyp)}
   requestAnimationFrame(function(){window.scrollTo(0,s.scroll||0)});
 }
@@ -191,11 +187,11 @@ function drawBar(){
     h+='<div class="g g3"><div><div class="ml">기초금액 (원) *</div><input class="inp" id="ipbase" placeholder="0"></div>';
     h+='<div><div class="ml">추정가격 (원) *</div><input class="inp" id="ipest" placeholder="0"></div>';
     h+='<div><div class="ml">A값 (원)</div><input class="inp" id="ipaval" placeholder="0"></div></div>';
-    h+='<div class="g g3"><div><div class="ml">업종</div><select class="sel" id="iptype" style="width:100%"><option value="전기">전기공사</option><option value="통신">통신공사</option><option value="소방">소방공사</option><option value="건축">건축공사</option><option value="토목">토목공사</option></select></div>';
+    h+='<div class="g g3"><div><div class="ml">업종</div><select class="sel" id="iptype" style="width:100%"><option value="전기">전기공사</option><option value="통신">통신공사</option><option value="소방">소방공사</option><option value="건축">건축공사</option><option value="토목">토목공사</option><option value="국가유산">국가유산공사</option></select></div>';
     h+='<div><div class="ml">예가폭</div><select class="sel" id="ipspread" style="width:100%"><option value="3">±3%</option><option value="2">±2%</option><option value="6">0%~-6%</option><option value="">자동</option></select></div>';
-    h+='<div><div class="ml">낙찰하한가 (공고확인 시)</div><input class="inp" id="iplimit" placeholder="0"></div></div>';
-    h+='<div class="g g2"><div><div class="ml">적격심사 부족점수</div><select class="sel" id="ipshort" style="width:100%"><option value="0">만점 (시공경험+경영상태 충족)</option><option value="1">1점 부족 (입찰가격으로 보완)</option><option value="2">2점 부족</option></select></div>';
     h+='<div><div class="ml">공동도급</div><select class="sel" id="ipjoint" style="width:100%"><option value="no">단독 입찰</option><option value="yes">공동도급 (공동이행)</option></select></div></div>';
+    h+='<div class="g g2"><div><div class="ml">낙찰하한율 <span id="rateInfo" style="color:var(--grn);font-size:10px"></span></div><div class="row" style="gap:4px"><select class="sel" id="iprate" style="flex:1"><option value="auto">자동 (업종·추정가격 기준)</option><option value="89.745">89.745% (10억미만)</option><option value="88.745">88.745% (10~50억)</option><option value="87.495">87.495% (50~100억)</option><option value="custom">직접입력</option></select><input class="inp" id="ipratecustom" placeholder="89.745" style="width:80px;display:none"></div></div>';
+    h+='<div><div class="ml">적격심사 부족점수</div><select class="sel" id="ipshort" style="width:100%"><option value="0">만점 (시공경험+경영상태 충족)</option><option value="1">1점 부족</option><option value="2">2점 부족</option></select></div></div>';
     h+='</div>';
   }
 
@@ -227,13 +223,17 @@ function drawBar(){
   const pe=document.getElementById('ipest');
   if(pe)pe.oninput=function(){var cur=this.selectionStart,raw=this.value.replace(/,/g,''),num=raw.replace(/[^0-9]/g,'');if(num){var formatted=parseInt(num).toLocaleString('ko-KR');var addedCommas=formatted.length-num.length;this.value=formatted;this.selectionStart=this.selectionEnd=cur+addedCommas-(this.value.length<raw.length?1:0)}else{this.value=''}drawOut()};
   const plim=document.getElementById('iplimit');
-  if(plim)plim.oninput=function(){var cur=this.selectionStart,raw=this.value.replace(/,/g,''),num=raw.replace(/[^0-9]/g,'');if(num){var formatted=parseInt(num).toLocaleString('ko-KR');var addedCommas=formatted.length-num.length;this.value=formatted;this.selectionStart=this.selectionEnd=cur+addedCommas-(this.value.length<raw.length?1:0)}else{this.value=''}drawOut()};
   const pav=document.getElementById('ipaval');
   if(pav)pav.oninput=function(){var cur=this.selectionStart,raw=this.value.replace(/,/g,''),num=raw.replace(/[^0-9]/g,'');if(num){var formatted=parseInt(num).toLocaleString('ko-KR');var addedCommas=formatted.length-num.length;this.value=formatted;this.selectionStart=this.selectionEnd=cur+addedCommas-(this.value.length<raw.length?1:0)}else{this.value=''}drawOut()};
   const pt=document.getElementById('iptype');
   if(pt)pt.onchange=function(){drawOut()};
   const ps=document.getElementById('ipspread');
   if(ps)ps.onchange=function(){drawOut()};
+  const pr=document.getElementById('iprate');
+  const prc=document.getElementById('ipratecustom');
+  if(pr)pr.onchange=function(){if(prc)prc.style.display=this.value==='custom'?'block':'none';drawOut()};
+  if(prc)prc.oninput=function(){drawOut()};
+  if(pr&&prc&&pr.value==='custom')prc.style.display='block';
   const psh=document.getElementById('ipshort');
   if(psh)psh.onchange=function(){drawOut()};
   const pjt=document.getElementById('ipjoint');
@@ -363,89 +363,87 @@ function drawOut(){
     const paval=parseInt((getV('ipaval')||'0').replace(/,/g,''));
     const ptype=getV('iptype')||'전기';
     const pspread=getV('ipspread');
-    const plimit=parseInt((getV('iplimit')||'0').replace(/,/g,''));
     const pshort=parseInt(getV('ipshort')||'0');
     const pjoint=getV('ipjoint')||'no';
-    const K_DEFAULT=0.89745;
+    const rateMode=getV('iprate')||'auto';
+
+    // 낙찰하한율 결정
+    var hRate,hRateLabel='';
+    if(rateMode==='auto'){
+      hRate=pest>0?calcRate(ptype,pest,pshort):89.745;
+      hRateLabel='자동 ('+ptype+(pest>0?' '+fM(pest):'')+(pshort>0?' '+pshort+'점부족':'')+')';
+    }else if(rateMode==='custom'){
+      var cv=parseFloat(getV('ipratecustom'));
+      hRate=(!isNaN(cv)&&cv>50&&cv<100)?cv:89.745;hRateLabel='직접입력';
+    }else{hRate=parseFloat(rateMode);hRateLabel='선택값'}
+    var rInfo=document.getElementById('rateInfo');
+    if(rInfo)rInfo.textContent='→ '+hRate+'% ('+hRateLabel+')';
 
     if(!po||!base){
       h+='<div style="text-align:center;padding:40px;color:var(--tx3)">';
       h+='<div style="font-size:28px;margin-bottom:10px">📋</div>';
       h+='<h3 style="margin-bottom:12px">투찰 예측 시스템</h3>';
       h+='<div style="font-size:12px;line-height:2;text-align:left;max-width:400px;margin:0 auto">';
-      h+='<div class="row" style="gap:6px;margin-bottom:4px"><span class="badge" style="background:var(--blue);color:#fff">1</span> 발주처 검색·선택 (이력 데이터 기반 사정율 예측)</div>';
+      h+='<div class="row" style="gap:6px;margin-bottom:4px"><span class="badge" style="background:var(--blue);color:#fff">1</span> 발주처 검색·선택 (이력 기반 예가/기초 예측)</div>';
       h+='<div class="row" style="gap:6px;margin-bottom:4px"><span class="badge" style="background:var(--blue);color:#fff">2</span> 기초금액·추정가격 입력 → 예정가격 예측</div>';
-      h+='<div class="row" style="gap:6px;margin-bottom:4px"><span class="badge" style="background:var(--blue);color:#fff">3</span> A값 입력 → 낙찰하한가 예측 (정확도 ↑↑)</div>';
+      h+='<div class="row" style="gap:6px;margin-bottom:4px"><span class="badge" style="background:var(--blue);color:#fff">3</span> A값+낙찰하한율 → 낙찰하한가 산출</div>';
       h+='<div class="row" style="gap:6px;margin-bottom:4px"><span class="badge" style="background:var(--grn);color:#fff">4</span> 투찰금액·사정율 산출</div>';
-      h+='<div class="row" style="gap:6px"><span class="badge" style="background:var(--tx3);color:#fff">5</span> 사정율 시나리오 시뮬레이션</div>';
+      h+='<div class="row" style="gap:6px"><span class="badge" style="background:var(--tx3);color:#fff">5</span> 시나리오 시뮬레이션</div>';
       h+='</div>';
-      h+='<div class="sub" style="margin-top:16px">발주처와 기초금액을 입력하면 자동으로 분석이 시작됩니다.</div>';
-      h+='</div>';
+      h+='<div class="sub" style="margin-top:16px">발주처와 기초금액을 입력하면 분석이 시작됩니다.</div></div>';
     }else{
       const sm=S.find(o=>o.n===po);
       const p=pspread?prdAdv(po,pspread):prd(po);
       if(p&&sm){
-        var predRate=p.p, loRate=p.r[0], hiRate=p.r[1];
+        var predRate=p.p,loRate=p.r[0],hiRate=p.r[1];
         var predYJ=Math.round(base*predRate/100);
         var loYJ=Math.round(base*loRate/100);
         var hiYJ=Math.round(base*hiRate/100);
+        var K=hRate/100;// 낙찰하한율
 
         // ═══ 1단계: 예가/기초 예측 ═══
         h+='<div class="cb"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span class="badge" style="background:var(--blue);color:#fff">1단계</span><h3 style="margin:0">예가/기초 예측</h3><span class="sub">— '+po+'</span></div>';
         h+=gss(sm.m,p.s||sm.s||.5,640,130,predRate);
         h+='<div class="g g4" style="margin-top:8px">'+mc('예측',fR(predRate,4)+'%')+mc('범위(±1σ)',fR(loRate,4)+'~'+fR(hiRate,4)+'%')+mc('신뢰도',p.c,'σ='+fR(p.s,4))+mc('추세',p.tr)+'</div>';
-        h+='<div style="font-size:11px;color:var(--tx3);margin-top:6px;line-height:1.7">분석: 최근 '+sm.c+'건 가중평균 · 복수예비가격 15개 중 4개 평균 → 중심극한정리로 100% 근처 수렴';
-        if(p.adjusted)h+=' · 예가폭 보정 적용';
+        h+='<div style="font-size:11px;color:var(--tx3);margin-top:6px;line-height:1.7">'+sm.c+'건 가중평균 · 15개 복수예비가격 중 4개 평균 → 중심극한정리 100%근처 수렴';
+        if(p.adjusted)h+=' · 예가폭 보정';
         h+='</div></div>';
 
         // ═══ 2단계: 예정가격 예측 ═══
         h+='<div class="cb"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span class="badge" style="background:var(--blue);color:#fff">2단계</span><h3 style="margin:0">예정가격 예측</h3></div>';
-        h+='<div class="c mono" style="line-height:1.8;font-size:12px">예정가격 = 기초금액 × 예가/기초<br>';
-        h+=fmt(base)+' × '+fR(predRate,4)+'% = <strong style="color:var(--blue);font-size:14px">'+fmt(predYJ)+'원</strong></div>';
+        h+='<div class="c mono" style="line-height:1.8;font-size:12px">기초금액 × 예가/기초 = '+fmt(base)+' × '+fR(predRate,4)+'% = <strong style="color:var(--blue);font-size:14px">'+fmt(predYJ)+'원</strong></div>';
         h+='<div class="g g3" style="margin-top:8px">'+mc('−1σ',fmt(loYJ)+'원','예가 '+fR(loRate,3)+'%')+mc('권장',fmt(predYJ)+'원','예가 '+fR(predRate,3)+'%')+mc('+1σ',fmt(hiYJ)+'원','예가 '+fR(hiRate,3)+'%')+'</div></div>';
 
-        // ═══ 3단계: 낙찰하한가 예측 ═══
-        var finalLimit=0, limitLabel='', limitMethod='', limitConf='';
-        if(plimit>0){
-          finalLimit=plimit;limitLabel='공고문 확인값';limitMethod='direct';limitConf='확정';
-        }else if(paval>0){
-          finalLimit=Math.round((predYJ-paval)*K_DEFAULT+paval);
-          limitLabel='A값 기반 (K='+fR(K_DEFAULT*100,3)+'%)';limitMethod='aval';limitConf='높음';
-        }else if(pest>0){
-          var thR=calcRate(ptype,pest,pshort);
-          finalLimit=Math.round(predYJ*thR/100);
-          limitLabel='이론적 하한율 '+thR+'%';limitMethod='theo';limitConf='낮음';
+        // ═══ 3단계: 낙찰하한가 산출 ═══
+        var finalLimit,limLo,limHi,limFormula;
+        if(paval>0){
+          // A값 제외 산식: (입찰가격-A)/(예정가격-A) ≥ K → 하한가 = (예정-A)×K + A
+          finalLimit=Math.round((predYJ-paval)*K+paval);
+          limLo=Math.round((loYJ-paval)*K+paval);
+          limHi=Math.round((hiYJ-paval)*K+paval);
+          limFormula='aval';
         }else{
-          finalLimit=Math.round(predYJ*0.86745);
-          limitLabel='기본 하한율 86.745%';limitMethod='theo';limitConf='낮음';
-        }
-        var limLo=0,limHi=0;
-        if(limitMethod==='aval'){
-          limLo=Math.round((loYJ-paval)*K_DEFAULT+paval);
-          limHi=Math.round((hiYJ-paval)*K_DEFAULT+paval);
-        }else if(limitMethod==='theo'){
-          var _tr=pest>0?calcRate(ptype,pest,pshort):86.745;
-          limLo=Math.round(loYJ*_tr/100);limHi=Math.round(hiYJ*_tr/100);
+          // A값 미입력: 예정가격 × 하한율 (부정확)
+          finalLimit=Math.round(predYJ*K);
+          limLo=Math.round(loYJ*K);
+          limHi=Math.round(hiYJ*K);
+          limFormula='simple';
         }
 
-        var limColor=limitMethod==='direct'?'var(--grn)':limitMethod==='aval'?'var(--blue)':'var(--red)';
-        h+='<div class="cb" style="border-color:'+limColor+'"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span class="badge" style="background:'+limColor+';color:#fff">3단계</span><h3 style="margin:0">낙찰하한가</h3><span class="badge" style="background:var(--bg2);color:'+limColor+'">신뢰: '+limitConf+'</span></div>';
+        h+='<div class="cb" style="border-color:var(--blue)"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span class="badge" style="background:var(--blue);color:#fff">3단계</span><h3 style="margin:0">낙찰하한가 산출</h3><span class="badge" style="background:var(--bg2);color:var(--blue)">하한율 '+hRate+'%</span></div>';
 
-        if(limitMethod==='direct'){
-          h+='<div style="font-size:16px;font-weight:600;color:var(--grn)">'+fmt(finalLimit)+'원</div>';
-          h+='<div style="font-size:11px;color:var(--tx3);margin-top:4px">공고문 확인값 · 하한가/기초 '+fR(finalLimit/base*100,4)+'% · 하한가/예측예정 '+fR(finalLimit/predYJ*100,4)+'%</div>';
-        }else if(limitMethod==='aval'){
+        if(limFormula==='aval'){
           h+='<div class="c mono" style="line-height:2;font-size:12px">';
-          h+='<strong>하한가 = (예정가격 − A값) × K + A값</strong><br>';
-          h+='감액가능금액: '+fmt(predYJ)+' − '+fmt(paval)+' = '+fmt(predYJ-paval)+'<br>';
-          h+='하한가: '+fmt(predYJ-paval)+' × 89.745% + '+fmt(paval)+' = <strong style="color:var(--blue);font-size:14px">'+fmt(finalLimit)+'원</strong></div>';
-          h+='<div style="font-size:11px;color:var(--tx3);margin-top:4px">A값(감액불가: 안전관리비 등 법정비) 전액보전 · 감액가능분만 K적용 · 하한가/기초 '+fR(finalLimit/base*100,4)+'%</div>';
-          if(limLo&&limHi)h+='<div class="g g3" style="margin-top:8px">'+mc('−1σ',fmt(limLo)+'원','예가 '+fR(loRate,3)+'%')+mc('권장',fmt(finalLimit)+'원','예가 '+fR(predRate,3)+'%')+mc('+1σ',fmt(limHi)+'원','예가 '+fR(hiRate,3)+'%')+'</div>';
+          h+='<strong>공식: (예정가격 − A값) × 낙찰하한율 + A값</strong><br>';
+          h+='('+fmt(predYJ)+' − '+fmt(paval)+') × '+hRate+'% + '+fmt(paval)+'<br>';
+          h+='= '+fmt(predYJ-paval)+' × '+fR(K,6)+' + '+fmt(paval)+'<br>';
+          h+='= <strong style="color:var(--blue);font-size:14px">'+fmt(finalLimit)+'원</strong></div>';
+          h+='<div style="font-size:11px;color:var(--tx3);margin-top:4px">A값(감액불가 법정비) 전액보전 · 감액가능금액에만 하한율 적용 · 하한가/기초 '+fR(finalLimit/base*100,4)+'%</div>';
         }else{
-          h+='<div style="font-size:12px;color:var(--red);margin-bottom:8px;line-height:1.6">⚠ A값 미입력 → 이론적 하한율로 추정합니다. 실제 조달청 하한가는 이보다 높을 수 있습니다.<br>A값을 입력하면 정확도가 크게 향상됩니다.</div>';
-          h+='<div class="c mono" style="font-size:12px">'+fmt(predYJ)+' × '+limitLabel.replace(/이론적 하한율 /,'')+' = <strong>'+fmt(finalLimit)+'원</strong> (하한가/기초 '+fR(finalLimit/base*100,4)+'%)</div>';
+          h+='<div style="font-size:12px;color:var(--red);margin-bottom:6px">⚠ A값 미입력 → 예정가격×하한율로 추정 (A값 입력 시 정확도 향상)</div>';
+          h+='<div class="c mono" style="font-size:12px">'+fmt(predYJ)+' × '+hRate+'% = <strong>'+fmt(finalLimit)+'원</strong> (하한가/기초 '+fR(finalLimit/base*100,4)+'%)</div>';
         }
-        h+='</div>';
+        h+='<div class="g g3" style="margin-top:8px">'+mc('−1σ',fmt(limLo)+'원','예가 '+fR(loRate,3)+'%')+mc('권장',fmt(finalLimit)+'원','예가 '+fR(predRate,3)+'%')+mc('+1σ',fmt(limHi)+'원','예가 '+fR(hiRate,3)+'%')+'</div></div>';
 
         // ═══ 4단계: 투찰금액 결정 ═══
         var bid1=finalLimit+1;
@@ -453,8 +451,7 @@ function drawOut(){
         var bid3=finalLimit+Math.max(Math.ceil(predYJ*0.001),1);
 
         h+='<div class="ca" style="border-color:var(--grn)"><div style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><span class="badge" style="background:var(--grn);color:#fff">4단계</span><h3 style="margin:0;color:var(--grn)">투찰금액 결정</h3></div>';
-
-        h+='<div class="c" style="background:var(--grn);background:linear-gradient(135deg,var(--grn),#178a62);color:#fff;padding:16px;border-radius:10px;margin-bottom:12px;text-align:center">';
+        h+='<div class="c" style="background:linear-gradient(135deg,var(--grn),#178a62);color:#fff;padding:16px;border-radius:10px;margin-bottom:12px;text-align:center">';
         h+='<div style="font-size:11px;opacity:.8">권장 투찰금액 (하한가+1원)</div>';
         h+='<div style="font-size:22px;font-weight:700;margin:4px 0">'+fmt(bid1)+'원</div>';
         h+='<div style="font-size:12px;opacity:.9">기초대비 사정율: <strong>'+fR(bid1/base*100,4)+'%</strong></div></div>';
@@ -465,63 +462,43 @@ function drawOut(){
         h+=mc('여유 (+0.1%)',fmt(bid3)+'원','사정율 '+fR(bid3/base*100,4)+'%');
         h+='</div>';
 
-        h+='<div class="c mono" style="line-height:1.8;font-size:11px;color:var(--tx2)">';
-        h+='편차 ≤0.05%가 1위 필수조건 (교육자료) · 하한가 대비: 최저가 +1원 / 안전 +'+fmt(bid2-finalLimit)+'원 / 여유 +'+fmt(bid3-finalLimit)+'원</div>';
-
-        // 적격심사 점수 보완 안내
         if(pshort>0){
-          h+='<div style="margin-top:10px;padding:10px;border:1px solid var(--red);border-radius:8px;font-size:12px;color:var(--red);line-height:1.7">';
-          h+='<strong>적격심사 '+pshort+'점 부족 시 보완 투찰</strong><br>';
-          var compRate=calcRate(ptype,pest>0?pest:base,pshort);
-          var compLimit;
-          if(paval>0){compLimit=Math.round((predYJ-paval)*(compRate/100*K_DEFAULT/0.86745>1?K_DEFAULT:compRate*K_DEFAULT/86.745)+paval)}
-          else{compLimit=Math.round(predYJ*compRate/100)}
-          var compBid=compLimit+1;
-          h+='보완 낙찰하한율: '+compRate+'% → 투찰금액: <strong>'+fmt(compBid)+'원</strong> (사정율 '+fR(compBid/base*100,4)+'%)</div>';
+          h+='<div style="padding:10px;border:1px solid var(--red);border-radius:8px;font-size:12px;color:var(--red);line-height:1.7;margin-bottom:10px">';
+          h+='<strong>적격심사 '+pshort+'점 부족 보완</strong>: 하한율 '+hRate+'%에 반영 완료</div>';
         }
-
-        // 공동도급 안내
         if(pjoint==='yes'){
-          h+='<div style="margin-top:10px;padding:10px;border:1px solid var(--blue);border-radius:8px;font-size:12px;color:var(--blue);line-height:1.7">';
-          h+='<strong>공동도급 유의사항</strong><br>';
-          h+='· 시공경험: A사 실적이 많으면 B사 부족분 보완 가능<br>';
-          h+='· 경영상태: 보완 불가 → 전원 만점 필수<br>';
-          h+='· 시공능력평가액: 각사 시평 > 입찰금액 × 시공비율</div>';
+          h+='<div style="padding:10px;border:1px solid var(--blue);border-radius:8px;font-size:12px;color:var(--blue);line-height:1.7;margin-bottom:10px">';
+          h+='<strong>공동도급 유의</strong>: 시공경험 보완가능 · 경영상태 보완불가(전원 만점필수) · 시평 > 입찰금액×시공비율</div>';
         }
         h+='</div>';
 
-        // ═══ 5단계: 시나리오 시뮬레이션 ═══
+        // ═══ 5단계: 시나리오 ═══
         h+='<div class="cb"><div style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><span class="badge" style="background:var(--tx3);color:#fff">5단계</span><h3 style="margin:0">시나리오 시뮬레이션</h3></div>';
         h+='<div style="font-size:11px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:500px">';
         h+='<tr style="background:var(--bg2)"><th style="padding:6px;text-align:left;border-bottom:1px solid var(--bd)">시나리오</th><th style="padding:6px;border-bottom:1px solid var(--bd)">예가/기초</th><th style="padding:6px;border-bottom:1px solid var(--bd)">예정가격</th><th style="padding:6px;border-bottom:1px solid var(--bd)">하한가</th><th style="padding:6px;border-bottom:1px solid var(--bd);color:var(--grn)">투찰금액</th><th style="padding:6px;border-bottom:1px solid var(--bd)">사정율</th></tr>';
-        var scenarios=[['−2σ',loRate-(predRate-loRate)],['−1σ',loRate],['권장',predRate],['+1σ',hiRate],['+2σ',hiRate+(hiRate-predRate)]];
-        scenarios.forEach(function(item){
-          var label=item[0],rate=item[1];
-          var yj=Math.round(base*rate/100);
-          var lim;
-          if(plimit>0){lim=plimit}
-          else if(paval>0){lim=Math.round((yj-paval)*K_DEFAULT+paval)}
-          else{lim=Math.round(yj*(pest>0?calcRate(ptype,pest,pshort):86.745)/100)}
+        var sc=[['−2σ',loRate-(predRate-loRate)],['−1σ',loRate],['권장',predRate],['+1σ',hiRate],['+2σ',hiRate+(hiRate-predRate)]];
+        sc.forEach(function(item){
+          var lb=item[0],rt=item[1];
+          var yj=Math.round(base*rt/100);
+          var lim=paval>0?Math.round((yj-paval)*K+paval):Math.round(yj*K);
           var b=lim+1;
-          var bold=label==='권장';
-          h+='<tr style="'+(bold?'background:var(--bg2);font-weight:600':'')+'"><td style="padding:5px;border-bottom:1px solid var(--bd)">'+label+'</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fR(rate,4)+'%</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fmt(yj)+'</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fmt(lim)+'</td><td style="padding:5px;border-bottom:1px solid var(--bd);color:var(--grn)">'+fmt(b)+'</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fR(b/base*100,4)+'%</td></tr>';
+          var bold=lb==='권장';
+          h+='<tr style="'+(bold?'background:var(--bg2);font-weight:600':'')+'"><td style="padding:5px;border-bottom:1px solid var(--bd)">'+lb+'</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fR(rt,4)+'%</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fmt(yj)+'</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fmt(lim)+'</td><td style="padding:5px;border-bottom:1px solid var(--bd);color:var(--grn)">'+fmt(b)+'</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fR(b/base*100,4)+'%</td></tr>';
         });
         h+='</table></div>';
-        h+='<div style="font-size:11px;color:var(--tx3);margin-top:6px">±1σ 범위 내 확률 68% · ±2σ 범위 내 확률 95% · 사정율 편차 ≤0.05% 시 1위 확률 최대</div></div>';
+        h+='<div style="font-size:11px;color:var(--tx3);margin-top:6px">±1σ 68% · ±2σ 95% · 편차 ≤0.05% 시 1위 확률 최대</div></div>';
 
-        // ═══ 산출 근거 ═══
-        h+='<div class="cb"><h3>산출 근거 및 시스템 정보</h3><div style="font-size:11px;color:var(--tx2);line-height:1.9">';
-        h+='<strong>입력값</strong>: 기초금액 '+fmt(base)+' · 추정가격 '+(pest?fmt(pest):'미입력')+' · A값 '+(paval?fmt(paval):'미입력')+' · 업종 '+ptype+'공사';
-        h+='<br><strong>1단계</strong>: '+po+' 이력 '+sm.c+'건 → 예가/기초 '+fR(predRate,4)+'% (μ'+fR(sm.m,4)+' σ'+fR(p.s,4)+')';
-        h+='<br><strong>2단계</strong>: '+fmt(base)+' × '+fR(predRate,4)+'% = 예정가격 '+fmt(predYJ);
-        h+='<br><strong>3단계</strong>: 하한가 '+fmt(finalLimit)+' ('+limitLabel+', 신뢰: '+limitConf+')';
-        if(limitMethod==='aval')h+=' · K=89.745% · A값 전액보전';
-        h+='<br><strong>4단계</strong>: 투찰 '+fmt(bid1)+' (사정율 '+fR(bid1/base*100,4)+'%)';
-        h+='<br><br><span style="color:var(--tx3)"><strong>시스템 한계</strong>: 복수예비가격 추첨은 확률적 과정이므로 예정가격 100% 예측은 불가. K값(89.745%)은 1건 역산 — 다수 낙찰정보 수집으로 발주처·규모별 K값 DB 구축 시 정확도 향상. 적격심사 비가격항목(시공경험·경영상태)은 별도 확인 필요.</span>';
+        // 산출 근거
+        h+='<div class="cb"><h3>산출 근거</h3><div style="font-size:11px;color:var(--tx2);line-height:1.9">';
+        h+='<strong>입력</strong>: 기초 '+fmt(base)+' · 추정 '+(pest?fmt(pest):'미입력')+' · A값 '+(paval?fmt(paval):'미입력')+' · '+ptype+'공사';
+        h+='<br><strong>하한율</strong>: '+hRate+'% ('+hRateLabel+')';
+        if(limFormula==='aval')h+=' · A값 제외 산식 적용: (예정−A)×'+hRate+'%+A';
+        h+='<br><strong>예측</strong>: 예가/기초 '+fR(predRate,4)+'%(σ'+fR(p.s,4)+') · 예정 '+fmt(predYJ)+' · 하한 '+fmt(finalLimit)+' · 투찰 '+fmt(bid1);
+        h+='<br><span style="color:var(--tx3)">※ 기준서: 기준점 90%, A값 제외 산식 적용. 복수예비가격 추첨은 확률적 → 100% 예측 불가.</span>';
         h+='</div></div>';
 
       }else{
-        h+='<div style="text-align:center;padding:30px;color:var(--tx3)">해당 발주처의 이력 데이터가 부족합니다. 데이터 관리 탭에서 입찰 데이터를 업로드해 주세요.</div>';
+        h+='<div style="text-align:center;padding:30px;color:var(--tx3)">해당 발주처 이력 데이터 부족. 데이터 관리 탭에서 업로드해 주세요.</div>';
       }
     }
   }
