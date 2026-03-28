@@ -7,7 +7,7 @@ const hdrs={"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"B
 const hdrsSel={"apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY};
 
 async function sbFetch(path,opt={}){return fetch(SB_URL+"/rest/v1"+path,{headers:opt.select?hdrsSel:hdrs,...opt})}
-async function sbUpsert(rows){const seen={};const unique=[];for(const r of rows){if(!seen[r.dedup_key]){seen[r.dedup_key]=true;unique.push(r)}}const BATCH=200;for(let i=0;i<unique.length;i+=BATCH){const res=await fetch(SB_URL+"/rest/v1/bid_records?on_conflict=dedup_key",{method:"POST",headers:{"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY,"Prefer":"resolution=merge-duplicates,return=minimal"},body:JSON.stringify(unique.slice(i,i+BATCH))});if(!res.ok){const t=await res.text();throw new Error("DB upsert 실패: "+res.status+" "+t)}}}
+async function sbUpsert(rows){if(!rows.length)return;const seen={};const unique=[];for(const r of rows){const k=r.dedup_key;if(k&&!seen[k]){seen[k]=true;unique.push(r)}}if(!unique.length)return;const safify=obj=>{const o={};for(const[k,v]of Object.entries(obj)){if(v===undefined||v===null){o[k]=null}else if(typeof v==="number"){o[k]=isFinite(v)?v:null}else{o[k]=v}}return o};const safe=unique.map(safify);const BATCH=200;for(let i=0;i<safe.length;i+=BATCH){const batch=safe.slice(i,i+BATCH);if(!batch.length)continue;const res=await fetch(SB_URL+"/rest/v1/bid_records?on_conflict=dedup_key",{method:"POST",headers:{"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY,"Prefer":"resolution=merge-duplicates,return=minimal"},body:JSON.stringify(batch)});if(!res.ok){const t=await res.text();throw new Error("DB upsert 실패(batch "+Math.floor(i/BATCH)+"): "+res.status+" "+t)}}}
 async function sbDeleteIds(ids){const BATCH=50;for(let i=0;i<ids.length;i+=BATCH){const chunk=ids.slice(i,i+BATCH);await sbFetch("/bid_records?id=in.("+chunk.join(",")+")",{method:"DELETE"})}}
 async function sbDeleteAll(){await sbFetch("/bid_records?id=gt.0",{method:"DELETE"})}
 async function sbLoadAll(){const PAGE=1000;let all=[],from=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_records?order=id.asc&limit="+PAGE+"&offset="+from,{headers:{"apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY,"Accept":"application/json"}});if(!res.ok)throw new Error("DB로드 실패: "+res.status);const rows=await res.json();all=all.concat(rows);if(rows.length<PAGE)break;from+=PAGE}return all}
@@ -70,12 +70,14 @@ async function parseFile(file){const buf=await file.arrayBuffer();const u8=new U
   throw new Error("지원되지 않는 형식 (XLS/XLSX/CSV/HTML 파일을 사용하세요)")}
 
 function rowToDbRecord(r){
-  const pnv=s=>{if(s==null||s==="")return 0;if(typeof s==="number")return s;return parseFloat(String(s).replace(/,/g,""))||0};
-  const clean=s=>{const v=String(s||"");return v.replace(/\x00/g,"").replace(/\u0000/g,"")};
+  const pnv=s=>{if(s==null||s==="")return 0;if(typeof s==="number")return isFinite(s)?s:0;const n=parseFloat(String(s).replace(/,/g,""));return isFinite(n)?n:0};
+  const sn=s=>{const v=pnv(s);return v||null};
+  const clean=s=>{const v=String(s||"");return v.replace(/\x00/g,"").replace(/\u0000/g,"").replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g,"")};
   const ag=clean(r[3]),at=clsAg(ag),ba=pnv(r[5]),ep=pnv(r[4]),av=pnv(r[6]);
   const od=pDt(clean(r[19])),era=isNew(at,od)?"new":"old";
   const dk=clean(r[1])+"|"+ag+"|"+clean(r[19])+"|"+ba;
-  return{dedup_key:dk,pn:clean(r[1]),pn_no:clean(r[2]),ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:clean(r[7]),xp:pnv(r[8])||null,floor_price:pnv(r[9])||null,ar1:pnv(r[10])||null,ar0:pnv(r[11])||null,co:clean(r[12]),co_no:clean(r[13]),bp:pnv(r[14])||null,br1:pnv(r[15])||null,br0:pnv(r[16])||null,base_ratio:pnv(r[17])||null,pc:Math.round(pnv(r[18]))||0,od:od||null,input_date:pDt(clean(r[20]))||null,cat:clean(r[21]),g2b:clean(r[22]),reg:clean(r[23]),era,has_a:av>0,fr:eraFR(at,ep,od)}}
+  if(!dk||dk==="|||||0"||dk.length<5)return null;
+  return{dedup_key:dk,pn:clean(r[1]),pn_no:clean(r[2]),ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:clean(r[7]),xp:sn(r[8]),floor_price:sn(r[9]),ar1:sn(r[10]),ar0:sn(r[11]),co:clean(r[12]),co_no:clean(r[13]),bp:sn(r[14]),br1:sn(r[15]),br0:sn(r[16]),base_ratio:sn(r[17]),pc:Math.round(pnv(r[18]))||0,od:od||null,input_date:pDt(clean(r[20]))||null,cat:clean(r[21]),g2b:clean(r[22]),reg:clean(r[23]),era,has_a:av>0,fr:eraFR(at,ep,od)}}
 
 function dbToLocal(r){return{id:r.id,pn:r.pn||"",ag:r.ag||"",at:r.at||"지자체",ep:Number(r.ep)||0,ba:Number(r.ba)||0,av:Number(r.av)||0,ar1:r.ar1!=null?Number(r.ar1):null,br1:r.br1!=null?Number(r.br1):null,pc:r.pc||0,od:r.od||"",odP:r.od,co:r.co||"",hasA:Number(r.av)>0,fr:Number(r.fr)||89.745,era:r.era||"new"}}
 
@@ -101,8 +103,9 @@ export default function App(){
 
   const loadFiles=useCallback(async files=>{
     if(!files||!files.length)return;setBusy(true);setMsg({type:"",text:""});
-    let total=0,errs=0;const dbRows=[];
-    for(const file of files){try{const{rows}=await parseFile(file);for(const r of rows){dbRows.push(rowToDbRecord(r));total++}}catch(e){errs++}}
+    let total=0,errs=0,skipped=0;const dbRows=[];
+    for(const file of files){try{const{rows}=await parseFile(file);for(const r of rows){const rec=rowToDbRecord(r);if(rec){dbRows.push(rec);total++}else{skipped++}}}catch(e){errs++}}
+    if(!dbRows.length){setMsg({type:"err",text:"유효한 데이터 없음 (스킵 "+skipped+"건, 오류 "+errs+"파일)"});setBusy(false);return}
     try{await sbUpsert(dbRows);const fresh=await sbLoadAll();const local=fresh.map(dbToLocal);setRecs(local);refreshStats(local);
       setMsg({type:"ok",text:files.length+"파일→"+total+"건 DB 저장 완료 (총 "+local.length+"건)"});setTab("stats")}
     catch(e){setMsg({type:"err",text:"DB 저장 실패: "+e.message})}
