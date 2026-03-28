@@ -50,12 +50,8 @@ const CHO="ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
 function gCho(s){let r="";for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);r+=(c>=0xAC00&&c<=0xD7A3)?CHO[Math.floor((c-0xAC00)/588)]:s[i]}return r}
 function mSch(nm,q){if(!q)return false;return nm.toLowerCase().includes(q.toLowerCase())||gCho(nm).includes(q)}
 
-function parseBIFF8(buf){const u8=new Uint8Array(buf),dv=new DataView(buf),SS=512;const ds=dv.getInt32(76,true);if(ds<0||(ds+1)*SS+SS>buf.byteLength)throw new Error("FAT");const fat=[];for(let i=0;i<SS/4;i++)fat.push(dv.getInt32((ds+1)*SS+i*4,true));const dr=dv.getInt32(48,true),dO=(dr+1)*SS;let ws=-1,wz=0;for(let i=0;i<16;i++){const e=dO+i*128;if(e+128>buf.byteLength)break;const nl=dv.getUint16(e+64,true);if(nl<=0||nl>64)continue;let nm="";for(let c=0;c<nl-2;c+=2)nm+=String.fromCharCode(dv.getUint16(e+c,true));if(nm==="Workbook"){ws=dv.getInt32(e+116,true);wz=dv.getUint32(e+120,true)}}if(ws<0)throw new Error("NoWB");const wb=new Uint8Array(wz);let cur=ws,wp=0,sf=0;while(cur>=0&&cur<fat.length&&cur!==-1&&cur!==-2&&wp<wz&&sf<5000){const off=(cur+1)*SS,len=Math.min(SS,wz-wp);if(off+len<=buf.byteLength){wb.set(u8.subarray(off,off+len),wp);wp+=len}cur=fat[cur];sf++}if(wp<100)throw new Error("Short");const wv=new DataView(wb.buffer,0,wp);let pos=0;const sb=[],lb=[],nms=[];let lt=0;while(pos+4<=wp){const t=wv.getUint16(pos,true),l=wv.getUint16(pos+2,true);if(l>20000||pos+4+l>wp)break;const s=pos+4;if(t===0x00FC||(t===0x003C&&(lt===0x00FC||lt===0x003C)))for(let i=0;i<l;i++)sb.push(wb[s+i]);else if(t===0x0203&&l>=14)nms.push({r:wv.getUint16(s,true),c:wv.getUint16(s+2,true),v:wv.getFloat64(s+6,true)});else if(t===0x00FD&&l>=10)lb.push({r:wv.getUint16(s,true),c:wv.getUint16(s+2,true),i:wv.getUint32(s+6,true)});lt=t;pos+=4+l}if(sb.length<8)throw new Error("NoSST");const sst=new Uint8Array(sb),sd=new DataView(sst.buffer);const uc=sd.getUint32(4,true),strs=[];let sp=8;for(let si=0;si<uc&&sp+3<=sst.length;si++){const sl=sd.getUint16(sp,true),fl=sst[sp+2];sp+=3;let rc=0,ex=0;if((fl&0x08)&&sp+2<=sst.length){rc=sd.getUint16(sp,true);sp+=2}if((fl&0x04)&&sp+4<=sst.length){ex=sd.getUint32(sp,true);sp+=4}let str="";if(fl&0x01){const bl=sl*2;if(sp+bl>sst.length)break;for(let c=0;c<sl;c++)str+=String.fromCharCode(sd.getUint16(sp+c*2,true));sp+=bl}else{if(sp+sl>sst.length)break;try{str=new TextDecoder("euc-kr").decode(sst.slice(sp,sp+sl))}catch(e){for(let c=0;c<sl;c++)str+=String.fromCharCode(sst[sp+c])}sp+=sl}sp+=rc*4+ex;strs.push(str.replace(/[\x00\uD800-\uDFFF]/g,""))}const maxR=Math.max(0,...nms.map(n=>n.r),...lb.map(l=>l.r));const rows=[];for(let r=1;r<=maxR;r++){const rd={};let cnt=0;for(const l of lb)if(l.r===r&&l.i<strs.length){rd[l.c]=strs[l.i];cnt++}for(const n of nms)if(n.r===r){rd[n.c]=n.v;cnt++}if(cnt>=3)rows.push(rd)}return rows}
-
-function parseHTML(t){const doc=new DOMParser().parseFromString(t,"text/html");const tables=doc.querySelectorAll("table");if(!tables.length)return null;let best=null,bN=0;tables.forEach(t=>{const n=t.querySelectorAll("tr").length;if(n>bN){bN=n;best=t}});if(!best||bN<2)return null;const res=[];best.querySelectorAll("tr").forEach(tr=>{const row=[];tr.querySelectorAll("td, th").forEach(c=>row.push(c.textContent.trim()));if(row.length>=5)res.push(row)});if(res.length<2)return null;const data=[];for(let i=1;i<res.length;i++){const rd={};res[i].forEach((v,j)=>{rd[j]=v});data.push(rd)}return data}
-
-function parseXLSXSheetJS(buf){
-  const wb=XLSX.read(new Uint8Array(buf),{type:"array"});
+function parseSheetJS(buf){
+  const wb=XLSX.read(new Uint8Array(buf),{type:"array",codepage:949});
   const sn=wb.SheetNames[0];if(!sn)throw new Error("시트 없음");
   const json=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:"",raw:false});
   if(json.length<2)throw new Error("데이터 부족("+json.length+"행)");
@@ -69,11 +65,11 @@ function parseXLSXSheetJS(buf){
   return data}
 
 async function parseFile(file){const buf=await file.arrayBuffer();const u8=new Uint8Array(buf);
-  if(u8[0]===0xD0&&u8[1]===0xCF)return{rows:parseBIFF8(buf),f:"XLS"};
-  if(u8[0]===0x50&&u8[1]===0x4B)return{rows:parseXLSXSheetJS(buf),f:"XLSX"}
+  if(u8[0]===0xD0&&u8[1]===0xCF)return{rows:parseSheetJS(buf),f:"XLS"};
+  if(u8[0]===0x50&&u8[1]===0x4B)return{rows:parseSheetJS(buf),f:"XLSX"};
   const text=await file.text();const html=parseHTML(text);if(html)return{rows:html,f:"HTML"};
   const csv=Papa.parse(text,{skipEmptyLines:true});if(csv.data){const v=csv.data.filter(r=>r.length>=5);if(v.length>=2){const kn=["번호","공고명","공고번호","발주기관","추정가격","기초금액","A값","순공사원가","예정가격","낙찰하한가","예가/기초(100%)","예가/기초(0%)","1순위업체","1순위사업자번호","1순위투찰금액","1순위사정율(100%)","1순위사정율(0%)","1순위기초대비","업체수","개찰일","입력일","업종","G2B물품분류","지역"];const cm={};v[0].forEach((h,i)=>{const idx=kn.indexOf(String(h).trim());if(idx>=0)cm[idx]=i});const um=Object.keys(cm).length>=5;const data=[];for(let i=1;i<v.length;i++){const r=v[i],rd={};if(um)for(const[ki,ci]of Object.entries(cm))rd[parseInt(ki)]=r[ci];else r.forEach((vv,j)=>{rd[j]=vv});data.push(rd)}return{rows:data,f:"CSV"}}}
-  throw new Error("지원되지 않는 형식 (XLS/XLSX/CSV/HTML 파일을 사용하세요)")}
+  throw new Error("지원되지 않는 형식")}
 
 function rowToDbRecord(r){
   const pnv=s=>{if(s==null||s==="")return 0;if(typeof s==="number")return isFinite(s)?s:0;const n=parseFloat(String(s).replace(/,/g,""));return isFinite(n)?n:0};
