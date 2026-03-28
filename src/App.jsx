@@ -74,13 +74,15 @@ async function parseFile(file){const buf=await file.arrayBuffer();const u8=new U
 function rowToDbRecord(r){
   const pnv=s=>{if(s==null||s==="")return 0;if(typeof s==="number")return isFinite(s)?s:0;const n=parseFloat(String(s).replace(/,/g,""));return isFinite(n)?n:0};
   const sn=s=>{const v=pnv(s);return v||null};
-  const clean=s=>{const v=String(s||"");return v.replace(/[\x00\uD800-\uDFFF]/g,"").replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g,"")};
+  const clean=s=>{const v=String(s||"");return v.replace(/[\x00\uD800-\uDFFF]/g,"").replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g,"").replace(/[\u2800-\u2BFF\uE000-\uF8FF]/g,"").replace(/[嬀崀巇巍嶰嶬壂磆峈烓⧂⧅⧈]/g,"").replace(/\s+/g," ").trim()};
   const ag=clean(r[3]),at=clsAg(ag),ba=pnv(r[5]),ep=pnv(r[4]),av=pnv(r[6]);
+  const pn=clean(r[1]);
+  if(!pn||pn.length<2)return null;
   const od=pDt(clean(r[19])),era=isNew(at,od)?"new":"old";
-  const dk=clean(r[1])+"|"+ag+"|"+clean(r[19])+"|"+ba;
-  if(!dk||dk.length<5)return null;
+  const dk=pn+"|"+ag+"|"+clean(r[19])+"|"+ba;
+  if(dk.length<5)return null;
   const hk=md5(dk);
-  return{dedup_key:hk,pn:clean(r[1]),pn_no:clean(r[2]),ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:clean(r[7]),xp:sn(r[8]),floor_price:sn(r[9]),ar1:sn(r[10]),ar0:sn(r[11]),co:clean(r[12]),co_no:clean(r[13]),bp:sn(r[14]),br1:sn(r[15]),br0:sn(r[16]),base_ratio:sn(r[17]),pc:Math.round(pnv(r[18]))||0,od:od||null,input_date:pDt(clean(r[20]))||null,cat:clean(r[21]),g2b:clean(r[22]),reg:clean(r[23]),era,has_a:av>0,fr:eraFR(at,ep,od)}}
+  return{dedup_key:hk,pn:pn,pn_no:clean(r[2]),ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:clean(r[7]),xp:sn(r[8]),floor_price:sn(r[9]),ar1:sn(r[10]),ar0:sn(r[11]),co:clean(r[12]),co_no:clean(r[13]),bp:sn(r[14]),br1:sn(r[15]),br0:sn(r[16]),base_ratio:sn(r[17]),pc:Math.round(pnv(r[18]))||0,od:od||null,input_date:pDt(clean(r[20]))||null,cat:clean(r[21]),g2b:clean(r[22]),reg:clean(r[23]),era,has_a:av>0,fr:eraFR(at,ep,od)}}
 
 function dbToLocal(r){return{id:r.id,pn:r.pn||"",ag:r.ag||"",at:r.at||"지자체",ep:Number(r.ep)||0,ba:Number(r.ba)||0,av:Number(r.av)||0,ar1:r.ar1!=null?Number(r.ar1):null,br1:r.br1!=null?Number(r.br1):null,pc:r.pc||0,od:r.od||"",odP:r.od,co:r.co||"",hasA:Number(r.av)>0,fr:Number(r.fr)||89.745,era:r.era||"new"}}
 
