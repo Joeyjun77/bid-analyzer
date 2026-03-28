@@ -7,7 +7,7 @@ const hdrs={"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"B
 const hdrsSel={"apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY};
 
 async function sbFetch(path,opt={}){return fetch(SB_URL+"/rest/v1"+path,{headers:opt.select?hdrsSel:hdrs,...opt})}
-async function sbUpsert(rows){const BATCH=200;for(let i=0;i<rows.length;i+=BATCH){await sbFetch("/bid_records",{method:"POST",headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},body:JSON.stringify(rows.slice(i,i+BATCH))})}}
+async function sbUpsert(rows){const BATCH=200;for(let i=0;i<rows.length;i+=BATCH){const res=await fetch(SB_URL+"/rest/v1/bid_records?on_conflict=dedup_key",{method:"POST",headers:{"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY,"Prefer":"resolution=merge-duplicates,return=minimal"},body:JSON.stringify(rows.slice(i,i+BATCH))});if(!res.ok){const t=await res.text();throw new Error("DB upsert 실패: "+res.status+" "+t)}}}
 async function sbDeleteIds(ids){const BATCH=50;for(let i=0;i<ids.length;i+=BATCH){const chunk=ids.slice(i,i+BATCH);await sbFetch("/bid_records?id=in.("+chunk.join(",")+")",{method:"DELETE"})}}
 async function sbDeleteAll(){await sbFetch("/bid_records?id=gt.0",{method:"DELETE"})}
 async function sbLoadAll(){const res=await sbFetch("/bid_records?order=od.desc&limit=50000",{select:true});if(!res.ok)throw new Error("DB로드 실패");return res.json()}
