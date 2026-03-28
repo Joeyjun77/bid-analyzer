@@ -1,786 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>입찰 분석 시스템 v2</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#fff;--bg2:#f5f5f3;--bg3:#ebe9e4;--tx:#1a1a1a;--tx2:#666;--tx3:#999;--bd:#ddddd8;--blue:#378ADD;--grn:#1D9E75;--red:#E24B4A}
-@media(prefers-color-scheme:dark){:root{--bg:#1a1a1a;--bg2:#252523;--bg3:#2f2f2c;--tx:#e8e8e4;--tx2:#999;--tx3:#777;--bd:#3a3a36;--blue:#5999d6;--grn:#5DCAA5;--red:#F09595}}
-body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,sans-serif;line-height:1.5}
-.app{max-width:720px;margin:0 auto;padding:16px}
-h1{font-size:18px;font-weight:600}h2{font-size:15px;font-weight:600;margin-bottom:10px}h3{font-size:13px;font-weight:600;margin-bottom:6px}
-.sub{font-size:12px;color:var(--tx2)}
-.tabs{display:flex;border-bottom:1px solid var(--bd);overflow-x:auto}
-#tabbar{position:sticky;top:0;z-index:10;background:var(--bg);padding-top:4px;margin-bottom:16px}
-.tab{padding:8px 14px;font-size:12px;cursor:pointer;border:none;background:none;color:var(--tx2);border-bottom:2px solid transparent;white-space:nowrap;font-family:inherit}
-.tab.on{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
-.g{display:grid;gap:8px}.g2{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}.g5{grid-template-columns:repeat(5,1fr)}
-.c{background:var(--bg2);border-radius:8px;padding:10px 12px}
-.cb{border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:10px}
-.ca{border:2px solid var(--blue);border-radius:10px;padding:14px}
-.ml{font-size:11px;color:var(--tx3);margin-bottom:2px}.mv{font-size:18px;font-weight:600}.ms{font-size:11px;color:var(--tx3);margin-top:2px}
-.badge{display:inline-block;font-size:10px;padding:2px 7px;border-radius:5px;font-weight:600;white-space:nowrap}
-.row{display:flex;align-items:center;gap:8px}
-.rowb{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)}
-.inp{padding:7px 10px;font-size:12px;border:1px solid var(--bd);border-radius:7px;background:var(--bg);color:var(--tx);font-family:inherit;width:100%;box-sizing:border-box}
-.sel{padding:7px 10px;font-size:12px;border:1px solid var(--bd);border-radius:7px;background:var(--bg);color:var(--tx);font-family:inherit}
-.btn{padding:5px 12px;font-size:12px;border:1px solid var(--bd);border-radius:6px;background:none;color:var(--tx);cursor:pointer;font-family:inherit}
-.btn:hover{background:var(--bg2)}.btn:disabled{opacity:.4;cursor:default}
-.lnk{color:var(--blue);cursor:pointer;border:none;background:none;font-size:12px;font-family:inherit;padding:0}
-.tr{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mono{font-family:ui-monospace,monospace;font-size:12px}
-.scr{max-height:400px;overflow-y:auto}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0c0c1a; font-family: system-ui, -apple-system, sans-serif; }
+  #root { min-height: 100vh; }
 </style>
-<div class="app">
-<div id="hdr"></div>
-<div id="tabbar"></div>
-<div id="bar"></div>
-<div id="out"></div>
-</div>
-<script>
-// Data — loaded from storage or file upload
-let R=[];
-let S=[];
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+/* ═══ bid-prediction-mvp.jsx (Supabase 연동 버전) ═══ */
+const {useState,useCallback,useMemo,useRef,useEffect}=React;
 
+const SB_URL="https://sadunejfkstxbxogzutl.supabase.co";
+const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhZHVuZWpma3N0eGJ4b2d6dXRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2ODYxOTksImV4cCI6MjA5MDI2MjE5OX0.C5kNr-4urLImKfqOi_yl2-SUbrpcSgz2N3IiWGbObgc";
+const hdrs={"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY,"Prefer":"return=minimal"};
+const hdrsSel={"apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY};
 
-const TC={"조달청":{b:"#E6F1FB",t:"#0C447C",d:"#378ADD"},"교육청":{b:"#EEEDFE",t:"#3C3489",d:"#7F77DD"},"지자체":{b:"#E1F5EE",t:"#085041",d:"#1D9E75"},"한국철도공사":{b:"#FAECE7",t:"#712B13",d:"#D85A30"},"교통공사":{b:"#FBEAF0",t:"#72243E",d:"#D4537E"},"국토교통부":{b:"#FAEEDA",t:"#633806",d:"#BA7517"},"LH공사":{b:"#EAF3DE",t:"#27500A",d:"#639922"},"기타":{b:"#F1EFE8",t:"#444441",d:"#888780"}};
-const fmt=n=>n!=null?n.toLocaleString('ko-KR'):'-';
-const fR=(n,d)=>typeof n==='number'?n.toFixed(d!=null?d:4):'-';
-const fM=n=>{if(!n)return'-';if(n>=1e9)return(n/1e9).toFixed(1)+'억';if(n>=1e8)return(n/1e8).toFixed(1)+'억';if(n>=1e7)return(n/1e7).toFixed(0)+'천만';return fmt(n)};
-const bg=t=>{const c=TC[t]||TC['기타'];return'<span class="badge" style="background:'+c.b+';color:'+c.t+'">'+t+'</span>'};
-const mc=(l,v,s)=>'<div class="c"><div class="ml">'+l+'</div><div class="mv">'+v+'</div>'+(s?'<div class="ms">'+s+'</div>':'')+'</div>';
+async function sbFetch(path,opt={}){return fetch(SB_URL+"/rest/v1"+path,{headers:opt.select?hdrsSel:hdrs,...opt})}
+async function sbUpsert(rows){const B=200;for(let i=0;i<rows.length;i+=B){await sbFetch("/bid_records",{method:"POST",headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},body:JSON.stringify(rows.slice(i,i+B))})}}
+async function sbDeleteIds(ids){const B=50;for(let i=0;i<ids.length;i+=B){await sbFetch("/bid_records?id=in.("+ids.slice(i,i+B).join(",")+")",{method:"DELETE"})}}
+async function sbDeleteAll(){await sbFetch("/bid_records?id=gt.0",{method:"DELETE"})}
+async function sbLoadAll(){const r=await sbFetch("/bid_records?order=od.desc&limit=50000",{select:true});if(!r.ok)throw new Error("DB fail");return r.json()}
 
-function spk(d,w,h,showAxis){if(!d||d.length<2)return'';w=w||160;h=h||36;var pad=showAxis?{l:36,r:8,t:8,b:20}:{l:0,r:0,t:3,b:3};var pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;const mn=Math.min(...d),mx=Math.max(...d),rg=mx-mn||1;var s='<svg width="'+w+'" height="'+h+'" style="display:block"><polyline fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linejoin="round" points="'+d.map((v,i)=>(pad.l+i/(d.length-1)*pw)+','+(pad.t+ph-(v-mn)/rg*ph)).join(' ')+'"/>';if(showAxis){s+='<text x="'+(pad.l-4)+'" y="'+(pad.t+4)+'" text-anchor="end" fill="var(--tx3)" font-size="8">'+fR(mx,2)+'</text>';s+='<text x="'+(pad.l-4)+'" y="'+(pad.t+ph)+'" text-anchor="end" fill="var(--tx3)" font-size="8">'+fR(mn,2)+'</text>';s+='<text x="'+pad.l+'" y="'+(h-2)+'" text-anchor="start" fill="var(--tx3)" font-size="8">과거</text>';s+='<text x="'+(w-pad.r)+'" y="'+(h-2)+'" text-anchor="end" fill="var(--tx3)" font-size="8">최근</text>';s+='<line x1="'+pad.l+'" y1="'+pad.t+'" x2="'+pad.l+'" y2="'+(pad.t+ph)+'" stroke="var(--bd)" stroke-width=".5"/>';s+='<line x1="'+pad.l+'" y1="'+(pad.t+ph)+'" x2="'+(w-pad.r)+'" y2="'+(pad.t+ph)+'" stroke="var(--bd)" stroke-width=".5"/>';var mid=(mn+mx)/2;var my=pad.t+ph-(mid-mn)/rg*ph;s+='<line x1="'+pad.l+'" y1="'+my+'" x2="'+(w-pad.r)+'" y2="'+my+'" stroke="var(--bd)" stroke-width=".3" stroke-dasharray="2 2"/>';s+='<text x="'+(pad.l-4)+'" y="'+(my+3)+'" text-anchor="end" fill="var(--tx3)" font-size="8">'+fR(mid,2)+'</text>'}return s+'</svg>'}
-function hst(d,w,h){if(!d||!d.length)return'';w=w||680;h=h||140;var padL=32,padB=28,padT=14;var pw=w-padL,ph=h-padB-padT;const bn=[97,97.5,98,98.5,99,99.5,100,100.5,101,101.5,102,102.5,103],ct=Array(bn.length-1).fill(0);d.forEach(v=>{for(let i=0;i<bn.length-1;i++){if(v>=bn[i]&&v<bn[i+1]){ct[i]++;break}}});const mx=Math.max(...ct,1),bw=pw/(bn.length-1)-2;let s='<svg width="'+w+'" height="'+h+'" style="display:block">';s+='<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(padT+ph)+'" stroke="var(--bd)" stroke-width=".5"/>';s+='<line x1="'+padL+'" y1="'+(padT+ph)+'" x2="'+w+'" y2="'+(padT+ph)+'" stroke="var(--bd)" stroke-width=".5"/>';var yTicks=[0,Math.round(mx/2),mx];yTicks.forEach(t=>{var y=padT+ph-(t/mx)*ph;s+='<text x="'+(padL-4)+'" y="'+(y+3)+'" text-anchor="end" fill="var(--tx3)" font-size="8">'+t+'</text>';if(t>0)s+='<line x1="'+padL+'" y1="'+y+'" x2="'+w+'" y2="'+y+'" stroke="var(--bd)" stroke-width=".3" stroke-dasharray="2 2"/>'});ct.forEach((c,i)=>{const x=padL+i*(pw/(bn.length-1))+1,bh=(c/mx)*ph,cl=bn[i]<100?'var(--blue)':'var(--grn)';s+='<rect x="'+x+'" y="'+(padT+ph-bh)+'" width="'+bw+'" height="'+bh+'" fill="'+cl+'" opacity=".55" rx="2"/>';s+='<text x="'+(x+bw/2)+'" y="'+(h-padB+12)+'" text-anchor="middle" fill="var(--tx3)" font-size="9">'+bn[i]+'</text>';if(c)s+='<text x="'+(x+bw/2)+'" y="'+(padT+ph-bh-4)+'" text-anchor="middle" fill="var(--tx2)" font-size="9">'+c+'</text>'});var refX=padL+((100-97)/6)*pw;s+='<line x1="'+refX+'" y1="'+padT+'" x2="'+refX+'" y2="'+(padT+ph)+'" stroke="var(--red)" stroke-width=".5" stroke-dasharray="2 2"/>';s+='<text x="'+(w/2)+'" y="'+(h-2)+'" text-anchor="middle" fill="var(--tx3)" font-size="8">사정율(%)</text>';s+='<text x="4" y="'+(padT+ph/2)+'" fill="var(--tx3)" font-size="8" transform="rotate(-90,8,'+(padT+ph/2)+')">건수</text>';return s+'</svg>'}
-function gss(mean,std,w,h,pr){w=w||640;h=h||120;var padL=6,padB=24,padT=16;var pw=w-padL,ph=h-padB-padT;const xN=mean-3.5*std,xX=mean+3.5*std,pts=[];for(let i=0;i<=50;i++){const x=xN+(i/50)*(xX-xN),z=(x-mean)/std;pts.push({x,y:Math.exp(-.5*z*z)/(std*Math.sqrt(2*Math.PI))})}const mY=Math.max(...pts.map(p=>p.y)),sv=pts.map(p=>(padL+(p.x-xN)/(xX-xN)*pw)+','+(padT+ph-(p.y/mY)*ph)).join(' ');let s='<svg width="'+w+'" height="'+h+'" style="display:block"><polygon fill="var(--blue)" opacity=".08" points="'+padL+','+(padT+ph)+' '+sv+' '+(padL+pw)+','+(padT+ph)+'"/><polyline fill="none" stroke="var(--blue)" stroke-width="1.5" points="'+sv+'"/>';s+='<line x1="'+padL+'" y1="'+(padT+ph)+'" x2="'+(padL+pw)+'" y2="'+(padT+ph)+'" stroke="var(--bd)" stroke-width=".5"/>';var meanX=padL+pw/2;s+='<line x1="'+meanX+'" y1="'+padT+'" x2="'+meanX+'" y2="'+(padT+ph)+'" stroke="var(--bd)" stroke-width=".5" stroke-dasharray="3 3"/>';s+='<text x="'+meanX+'" y="'+(h-2)+'" text-anchor="middle" fill="var(--tx3)" font-size="9">μ '+fR(mean,2)+'%</text>';var ticks=[xN,mean-2*std,mean-std,mean,mean+std,mean+2*std,xX];ticks.forEach(t=>{var tx=padL+(t-xN)/(xX-xN)*pw;if(Math.abs(t-mean)>std*0.3)s+='<text x="'+tx+'" y="'+(h-2)+'" text-anchor="middle" fill="var(--tx3)" font-size="8">'+fR(t,1)+'</text>'});var s1l=padL+(mean-std-xN)/(xX-xN)*pw,s1r=padL+(mean+std-xN)/(xX-xN)*pw;s+='<line x1="'+s1l+'" y1="'+(padT+ph-2)+'" x2="'+s1l+'" y2="'+(padT+ph+4)+'" stroke="var(--tx3)" stroke-width=".5"/>';s+='<line x1="'+s1r+'" y1="'+(padT+ph-2)+'" x2="'+s1r+'" y2="'+(padT+ph+4)+'" stroke="var(--tx3)" stroke-width=".5"/>';if(pr!=null){const px=padL+(pr-xN)/(xX-xN)*pw;if(px>=padL&&px<=padL+pw){s+='<line x1="'+px+'" y1="'+padT+'" x2="'+px+'" y2="'+(padT+ph)+'" stroke="var(--red)" stroke-width="1.5"/>';s+='<text x="'+px+'" y="'+(padT-3)+'" text-anchor="middle" fill="var(--red)" font-size="10" font-weight="600">예측 '+fR(pr,3)+'%</text>'}}return s+'</svg>'}
+const OLD_R={"조달청":[{n:5e9,x:1e11,r:85.495},{n:1e9,x:5e9,r:86.745},{n:0,x:1e9,r:87.745}],"지자체":[{n:1e10,x:3e11,r:79.995},{n:5e9,x:1e10,r:85.495},{n:3e9,x:5e9,r:86.745},{n:1e9,x:3e9,r:86.745},{n:0,x:1e9,r:87.745}],"한전":[{n:5e9,x:1e11,r:85.495},{n:1e9,x:5e9,r:86.745},{n:0,x:1e9,r:87.745}],"LH":[{n:5e9,x:1e11,r:85.495},{n:1e9,x:5e9,r:86.745},{n:0,x:1e9,r:87.745}],"군시설":[{n:5e9,x:1e11,r:85.495},{n:1e9,x:5e9,r:86.745},{n:0,x:1e9,r:87.745}],"수자원공사":[{n:5e9,x:1e11,r:85.495},{n:1e9,x:5e9,r:86.745},{n:0,x:1e9,r:87.745}],"교육청":[{n:5e9,x:1e11,r:85.495},{n:1e9,x:5e9,r:86.745},{n:0,x:1e9,r:87.745}],"환경공단":[{n:5e9,x:1e11,r:83.495},{n:1e9,x:5e9,r:84.745},{n:0,x:1e9,r:85.745}],"공기업":[{n:5e9,x:1e11,r:85.495},{n:1e9,x:5e9,r:86.745},{n:0,x:1e9,r:87.745}],"발전사":[{n:5e9,x:1e11,r:85.495},{n:1e9,x:5e9,r:86.745},{n:0,x:1e9,r:87.745}]};
+const NEW_R={"조달청":[{n:5e9,x:1e11,r:87.495},{n:1e9,x:5e9,r:88.745},{n:0,x:1e9,r:89.745}],"지자체":[{n:1e10,x:3e11,r:81.995},{n:5e9,x:1e10,r:87.495},{n:3e9,x:5e9,r:88.745},{n:1e9,x:3e9,r:88.745},{n:0,x:1e9,r:89.745}],"한전":[{n:5e9,x:1e11,r:87.495},{n:1e9,x:5e9,r:88.745},{n:0,x:1e9,r:89.745}],"LH":[{n:5e9,x:1e11,r:87.495},{n:1e9,x:5e9,r:88.745},{n:0,x:1e9,r:89.745}],"군시설":[{n:5e9,x:1e11,r:87.495},{n:1e9,x:5e9,r:88.745},{n:0,x:1e9,r:89.745}],"수자원공사":[{n:5e9,x:1e11,r:87.495},{n:1e9,x:5e9,r:88.745},{n:0,x:1e9,r:89.745}],"교육청":[{n:5e9,x:1e11,r:87.495},{n:1e9,x:5e9,r:88.745},{n:0,x:1e9,r:89.745}],"환경공단":[{n:5e9,x:1e11,r:85.495},{n:1e9,x:5e9,r:86.745},{n:0,x:1e9,r:87.745}],"공기업":[{n:5e9,x:1e11,r:87.495},{n:1e9,x:5e9,r:88.745},{n:0,x:1e9,r:89.745}],"발전사":[{n:5e9,x:1e11,r:87.495},{n:1e9,x:5e9,r:88.745},{n:0,x:1e9,r:89.745}]};
+const CUT={"지자체":"2025-07-01","교육청":"2025-07-01"};const DCUT="2026-01-30";
 
-function prd(on){const rc=R.filter(r=>r[0]===on).sort((a,b)=>b[2].localeCompare(a[2]));if(rc.length<2){const s=S.find(o=>o.n===on);return s?{p:s.m,c:'낮음',r:[s.m-1,s.m+1],s:s.s,tr:'부족'}:null}const rt=rc.slice(0,20).map(r=>r[3]),wt=rt.map((_,i)=>Math.exp(-i*.25)),wS=wt.reduce((a,b)=>a+b,0),wM=rt.reduce((a,v,i)=>a+v*wt[i],0)/wS,tr=rt.length>=5?(rt.slice(0,3).reduce((a,b)=>a+b,0)/3-rt.slice(-3).reduce((a,b)=>a+b,0)/3)*.2:0,p=Math.round((wM+tr)*1e4)/1e4,sm=S.find(o=>o.n===on),sd=sm?.s||.5;return{p,c:sd<.55?'높음':sd<.8?'보통':'낮음',r:[Math.round((p-sd)*1e4)/1e4,Math.round((p+sd)*1e4)/1e4],s:sd,tr:tr>.02?'상승':tr<-.02?'하락':'보합'}}
+function clsAg(n){if(!n)return"지자체";if(/한국전력/.test(n))return"한전";if(/남동발전|서부발전|중부발전|동서발전|남부발전/.test(n))return"발전사";if(/수자원/.test(n))return"수자원공사";if(/토지주택/.test(n))return"LH";if(/교육청|교육지원청/.test(n))return"교육청";if(/조달청/.test(n))return"조달청";if(/환경공단/.test(n))return"환경공단";if(/사단|부대|군단|비행단|여단/.test(n))return"군시설";if(/도시공사|교통공사|소방재난|의료원/.test(n))return"공기업";return"지자체"}
+function pDt(s){if(!s)return null;const t=String(s).trim();let m;if((m=t.match(/^(\d{2})\.(\d{2})\.(\d{2})$/)))return"20"+m[1]+"-"+m[2]+"-"+m[3];if((m=t.match(/^(\d{4})[-.](\d{2})[-.](\d{2})$/)))return m[1]+"-"+m[2]+"-"+m[3];return null}
+function isNew(at,d){return!d||d>=(CUT[at]||DCUT)}
+function curFR(at,ep){const r=NEW_R[at]||NEW_R["지자체"];for(const x of r)if(ep>=x.n&&ep<x.x)return x.r;return r[r.length-1].r}
+function eraFR(at,ep,d){const t=isNew(at,d)?NEW_R:OLD_R;const r=t[at]||t["지자체"];for(const x of r)if(ep>=x.n&&ep<x.x)return x.r;return r[r.length-1].r}
+function fm(n){return n==null||isNaN(n)?"—":Math.round(n).toLocaleString()}
+function fp(n){return n==null||isNaN(n)?"—":Number(n).toFixed(4)+"%"}
+function tn(s){if(typeof s==="number")return s;return parseFloat(String(s).replace(/,/g,""))||0}
+function tc(n){const v=tn(n);return v?v.toLocaleString():"0"}
+const CHO="ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+function gCho(s){let r="";for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);r+=(c>=0xAC00&&c<=0xD7A3)?CHO[Math.floor((c-0xAC00)/588)]:s[i]}return r}
+function mSch(nm,q){if(!q)return false;return nm.toLowerCase().includes(q.toLowerCase())||gCho(nm).includes(q)}
 
-// 낙찰하한율 자동산출 (조달청 적격심사기준서 명시값)
-// A값 제외 산식: (입찰가격-A)/(예정가격-A) ≥ 하한율
-function calcRate(type,est,shortage){
-  shortage=parseInt(shortage)||0;
-  // 기준서 명시 낙찰하한율 (부족점수 0점 기준)
-  var baseRate;
-  if(['전기','통신','소방','국가유산'].includes(type)){
-    if(est>=1000000000)baseRate=88.745;// 10~50억
-    else baseRate=89.745;// 10억미만 (3~10억, 8천만~3억, 8천만미만 모두 동일)
-  }else{
-    // 종합·전문 (토목/건축 등)
-    if(est>=5000000000)baseRate=87.495;// 50~100억
-    else if(est>=1000000000)baseRate=88.745;// 10~50억
-    else baseRate=89.745;// 10억미만
-  }
-  // 부족점수 보완: 1점당 0.05%p 상승 (산식 역산)
-  // 70-20×|{90/100-x}×100|=(65+shortage) → x=90-(5-shortage)/20 = 89.75+shortage/20
-  // 차이: shortage×0.05%p (대략적)
-  if(shortage>0)baseRate=Math.round((baseRate+shortage*0.05)*1000)/1000;
-  return baseRate;
+/* ── BIFF8 파서 (동일) ── */
+function parseBIFF8(buf){const u8=new Uint8Array(buf),dv=new DataView(buf),SS=512;const ds=dv.getInt32(76,true);if(ds<0||(ds+1)*SS+SS>buf.byteLength)throw new Error("FAT");const fat=[];for(let i=0;i<SS/4;i++)fat.push(dv.getInt32((ds+1)*SS+i*4,true));const dr=dv.getInt32(48,true),dO=(dr+1)*SS;let ws=-1,wz=0;for(let i=0;i<16;i++){const e=dO+i*128;if(e+128>buf.byteLength)break;const nl=dv.getUint16(e+64,true);if(nl<=0||nl>64)continue;let nm="";for(let c=0;c<nl-2;c+=2)nm+=String.fromCharCode(dv.getUint16(e+c,true));if(nm==="Workbook"){ws=dv.getInt32(e+116,true);wz=dv.getUint32(e+120,true)}}if(ws<0)throw new Error("NoWB");const wb=new Uint8Array(wz);let cur=ws,wp=0,sf=0;while(cur>=0&&cur<fat.length&&cur!==-1&&cur!==-2&&wp<wz&&sf<5000){const off=(cur+1)*SS,len=Math.min(SS,wz-wp);if(off+len<=buf.byteLength){wb.set(u8.subarray(off,off+len),wp);wp+=len}cur=fat[cur];sf++}if(wp<100)throw new Error("Short");const wv=new DataView(wb.buffer,0,wp);let pos=0;const sb=[],lb=[],nums=[];let lt=0;while(pos+4<=wp){const t=wv.getUint16(pos,true),l=wv.getUint16(pos+2,true);if(l>20000||pos+4+l>wp)break;const s=pos+4;if(t===0x00FC||(t===0x003C&&(lt===0x00FC||lt===0x003C)))for(let i=0;i<l;i++)sb.push(wb[s+i]);else if(t===0x0203&&l>=14)nums.push({r:wv.getUint16(s,true),c:wv.getUint16(s+2,true),v:wv.getFloat64(s+6,true)});else if(t===0x00FD&&l>=10)lb.push({r:wv.getUint16(s,true),c:wv.getUint16(s+2,true),i:wv.getUint32(s+6,true)});lt=t;pos+=4+l}if(sb.length<8)throw new Error("NoSST");const sst=new Uint8Array(sb),sd=new DataView(sst.buffer);const uc=sd.getUint32(4,true),strs=[];let sp=8;for(let si=0;si<uc&&sp+3<=sst.length;si++){const sl=sd.getUint16(sp,true),fl=sst[sp+2];sp+=3;let rc=0,ex=0;if((fl&0x08)&&sp+2<=sst.length){rc=sd.getUint16(sp,true);sp+=2}if((fl&0x04)&&sp+4<=sst.length){ex=sd.getUint32(sp,true);sp+=4}let str="";if(fl&0x01){const bl=sl*2;if(sp+bl>sst.length)break;for(let c=0;c<sl;c++)str+=String.fromCharCode(sd.getUint16(sp+c*2,true));sp+=bl}else{if(sp+sl>sst.length)break;try{str=new TextDecoder("euc-kr").decode(sst.slice(sp,sp+sl))}catch(e){for(let c=0;c<sl;c++)str+=String.fromCharCode(sst[sp+c])}sp+=sl}sp+=rc*4+ex;strs.push(str)}const maxR=Math.max(0,...nums.map(n=>n.r),...lb.map(l=>l.r));const rows=[];for(let r=1;r<=maxR;r++){const rd={};let cnt=0;for(const l of lb)if(l.r===r&&l.i<strs.length){rd[l.c]=strs[l.i];cnt++}for(const n of nums)if(n.r===r){rd[n.c]=n.v;cnt++}if(cnt>=3)rows.push(rd)}return rows}
+
+function parseHTMLTbl(t){const doc=new DOMParser().parseFromString(t,"text/html");const tables=doc.querySelectorAll("table");if(!tables.length)return null;let best=null,bN=0;tables.forEach(t=>{const n=t.querySelectorAll("tr").length;if(n>bN){bN=n;best=t}});if(!best||bN<2)return null;const res=[];best.querySelectorAll("tr").forEach(tr=>{const row=[];tr.querySelectorAll("td, th").forEach(c=>row.push(c.textContent.trim()));if(row.length>=5)res.push(row)});if(res.length<2)return null;const data=[];for(let i=1;i<res.length;i++){const rd={};res[i].forEach((v,j)=>{rd[j]=v});data.push(rd)}return data}
+
+async function parseFile(file){const buf=await file.arrayBuffer();const u8=new Uint8Array(buf);if(u8[0]===0xD0&&u8[1]===0xCF)return{rows:parseBIFF8(buf)};const text=await file.text();const html=parseHTMLTbl(text);if(html)return{rows:html};const csv=Papa.parse(text,{skipEmptyLines:true});if(csv.data){const v=csv.data.filter(r=>r.length>=5);if(v.length>=2){const kn=["번호","공고명","공고번호","발주기관","추정가격","기초금액","A값","순공사원가","예정가격","낙찰하한가","예가/기초(100%)","예가/기초(0%)","1순위업체","1순위사업자번호","1순위투찰금액","1순위사정율(100%)","1순위사정율(0%)","1순위기초대비","업체수","개찰일","입력일","업종","G2B물품분류","지역"];const cm={};v[0].forEach((h,i)=>{const idx=kn.indexOf(String(h).trim());if(idx>=0)cm[idx]=i});const um=Object.keys(cm).length>=5;const data=[];for(let i=1;i<v.length;i++){const r=v[i],rd={};if(um)for(const[ki,ci]of Object.entries(cm))rd[parseInt(ki)]=r[ci];else r.forEach((vv,j)=>{rd[j]=vv});data.push(rd)}return{rows:data}}}throw new Error("지원되지 않는 형식")}
+
+function rowToDb(r){const pv=s=>{if(s==null||s==="")return 0;if(typeof s==="number")return s;return parseFloat(String(s).replace(/,/g,""))||0};const ag=String(r[3]||""),at=clsAg(ag),ba=pv(r[5]),ep=pv(r[4]),av=pv(r[6]),od=pDt(String(r[19]||"")),era=isNew(at,od)?"new":"old";return{dedup_key:String(r[1]||"")+"|"+ag+"|"+String(r[19]||"")+"|"+ba,pn:String(r[1]||""),pn_no:String(r[2]||""),ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:String(r[7]||""),xp:pv(r[8])||null,floor_price:pv(r[9])||null,ar1:pv(r[10])||null,ar0:pv(r[11])||null,co:String(r[12]||""),co_no:String(r[13]||""),bp:pv(r[14])||null,br1:pv(r[15])||null,br0:pv(r[16])||null,base_ratio:pv(r[17])||null,pc:Math.round(pv(r[18]))||0,od:od||null,input_date:pDt(String(r[20]||""))||null,cat:String(r[21]||""),g2b:String(r[22]||""),reg:String(r[23]||""),era,has_a:av>0,fr:eraFR(at,ep,od)}}
+
+function dbToLocal(r){return{id:r.id,pn:r.pn||"",ag:r.ag||"",at:r.at||"지자체",ep:Number(r.ep)||0,ba:Number(r.ba)||0,av:Number(r.av)||0,ar1:r.ar1!=null?Number(r.ar1):null,br1:r.br1!=null?Number(r.br1):null,pc:r.pc||0,od:r.od||"",co:r.co||"",hasA:Number(r.av)>0,fr:Number(r.fr)||89.745,era:r.era||"new"}}
+
+/* ── 통계 & 예측 (동일) ── */
+const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;const std=a=>{if(a.length<2)return 0;const u=avg(a);return Math.sqrt(a.reduce((x,y)=>x+(y-u)**2,0)/a.length)};
+function calcS(recs,filter){const src=filter?recs.filter(filter):recs;const bT={},bA={};for(const r of src){if(r.ar1==null||r.br1==null)continue;if(!bT[r.at])bT[r.at]={a:[],b:[],d:[],p:[],ba:[]};const t=bT[r.at];t.a.push(r.ar1);t.b.push(r.br1);t.d.push(r.br1-r.ar1);t.p.push(r.pc);t.ba.push(r.ba);if(!r.ag)continue;if(!bA[r.ag])bA[r.ag]={at:r.at,a:[],b:[],d:[],p:[],ba:[]};const aa=bA[r.ag];aa.a.push(r.ar1);aa.b.push(r.br1);aa.d.push(r.br1-r.ar1);aa.p.push(r.pc);aa.ba.push(r.ba)}const mk=v=>({n:v.a.length,am:avg(v.a),as:std(v.a),bm:avg(v.b),bs:std(v.b),dm:avg(v.d),pp:avg(v.p),pb:avg(v.ba)});const ts={},as={};for(const[k,v]of Object.entries(bT))ts[k]=mk(v);for(const[k,v]of Object.entries(bA))as[k]={...mk(v),at:v.at};return{ts,as}}
+function predictV2(inp,aT,aA){const ex=aA[inp.agName],tS=aT[inp.at];let s,src;if(ex&&ex.n>=3){s=ex;src="발주기관"}else if(ex&&ex.n===2&&tS){s={n:ex.n+tS.n,am:ex.am*.6+tS.am*.4,as:Math.max(ex.as,tS.as),bm:ex.bm*.6+tS.bm*.4,bs:Math.max(ex.bs,tS.bs),dm:ex.dm*.6+tS.dm*.4,pp:ex.pp*.6+tS.pp*.4,pb:ex.pb};src="블렌딩"}else if(tS){s=tS;src="유형"}else{s={am:100,as:.5,bm:100.02,bs:.5,dm:.02,n:1,pp:100,pb:1e8};src="기본"}const ePC=inp.pc||s.pp||100;let pcM=1;if(ePC<10)pcM=2.5;else if(ePC<30)pcM=1.5;else if(ePC>=100)pcM=.7;let amM=1;if(inp.ba<3e8)amM=1.2;else if(inp.ba>=1e9)amM=.5;const bD=s.dm,aD=bD*pcM*amM,fr=curFR(inp.at,inp.ep),hA=inp.av>0;const conf=Math.min(.95,(s.n/50)*Math.max(0.1,1-Math.min(s.as,1)/2));const strats=[{nm:"안전",off:-Math.abs(aD)*.5},{nm:"추천",off:0},{nm:"공격",off:Math.abs(aD)*1.5}].map(st=>{const ar=s.bm+aD+st.off,ep=Math.round(inp.ba*ar/100);let bid;if(hA)bid=Math.ceil((ep-inp.av)*fr/100+inp.av);else bid=Math.ceil(ep*fr/100);return{...st,adjRate:ar,expectedPrice:ep,bidAmount:bid,wp:st.nm==="안전"?Math.round(conf*25):st.nm==="추천"?Math.round(conf*40):Math.round(conf*20)}});return{at:inp.at,fr,pa:s.am,pb:s.bm+aD,d:aD,bD,pcM,amM,conf,n:s.n,hasA:hA,src,srcName:ex&&ex.n>=2?inp.agName:inp.at,strats}}
+
+const C={bg:"#0c0c1a",bg2:"#12122a",bg3:"#1a1a30",bdr:"#252540",gold:"#d4a834",txt:"#ccc",txm:"#888",txd:"#555"};
+const inpS={width:"100%",background:"#1a1a30",border:"1px solid #252540",borderRadius:5,padding:"7px 10px",color:"#ccc",fontSize:12,outline:"none",boxSizing:"border-box"};
+
+function MI({value,onChange}){return <input value={value===0||value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
+
+function AS({value,onChange,agencies}){const[open,setOpen]=useState(false);const[q,setQ]=useState(value);const ref=useRef(null);useEffect(()=>{setQ(value)},[value]);useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false)};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h)},[]);const fl=useMemo(()=>(!q||q.length<1)?agencies.slice(0,8):agencies.filter(a=>mSch(a,q)).slice(0,8),[q,agencies]);return(<div ref={ref} style={{position:"relative"}}><input value={q} onChange={e=>{setQ(e.target.value);onChange(e.target.value);setOpen(true)}} onFocus={()=>setOpen(true)} placeholder="초성/이름 검색" style={inpS}/>{open&&fl.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,background:"#12122a",border:"1px solid #252540",borderRadius:"0 0 6px 6px",zIndex:10,maxHeight:200,overflowY:"auto"}}>{fl.map((a,i)=><div key={i} onClick={()=>{setQ(a);onChange(a);setOpen(false)}} style={{padding:"7px 10px",fontSize:11,cursor:"pointer",borderBottom:"1px solid #0c0c1a",color:"#ccc"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a30"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{a} <span style={{fontSize:9,color:"#555",marginLeft:4}}>{clsAg(a)}</span></div>)}</div>}</div>)}
+
+/* ═══ 메인 앱 — JSX 코드는 bid-prediction-mvp.jsx와 동일 ═══ */
+/* 이 파일은 배포 가이드용 템플릿입니다. 전체 App 컴포넌트는 */
+/* bid-prediction-mvp.jsx에서 export default function App 부분을 */
+/* 여기에 복사하여 사용합니다. */
+
+function App() {
+  return (
+    <div style={{fontFamily:"system-ui,sans-serif",background:C.bg,color:C.txt,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{textAlign:"center",padding:40}}>
+        <div style={{fontSize:24,fontWeight:700,color:C.gold,marginBottom:12}}>입찰 분석 시스템 v2</div>
+        <div style={{fontSize:14,color:C.txm,marginBottom:24}}>Supabase DB 연결 확인 중...</div>
+        <div style={{fontSize:12,color:C.txd}}>이 HTML 파일에 전체 앱 코드를 포함하면<br/>브라우저에서 바로 실행됩니다.</div>
+      </div>
+    </div>
+  );
 }
 
-// 예가폭 보정 예측
-function prdAdv(on,spread){
-  var base=prd(on);
-  if(!base)return null;
-  // 예가폭이 지정되면 표준편차를 이론적 범위로 보정
-  // 복수예가 15개 중 4개 평균 → 중심극한정리: σ_예정 ≈ (예가폭범위) / (2×√12×√4)
-  // ±3% → 범위6%, σ≈6/(2×3.464×2)=0.433
-  // ±2% → 범위4%, σ≈4/(2×3.464×2)=0.289
-  // 0~-6% → 범위6%, σ≈0.433, 평균 -3% 오프셋
-  if(spread&&!isNaN(parseFloat(spread))){
-    var sp=parseFloat(spread);
-    var range=sp===6?6:(sp*2);// ±sp% → range=sp*2, 0~-6% → range=6
-    var theoSd=range/(2*Math.sqrt(12)*2);// 이론적 σ
-    // 실제 데이터의 σ와 이론적 σ의 가중평균 (데이터 많으면 데이터 우선)
-    var sm=S.find(o=>o.n===on);
-    var dataCount=sm?sm.c:0;
-    var dataW=Math.min(dataCount/20,1);// 20건 이상이면 데이터 100% 신뢰
-    var adjSd=dataW*base.s+(1-dataW)*theoSd;
-    // 0~-6% 같은 비대칭 범위면 예측값도 보정
-    var adjP=base.p;
-    if(sp===6){// 0%~-6% 범위: 평균이 -3%쪽으로 치우침
-      var bias=-3;// 100%-3%=97% 중심
-      adjP=dataW*base.p+(1-dataW)*(100+bias/(2*Math.sqrt(12)*2));
-    }
-    return{
-      p:Math.round(adjP*1e4)/1e4,
-      c:adjSd<0.4?'높음':adjSd<0.7?'보통':'낮음',
-      r:[Math.round((adjP-adjSd)*1e4)/1e4,Math.round((adjP+adjSd)*1e4)/1e4],
-      s:Math.round(adjSd*1e4)/1e4,
-      tr:base.tr,
-      adjusted:true,
-      theoSd:Math.round(theoSd*1e4)/1e4
-    };
-  }
-  return base;
-}
-
-// State
-let TAB='dashboard', ORG=null, PG=0;
-
-// 탭별 입력값 캐시
-const _ts={
-  orgs:{isrch:'',ityp:'전체',isort:'name',PG:0,ORG:null,scroll:0},
-  predict:{ipsrch:'',iporg:'',ipbase:'',ipest:'',ipaval:'',iptype:'전기',ipspread:'',iprate:'auto',ipratecustom:'',ipshort:'0',ipjoint:'no',scroll:0},
-  upload:{mgSrch:'',mgTyp:'전체',PG:0,scroll:0},
-  dashboard:{scroll:0},
-  guide:{scroll:0}
-};
-
-function _saveTab(){
-  var s=_ts[TAB];if(!s)return;
-  s.scroll=document.getElementById('out').scrollTop||window.scrollY||0;
-  if(TAB==='orgs'){s.isrch=getV('isrch');s.ityp=getV('ityp');s.isort=getV('isort');s.PG=PG;s.ORG=ORG}
-  else if(TAB==='predict'){s.ipsrch=getV('ipsrch');s.iporg=getV('iporg');s.ipbase=getV('ipbase');s.ipest=getV('ipest');s.ipaval=getV('ipaval');s.iptype=getV('iptype');s.ipspread=getV('ipspread');s.iprate=getV('iprate');s.ipratecustom=getV('ipratecustom');s.ipshort=getV('ipshort');s.ipjoint=getV('ipjoint')}
-  else if(TAB==='upload'){s.mgSrch=getV('mgSrch');s.mgTyp=getV('mgTyp');s.PG=PG}
-}
-function _restoreTab(){
-  var s=_ts[TAB];if(!s)return;
-  if(TAB==='orgs'){ORG=s.ORG;PG=s.PG}
-  else if(TAB==='upload'){PG=s.PG}
-}
-function _restoreInputs(){
-  var s=_ts[TAB];if(!s)return;
-  if(TAB==='orgs'){_setV('isrch',s.isrch);_setV('ityp',s.ityp);_setV('isort',s.isort)}
-  else if(TAB==='predict'){_setV('ipsrch',s.ipsrch);_setV('iporg',s.iporg);_setV('ipbase',s.ipbase);_setV('ipest',s.ipest);_setV('ipaval',s.ipaval);_setV('iptype',s.iptype);_setV('ipspread',s.ipspread);_setV('iprate',s.iprate);_setV('ipratecustom',s.ipratecustom);_setV('ipshort',s.ipshort);_setV('ipjoint',s.ipjoint);var _prc=document.getElementById('ipratecustom');if(_prc)_prc.style.display=s.iprate==='custom'?'block':'none'}
-  else if(TAB==='upload'){_setV('mgSrch',s.mgSrch);_setV('mgTyp',s.mgTyp)}
-  requestAnimationFrame(function(){window.scrollTo(0,s.scroll||0)});
-}
-function _setV(id,v){var e=document.getElementById(id);if(e&&v!=null)e.value=v}
-
-// Input elements are never destroyed - they live in #bar
-
-function go(t){
-  if(t===TAB)return;
-  _saveTab();
-  TAB=t;
-  _restoreTab();
-  drawHdr();drawBar();drawOut();
-  _restoreInputs();
-  // predict 탭은 입력 복원 후 orgList 재렌더링 필요
-  if(TAB==='predict'){
-    var iporg=document.getElementById('iporg');
-    var ips=document.getElementById('ipsrch');
-    if(iporg&&ips&&iporg.value){
-      ips.value=iporg.value;
-      renderOrgList(iporg.value);
-    }
-  }
-}
-function drawHdr(){
-  document.getElementById('hdr').innerHTML='<div style="margin-bottom:8px"><h1>전기공사 입찰 사정율 분석</h1><p class="sub">'+fmt(R.length)+'건 · '+S.length+'개 발주처</p></div>';
-  let tabs='<div class="tabs">';
-  [['dashboard','대시보드'],['orgs','발주처 DB'],['predict','투찰 예측'],['upload','데이터 관리'],['guide','가이드']].forEach(function(t){tabs+='<button class="tab'+(TAB===t[0]?' on':'')+'" data-t="'+t[0]+'">'+t[1]+'</button>'});
-  tabs+='</div>';
-  document.getElementById('tabbar').innerHTML=tabs;
-  document.getElementById('tabbar').querySelectorAll('.tab').forEach(function(b){b.onclick=function(){go(b.dataset.t);document.getElementById('tabbar').scrollIntoView({behavior:'smooth',block:'start'})}});
-}
-
-function drawBar(){
-  const el=document.getElementById('bar');
-  const types=['전체',...new Set(S.map(o=>o.t))];
-  let h='';
-
-  if(TAB==='orgs'&&!ORG){
-    h+='<div style="display:grid;gap:8px;margin-bottom:10px"><div class="row"><input class="inp" id="isrch" placeholder="발주처 검색..." style="flex:1"><select class="sel" id="ityp">'+types.map(t=>'<option>'+t+'</option>').join('')+'</select></div><div class="row" style="gap:6px"><span class="sub" style="white-space:nowrap">정렬</span><select class="sel" id="isort"><option value="name">가나다순</option><option value="count">입찰건수순</option><option value="wins">낙찰건수순</option></select></div></div>';
-  }
-
-  if(TAB==='predict'){
-    h+='<div class="g" style="gap:10px;margin-bottom:14px">';
-    h+='<div><div class="ml">발주처 검색 ('+S.length+'곳)</div><input class="inp" id="ipsrch" placeholder="발주처명을 입력하세요..."><div id="orgList" style="max-height:200px;overflow-y:auto;margin-top:4px"></div><input type="hidden" id="iporg"></div>';
-    h+='<div class="g g3"><div><div class="ml">기초금액 (원) *</div><input class="inp" id="ipbase" placeholder="0"></div>';
-    h+='<div><div class="ml">추정가격 (원) *</div><input class="inp" id="ipest" placeholder="0"></div>';
-    h+='<div><div class="ml">A값 (원)</div><input class="inp" id="ipaval" placeholder="0"></div></div>';
-    h+='<div class="g g3"><div><div class="ml">업종</div><select class="sel" id="iptype" style="width:100%"><option value="전기">전기공사</option><option value="통신">통신공사</option><option value="소방">소방공사</option><option value="건축">건축공사</option><option value="토목">토목공사</option><option value="국가유산">국가유산공사</option></select></div>';
-    h+='<div><div class="ml">예가폭</div><select class="sel" id="ipspread" style="width:100%"><option value="3">±3%</option><option value="2">±2%</option><option value="6">0%~-6%</option><option value="">자동</option></select></div>';
-    h+='<div><div class="ml">공동도급</div><select class="sel" id="ipjoint" style="width:100%"><option value="no">단독 입찰</option><option value="yes">공동도급 (공동이행)</option></select></div></div>';
-    h+='<div class="g g2"><div><div class="ml">낙찰하한율 <span id="rateInfo" style="color:var(--grn);font-size:10px"></span></div><div class="row" style="gap:4px"><select class="sel" id="iprate" style="flex:1"><option value="auto">자동 (업종·추정가격 기준)</option><option value="89.745">89.745% (10억미만)</option><option value="88.745">88.745% (10~50억)</option><option value="87.495">87.495% (50~100억)</option><option value="custom">직접입력</option></select><input class="inp" id="ipratecustom" placeholder="89.745" style="width:80px;display:none"></div></div>';
-    h+='<div><div class="ml">적격심사 부족점수</div><select class="sel" id="ipshort" style="width:100%"><option value="0">만점 (시공경험+경영상태 충족)</option><option value="1">1점 부족</option><option value="2">2점 부족</option></select></div></div>';
-    h+='</div>';
-  }
-
-  if(TAB==='upload'){
-    h+='<div class="row" style="margin-bottom:10px"><input class="inp" id="mgSrch" placeholder="발주처/공고명 검색..." style="flex:1"><select class="sel" id="mgTyp"><option>전체</option>';
-    var utyps={};S.forEach(function(o){utyps[o.t]=1});Object.keys(utyps).forEach(function(t){h+='<option>'+t+'</option>'});
-    h+='</select></div>';
-  }
-
-  el.innerHTML=h;
-
-  // Attach listeners - these inputs persist until tab changes
-  const si=document.getElementById('isrch');
-  if(si)si.oninput=function(){PG=0;drawOut()};
-  const tf=document.getElementById('ityp');
-  if(tf)tf.onchange=function(){PG=0;drawOut()};
-  const so=document.getElementById('isort');
-  if(so)so.onchange=function(){PG=0;drawOut()};
-  const ms=document.getElementById('mgSrch');
-  if(ms)ms.oninput=function(){PG=0;drawOut()};
-  const mty=document.getElementById('mgTyp');
-  if(mty)mty.onchange=function(){PG=0;drawOut()};
-
-  // predict 탭 발주처 검색 바인딩
-  if(TAB==='predict') setupPredictSearch();
-
-  const pb=document.getElementById('ipbase');
-  if(pb)pb.oninput=function(){var cur=this.selectionStart,raw=this.value.replace(/,/g,''),num=raw.replace(/[^0-9]/g,'');if(num){var formatted=parseInt(num).toLocaleString('ko-KR');var addedCommas=formatted.length-num.length;this.value=formatted;this.selectionStart=this.selectionEnd=cur+addedCommas-(this.value.length<raw.length?1:0)}else{this.value=''}drawOut()};
-  const pe=document.getElementById('ipest');
-  if(pe)pe.oninput=function(){var cur=this.selectionStart,raw=this.value.replace(/,/g,''),num=raw.replace(/[^0-9]/g,'');if(num){var formatted=parseInt(num).toLocaleString('ko-KR');var addedCommas=formatted.length-num.length;this.value=formatted;this.selectionStart=this.selectionEnd=cur+addedCommas-(this.value.length<raw.length?1:0)}else{this.value=''}drawOut()};
-  const plim=document.getElementById('iplimit');
-  const pav=document.getElementById('ipaval');
-  if(pav)pav.oninput=function(){var cur=this.selectionStart,raw=this.value.replace(/,/g,''),num=raw.replace(/[^0-9]/g,'');if(num){var formatted=parseInt(num).toLocaleString('ko-KR');var addedCommas=formatted.length-num.length;this.value=formatted;this.selectionStart=this.selectionEnd=cur+addedCommas-(this.value.length<raw.length?1:0)}else{this.value=''}drawOut()};
-  const pt=document.getElementById('iptype');
-  if(pt)pt.onchange=function(){drawOut()};
-  const ps=document.getElementById('ipspread');
-  if(ps)ps.onchange=function(){drawOut()};
-  const pr=document.getElementById('iprate');
-  const prc=document.getElementById('ipratecustom');
-  if(pr)pr.onchange=function(){if(prc)prc.style.display=this.value==='custom'?'block':'none';drawOut()};
-  if(prc)prc.oninput=function(){drawOut()};
-  if(pr&&prc&&pr.value==='custom')prc.style.display='block';
-  const psh=document.getElementById('ipshort');
-  if(psh)psh.onchange=function(){drawOut()};
-  const pjt=document.getElementById('ipjoint');
-  if(pjt)pjt.onchange=function(){drawOut()};
-}
-
-function renderOrgList(q){
-  var orgL=document.getElementById('orgList');
-  var iporg=document.getElementById('iporg');
-  var ips=document.getElementById('ipsrch');
-  if(!orgL)return;
-  var filtered=S.filter(function(o){return !q||o.n.indexOf(q)>=0}).slice(0,30);
-  var h='';
-  if(q&&q.length>0&&filtered.length>0){
-    filtered.forEach(function(o){
-      var sel=iporg&&iporg.value===o.n;
-      h+='<div class="orgitem" data-on="'+o.n+'" style="padding:7px 10px;border-bottom:1px solid var(--bd);cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;'+(sel?'background:var(--bg2);font-weight:500':'')+'">'
-        +'<div style="flex:1;min-width:0"><div class="tr" style="font-weight:500">'+o.n+'</div><div style="font-size:11px;color:var(--tx2)">μ'+fR(o.m,3)+'% · σ'+fR(o.s,3)+' · '+o.c+'건</div></div>'
-        +bg(o.t)+'</div>';
-    });
-  }else if(!q||q.length===0){
-    h+='<div style="padding:10px;font-size:12px;color:var(--tx3);text-align:center">발주처명을 입력하면 목록이 표시됩니다</div>';
-  }else{
-    h+='<div style="padding:10px;font-size:12px;color:var(--tx3);text-align:center">검색 결과가 없습니다</div>';
-  }
-  orgL.innerHTML=h;
-  orgL.querySelectorAll('.orgitem').forEach(function(el){
-    el.onmouseenter=function(){this.style.background='var(--bg2)'};
-    el.onmouseleave=function(){this.style.background=(iporg&&iporg.value===this.dataset.on)?'var(--bg2)':''};
-    el.onclick=function(){
-      if(iporg)iporg.value=this.dataset.on;
-      if(ips)ips.value=this.dataset.on;
-      renderOrgList(this.dataset.on);
-      drawOut();
-    };
-  });
-}
-
-function setupPredictSearch(){
-  var ips=document.getElementById('ipsrch');
-  var iporg=document.getElementById('iporg');
-  if(!ips)return;
-  ips.oninput=function(){
-    renderOrgList(this.value);
-    if(!this.value&&iporg){iporg.value='';drawOut()}
-  };
-  // 초기 렌더
-  if(iporg&&iporg.value){ips.value=iporg.value;renderOrgList(iporg.value)}
-  else{renderOrgList('')}
-}
-
-function getV(id){const e=document.getElementById(id);return e?e.value:''};
-
-function drawOut(){
-  const el=document.getElementById('out');
-  let h='';
-
-  // DASHBOARD
-  if(TAB==='dashboard'){
-    if(R.length===0){
-      // 데이터 없음 — 업로드 유도
-      h+='<div style="text-align:center;padding:40px 20px">';
-      h+='<div style="font-size:40px;margin-bottom:12px">📊</div>';
-      h+='<h2 style="margin-bottom:8px">입찰 데이터를 업로드해 주세요</h2>';
-      h+='<p class="sub" style="margin-bottom:20px;line-height:1.7">CSV, JSON, Excel 파일을 업로드하면<br>사정율 분석, 발주처 통계, 투찰 예측 기능을 사용할 수 있습니다.</p>';
-      h+='<div id="initDropZone" style="border:2px dashed var(--blue);border-radius:12px;padding:36px 20px;cursor:pointer;max-width:400px;margin:0 auto;background:var(--bg2)">';
-      h+='<div style="font-size:15px;font-weight:600;color:var(--blue);margin-bottom:6px">파일 드래그 또는 클릭</div>';
-      h+='<div class="sub">seed_data.json / seed_data.csv 또는 낙찰정보 파일</div>';
-      h+='<input type="file" id="initFup" accept=".csv,.json,.xls,.xlsx" multiple style="display:none">';
-      h+='</div>';
-      h+='<div id="initUploadResult" style="margin-top:12px"></div>';
-      h+='<div class="sub" style="margin-top:16px">또는 상단 <strong>데이터 관리</strong> 탭에서 업로드할 수 있습니다.</div>';
-      h+='</div>';
-    }else{
-    const avgR=S.filter(o=>o.c>=5).reduce((a,o)=>a+o.m,0)/(S.filter(o=>o.c>=5).length||1);
-    const allR=R.map(r=>r[3]).filter(r=>r>=97&&r<=103);
-    h+='<div class="g g4" style="margin-bottom:14px">'+mc('총 데이터',fmt(R.length)+'건')+mc('발주처',S.length+'곳')+mc('평균 사정율',fR(avgR,3)+'%')+mc('1위 편차기준','≤0.05%')+'</div>';
-    h+='<h3>전체 사정율 분포 ('+fmt(allR.length)+'건)</h3>'+hst(allR,680,160)+'<div class="sub" style="margin:4px 0 16px">빨간점선=기초금액(100%)</div>';
-    h+='<h3>발주처 유형별</h3><div style="margin-bottom:16px">';
-    const tm={};S.forEach(o=>{if(!tm[o.t])tm[o.t]={rs:[],cnt:0};tm[o.t].rs.push(o.m);tm[o.t].cnt+=o.c});
-    Object.entries(tm).sort((a,b)=>b[1].cnt-a[1].cnt).forEach(([type,d])=>{const mean=d.rs.reduce((a,b)=>a+b,0)/d.rs.length,c=TC[type]||TC['기타'],off=mean-100,bw=Math.min(Math.abs(off)*60,48),bl=off>=0?50:50-bw;h+='<div class="row" style="font-size:12px;margin-bottom:4px"><div style="min-width:85px;text-align:right">'+bg(type)+'</div><div style="flex:1;height:18px;background:var(--bg2);border-radius:4px;position:relative;overflow:hidden"><div style="position:absolute;left:50%;top:0;bottom:0;width:.5px;background:var(--bd)"></div><div style="position:absolute;left:'+bl+'%;top:2px;height:14px;width:'+bw+'%;background:'+c.d+';border-radius:3px;opacity:.55;min-width:2px"></div></div><div style="min-width:68px;color:var(--tx2)">'+fR(mean,3)+'%</div><div style="min-width:45px;font-size:11px;color:var(--tx3)">'+fmt(d.cnt)+'건</div></div>'});
-    h+='</div><h3>상위 발주처 추이</h3><div class="g g2">';
-    S.slice(0,8).forEach(o=>{const rc=R.filter(r=>r[0]===o.n).sort((a,b)=>b[2].localeCompare(a[2])).slice(0,15);h+='<div class="cb" style="cursor:pointer" data-org="'+o.n+'"><div class="row" style="margin-bottom:6px;justify-content:space-between"><div class="tr" style="font-size:12px;font-weight:600;max-width:170px">'+o.n+'</div>'+bg(o.t)+'</div>'+spk(rc.map(r=>r[3]).reverse(),140,30)+'<div class="row" style="justify-content:space-between;margin-top:4px;font-size:11px;color:var(--tx2)"><span>'+fR(o.m,2)+'%</span><span>σ'+fR(o.s,3)+'</span><span>'+o.c+'건</span></div></div>'});
-    h+='</div>';
-    } // end else (R.length > 0)
-  }
-
-  // ORG LIST
-  if(TAB==='orgs'&&!ORG){
-    const srch=getV('isrch'),typ=getV('ityp')||'전체',srt=getV('isort')||'name';
-    let fl=S.filter(o=>(typ==='전체'||o.t===typ)&&(!srch||o.n.includes(srch)));
-    if(srt==='name')fl.sort((a,b)=>a.n.localeCompare(b.n,'ko'));
-    else if(srt==='count')fl.sort((a,b)=>b.c-a.c);
-    else if(srt==='wins'){
-      const wMap={};R.forEach(r=>{if(r[7]===1){wMap[r[0]]=(wMap[r[0]]||0)+1}});
-      fl.sort((a,b)=>(wMap[b.n]||0)-(wMap[a.n]||0));
-    }
-    const ps=50,tp=Math.ceil(fl.length/ps)||1,pg=fl.slice(PG*ps,(PG+1)*ps);
-    h+='<div class="sub" style="margin-bottom:8px">'+fl.length+'개 · '+(PG+1)+'/'+tp+'p · 정렬: '+(srt==='name'?'가나다순':srt==='count'?'입찰건수순':'낙찰건수순')+'</div>';
-    pg.forEach(o=>{
-      const wCnt=R.filter(r=>r[0]===o.n&&r[7]===1).length;
-      h+='<div class="row" style="padding:7px 10px;border:1px solid var(--bd);border-radius:8px;margin-bottom:4px;cursor:pointer;font-size:12px" data-org="'+o.n+'"><div style="flex:1;min-width:0"><div class="tr" style="font-weight:600">'+o.n+'</div><div style="font-size:11px;color:var(--tx2)">μ'+fR(o.m,3)+'% · σ'+fR(o.s,3)+' · 입찰'+o.c+'건'+(wCnt?' · <span style="color:var(--grn)">낙찰'+wCnt+'건</span>':'')+'</div></div>'+bg(o.t)+'</div>'});
-    if(tp>1)h+='<div class="row" style="justify-content:center;margin-top:10px"><button class="btn pgb" data-p="'+(PG-1)+'"'+(PG===0?' disabled':'')+'>←</button><span class="sub" style="padding:0 8px">'+(PG+1)+'/'+tp+'</span><button class="btn pgb" data-p="'+(PG+1)+'"'+(PG>=tp-1?' disabled':'')+'>→</button></div>';
-  }
-
-  // ORG DETAIL
-  if(TAB==='orgs'&&ORG){
-    const o=S.find(x=>x.n===ORG);
-    if(!o){h+='<p>없음</p>';el.innerHTML=h;return}
-    const rc=R.filter(r=>r[0]===ORG).sort((a,b)=>b[2].localeCompare(a[2])),rt=rc.map(r=>r[3]),pr=prd(ORG);
-    h+='<button class="lnk" id="bbk">← 목록</button><div class="row" style="margin:8px 0 12px"><h2 style="margin:0">'+o.n+'</h2>'+bg(o.t)+'</div>';
-    h+='<div class="g g5" style="margin-bottom:14px">'+mc('평균',fR(o.m,3)+'%')+mc('표준편차',fR(o.s,4))+mc('중앙값',fR(o.md,3)+'%')+mc('범위',fR(o.mn,1)+'~'+fR(o.mx,1)+'%')+mc('건수',o.c+'건')+'</div>';
-    h+='<h3>추이 ('+Math.min(rc.length,50)+'건)</h3>'+spk(rc.slice(0,50).map(r=>r[3]).reverse(),680,110,true)+'<div style="height:10px"></div>';
-    h+='<h3>분포</h3>'+hst(rt,680,140)+'<div style="height:10px"></div>';
-    if(pr){h+='<h3>예측</h3>'+gss(o.m,o.s||.5,680,130,pr.p)+'<div class="g g4" style="margin:8px 0 14px">'+mc('예측',fR(pr.p,4)+'%')+mc('범위',fR(pr.r[0],2)+'~'+fR(pr.r[1],2)+'%')+mc('신뢰도',pr.c,'σ='+fR(pr.s,3))+mc('추세',pr.tr)+'</div>'}
-    var rcIdx=[];rc.forEach(function(r){for(var j=0;j<R.length;j++){if(R[j]===r){rcIdx.push(j);break}}});
-    h+='<h3>이력 ('+rc.length+'건)</h3><div class="scr">';
-    rc.forEach(function(r,i){var ri=rcIdx[i]!=null?rcIdx[i]:-1;h+='<div class="rowb" style="font-size:11px;cursor:pointer" onclick="DETAIL('+ri+')"><span style="min-width:95px;color:var(--tx2)">'+r[2]+'</span><span style="min-width:62px;font-weight:600;color:'+(r[3]>=100?'var(--grn)':'var(--blue)')+'">'+fR(r[3],4)+'%</span><span style="min-width:55px;color:var(--tx2)">'+fM(r[4])+'</span><span class="tr" style="flex:1;color:var(--tx3)">'+r[5]+'</span>'+(r[7]!=null?'<span style="min-width:35px;color:'+(r[7]>0&&r[7]<=5?'var(--grn)':'var(--tx3)')+'">'+(r[7]>0?r[7]+'위':'↓')+'</span>':'')+'</div>'});
-    h+='</div>';
-  }
-
-  // PREDICT
-  if(TAB==='predict'){
-    const po=getV('iporg'),pb=getV('ipbase');
-    const base=parseInt((pb||'0').replace(/,/g,''));
-    const pest=parseInt((getV('ipest')||'0').replace(/,/g,''));
-    const paval=parseInt((getV('ipaval')||'0').replace(/,/g,''));
-    const ptype=getV('iptype')||'전기';
-    const pspread=getV('ipspread');
-    const pshort=parseInt(getV('ipshort')||'0');
-    const pjoint=getV('ipjoint')||'no';
-    const rateMode=getV('iprate')||'auto';
-
-    // 낙찰하한율 결정
-    var hRate,hRateLabel='';
-    if(rateMode==='auto'){
-      hRate=pest>0?calcRate(ptype,pest,pshort):89.745;
-      hRateLabel='자동 ('+ptype+(pest>0?' '+fM(pest):'')+(pshort>0?' '+pshort+'점부족':'')+')';
-    }else if(rateMode==='custom'){
-      var cv=parseFloat(getV('ipratecustom'));
-      hRate=(!isNaN(cv)&&cv>50&&cv<100)?cv:89.745;hRateLabel='직접입력';
-    }else{hRate=parseFloat(rateMode);hRateLabel='선택값'}
-    var rInfo=document.getElementById('rateInfo');
-    if(rInfo)rInfo.textContent='→ '+hRate+'% ('+hRateLabel+')';
-
-    if(!po||!base){
-      h+='<div style="text-align:center;padding:40px;color:var(--tx3)">';
-      h+='<div style="font-size:28px;margin-bottom:10px">📋</div>';
-      h+='<h3 style="margin-bottom:12px">투찰 예측 시스템</h3>';
-      h+='<div style="font-size:12px;line-height:2;text-align:left;max-width:400px;margin:0 auto">';
-      h+='<div class="row" style="gap:6px;margin-bottom:4px"><span class="badge" style="background:var(--blue);color:#fff">1</span> 발주처 검색·선택 (이력 기반 예가/기초 예측)</div>';
-      h+='<div class="row" style="gap:6px;margin-bottom:4px"><span class="badge" style="background:var(--blue);color:#fff">2</span> 기초금액·추정가격 입력 → 예정가격 예측</div>';
-      h+='<div class="row" style="gap:6px;margin-bottom:4px"><span class="badge" style="background:var(--blue);color:#fff">3</span> A값+낙찰하한율 → 낙찰하한가 산출</div>';
-      h+='<div class="row" style="gap:6px;margin-bottom:4px"><span class="badge" style="background:var(--grn);color:#fff">4</span> 투찰금액·사정율 산출</div>';
-      h+='<div class="row" style="gap:6px"><span class="badge" style="background:var(--tx3);color:#fff">5</span> 시나리오 시뮬레이션</div>';
-      h+='</div>';
-      h+='<div class="sub" style="margin-top:16px">발주처와 기초금액을 입력하면 분석이 시작됩니다.</div></div>';
-    }else{
-      const sm=S.find(o=>o.n===po);
-      const p=pspread?prdAdv(po,pspread):prd(po);
-      if(p&&sm){
-        var predRate=p.p,loRate=p.r[0],hiRate=p.r[1];
-        var predYJ=Math.round(base*predRate/100);
-        var loYJ=Math.round(base*loRate/100);
-        var hiYJ=Math.round(base*hiRate/100);
-        var K=hRate/100;// 낙찰하한율
-
-        // ═══ 1단계: 예가/기초 예측 ═══
-        h+='<div class="cb"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span class="badge" style="background:var(--blue);color:#fff">1단계</span><h3 style="margin:0">예가/기초 예측</h3><span class="sub">— '+po+'</span></div>';
-        h+=gss(sm.m,p.s||sm.s||.5,640,130,predRate);
-        h+='<div class="g g4" style="margin-top:8px">'+mc('예측',fR(predRate,4)+'%')+mc('범위(±1σ)',fR(loRate,4)+'~'+fR(hiRate,4)+'%')+mc('신뢰도',p.c,'σ='+fR(p.s,4))+mc('추세',p.tr)+'</div>';
-        h+='<div style="font-size:11px;color:var(--tx3);margin-top:6px;line-height:1.7">'+sm.c+'건 가중평균 · 15개 복수예비가격 중 4개 평균 → 중심극한정리 100%근처 수렴';
-        if(p.adjusted)h+=' · 예가폭 보정';
-        h+='</div></div>';
-
-        // ═══ 2단계: 예정가격 예측 ═══
-        h+='<div class="cb"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span class="badge" style="background:var(--blue);color:#fff">2단계</span><h3 style="margin:0">예정가격 예측</h3></div>';
-        h+='<div class="c mono" style="line-height:1.8;font-size:12px">기초금액 × 예가/기초 = '+fmt(base)+' × '+fR(predRate,4)+'% = <strong style="color:var(--blue);font-size:14px">'+fmt(predYJ)+'원</strong></div>';
-        h+='<div class="g g3" style="margin-top:8px">'+mc('−1σ',fmt(loYJ)+'원','예가 '+fR(loRate,3)+'%')+mc('권장',fmt(predYJ)+'원','예가 '+fR(predRate,3)+'%')+mc('+1σ',fmt(hiYJ)+'원','예가 '+fR(hiRate,3)+'%')+'</div></div>';
-
-        // ═══ 3단계: 낙찰하한가 산출 ═══
-        var finalLimit,limLo,limHi,limFormula;
-        if(paval>0){
-          // A값 제외 산식: (입찰가격-A)/(예정가격-A) ≥ K → 하한가 = (예정-A)×K + A
-          finalLimit=Math.round((predYJ-paval)*K+paval);
-          limLo=Math.round((loYJ-paval)*K+paval);
-          limHi=Math.round((hiYJ-paval)*K+paval);
-          limFormula='aval';
-        }else{
-          // A값 미입력: 예정가격 × 하한율 (부정확)
-          finalLimit=Math.round(predYJ*K);
-          limLo=Math.round(loYJ*K);
-          limHi=Math.round(hiYJ*K);
-          limFormula='simple';
-        }
-
-        h+='<div class="cb" style="border-color:var(--blue)"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span class="badge" style="background:var(--blue);color:#fff">3단계</span><h3 style="margin:0">낙찰하한가 산출</h3><span class="badge" style="background:var(--bg2);color:var(--blue)">하한율 '+hRate+'%</span></div>';
-
-        if(limFormula==='aval'){
-          h+='<div class="c mono" style="line-height:2;font-size:12px">';
-          h+='<strong>공식: (예정가격 − A값) × 낙찰하한율 + A값</strong><br>';
-          h+='('+fmt(predYJ)+' − '+fmt(paval)+') × '+hRate+'% + '+fmt(paval)+'<br>';
-          h+='= '+fmt(predYJ-paval)+' × '+fR(K,6)+' + '+fmt(paval)+'<br>';
-          h+='= <strong style="color:var(--blue);font-size:14px">'+fmt(finalLimit)+'원</strong></div>';
-          h+='<div style="font-size:11px;color:var(--tx3);margin-top:4px">A값(감액불가 법정비) 전액보전 · 감액가능금액에만 하한율 적용 · 하한가/기초 '+fR(finalLimit/base*100,4)+'%</div>';
-        }else{
-          h+='<div style="font-size:12px;color:var(--red);margin-bottom:6px">⚠ A값 미입력 → 예정가격×하한율로 추정 (A값 입력 시 정확도 향상)</div>';
-          h+='<div class="c mono" style="font-size:12px">'+fmt(predYJ)+' × '+hRate+'% = <strong>'+fmt(finalLimit)+'원</strong> (하한가/기초 '+fR(finalLimit/base*100,4)+'%)</div>';
-        }
-        h+='<div class="g g3" style="margin-top:8px">'+mc('−1σ',fmt(limLo)+'원','예가 '+fR(loRate,3)+'%')+mc('권장',fmt(finalLimit)+'원','예가 '+fR(predRate,3)+'%')+mc('+1σ',fmt(limHi)+'원','예가 '+fR(hiRate,3)+'%')+'</div></div>';
-
-        // ═══ 4단계: 투찰금액 결정 ═══
-        var bid1=finalLimit+1;
-        var bid2=finalLimit+Math.max(Math.ceil(predYJ*0.0005),1);
-        var bid3=finalLimit+Math.max(Math.ceil(predYJ*0.001),1);
-
-        h+='<div class="ca" style="border-color:var(--grn)"><div style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><span class="badge" style="background:var(--grn);color:#fff">4단계</span><h3 style="margin:0;color:var(--grn)">투찰금액 결정</h3></div>';
-        h+='<div class="c" style="background:linear-gradient(135deg,var(--grn),#178a62);color:#fff;padding:16px;border-radius:10px;margin-bottom:12px;text-align:center">';
-        h+='<div style="font-size:11px;opacity:.8">권장 투찰금액 (하한가+1원)</div>';
-        h+='<div style="font-size:22px;font-weight:700;margin:4px 0">'+fmt(bid1)+'원</div>';
-        h+='<div style="font-size:12px;opacity:.9">기초대비 사정율: <strong>'+fR(bid1/base*100,4)+'%</strong></div></div>';
-
-        h+='<div class="g g3" style="margin-bottom:10px">';
-        h+=mc('최저가 (+1원)',fmt(bid1)+'원','사정율 '+fR(bid1/base*100,4)+'%');
-        h+=mc('안전 (+0.05%)',fmt(bid2)+'원','사정율 '+fR(bid2/base*100,4)+'%');
-        h+=mc('여유 (+0.1%)',fmt(bid3)+'원','사정율 '+fR(bid3/base*100,4)+'%');
-        h+='</div>';
-
-        if(pshort>0){
-          h+='<div style="padding:10px;border:1px solid var(--red);border-radius:8px;font-size:12px;color:var(--red);line-height:1.7;margin-bottom:10px">';
-          h+='<strong>적격심사 '+pshort+'점 부족 보완</strong>: 하한율 '+hRate+'%에 반영 완료</div>';
-        }
-        if(pjoint==='yes'){
-          h+='<div style="padding:10px;border:1px solid var(--blue);border-radius:8px;font-size:12px;color:var(--blue);line-height:1.7;margin-bottom:10px">';
-          h+='<strong>공동도급 유의</strong>: 시공경험 보완가능 · 경영상태 보완불가(전원 만점필수) · 시평 > 입찰금액×시공비율</div>';
-        }
-        h+='</div>';
-
-        // ═══ 5단계: 시나리오 ═══
-        h+='<div class="cb"><div style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><span class="badge" style="background:var(--tx3);color:#fff">5단계</span><h3 style="margin:0">시나리오 시뮬레이션</h3></div>';
-        h+='<div style="font-size:11px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:500px">';
-        h+='<tr style="background:var(--bg2)"><th style="padding:6px;text-align:left;border-bottom:1px solid var(--bd)">시나리오</th><th style="padding:6px;border-bottom:1px solid var(--bd)">예가/기초</th><th style="padding:6px;border-bottom:1px solid var(--bd)">예정가격</th><th style="padding:6px;border-bottom:1px solid var(--bd)">하한가</th><th style="padding:6px;border-bottom:1px solid var(--bd);color:var(--grn)">투찰금액</th><th style="padding:6px;border-bottom:1px solid var(--bd)">사정율</th></tr>';
-        var sc=[['−2σ',loRate-(predRate-loRate)],['−1σ',loRate],['권장',predRate],['+1σ',hiRate],['+2σ',hiRate+(hiRate-predRate)]];
-        sc.forEach(function(item){
-          var lb=item[0],rt=item[1];
-          var yj=Math.round(base*rt/100);
-          var lim=paval>0?Math.round((yj-paval)*K+paval):Math.round(yj*K);
-          var b=lim+1;
-          var bold=lb==='권장';
-          h+='<tr style="'+(bold?'background:var(--bg2);font-weight:600':'')+'"><td style="padding:5px;border-bottom:1px solid var(--bd)">'+lb+'</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fR(rt,4)+'%</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fmt(yj)+'</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fmt(lim)+'</td><td style="padding:5px;border-bottom:1px solid var(--bd);color:var(--grn)">'+fmt(b)+'</td><td style="padding:5px;border-bottom:1px solid var(--bd)">'+fR(b/base*100,4)+'%</td></tr>';
-        });
-        h+='</table></div>';
-        h+='<div style="font-size:11px;color:var(--tx3);margin-top:6px">±1σ 68% · ±2σ 95% · 편차 ≤0.05% 시 1위 확률 최대</div></div>';
-
-        // 산출 근거
-        h+='<div class="cb"><h3>산출 근거</h3><div style="font-size:11px;color:var(--tx2);line-height:1.9">';
-        h+='<strong>입력</strong>: 기초 '+fmt(base)+' · 추정 '+(pest?fmt(pest):'미입력')+' · A값 '+(paval?fmt(paval):'미입력')+' · '+ptype+'공사';
-        h+='<br><strong>하한율</strong>: '+hRate+'% ('+hRateLabel+')';
-        if(limFormula==='aval')h+=' · A값 제외 산식 적용: (예정−A)×'+hRate+'%+A';
-        h+='<br><strong>예측</strong>: 예가/기초 '+fR(predRate,4)+'%(σ'+fR(p.s,4)+') · 예정 '+fmt(predYJ)+' · 하한 '+fmt(finalLimit)+' · 투찰 '+fmt(bid1);
-        h+='<br><span style="color:var(--tx3)">※ 기준서: 기준점 90%, A값 제외 산식 적용. 복수예비가격 추첨은 확률적 → 100% 예측 불가.</span>';
-        h+='</div></div>';
-
-      }else{
-        h+='<div style="text-align:center;padding:30px;color:var(--tx3)">해당 발주처 이력 데이터 부족. 데이터 관리 탭에서 업로드해 주세요.</div>';
-      }
-    }
-  }
-
-  // HISTORY
-  
-
-  // UPLOAD
-  if(TAB==='upload'){
-    h+='<h2>데이터 관리</h2><div class="cb"><h3>업로드</h3><p class="sub" style="margin:6px 0 10px">'+fmt(R.length)+'건에 추가</p><div id="dropZone" style="border:2px dashed var(--bd);border-radius:10px;padding:28px 20px;text-align:center;cursor:pointer"><div style="font-size:14px;font-weight:500;margin-bottom:4px">파일 드래그 또는 클릭</div><div class="sub">CSV, JSON, Excel 가능</div><input type="file" id="fup" accept=".csv,.json,.xls,.xlsx" multiple style="display:none"></div><div id="uploadResult" style="margin-top:8px"></div></div>';
-    h+='<div class="cb"><h3>현황</h3><div class="sub">'+fmt(R.length)+'건 · '+S.length+'곳</div></div>';
-    h+='<div class="cb"><h3>검색·수정·삭제</h3>';
-    var mq=getV("mgSrch"),mt=getV("mgTyp")||"전체",mr=[];
-    for(var ii=0;ii<R.length;ii++){var rr=R[ii];if((mt==="전체"||rr[1]===mt)&&(!mq||rr[0].indexOf(mq)>=0||rr[5].indexOf(mq)>=0))mr.push({i:ii,r:rr})}
-    mr.sort(function(a,b){return(b.r[2]||"").localeCompare(a.r[2]||"")});
-    var ps=30,tp=Math.ceil(mr.length/ps)||1,pg=Math.min(PG,tp-1),pd=mr.slice(pg*ps,(pg+1)*ps);
-    h+='<div class="sub" style="margin-bottom:6px">'+fmt(mr.length)+'건 · '+(pg+1)+'/'+tp+'p</div>';
-    h+="<div class=\"row\" style=\"margin-bottom:8px;gap:6px\"><button class=\"btn\" style=\"color:var(--red);border-color:var(--red)\" onclick=\"ACT('dc')\">선택삭제</button><button class=\"btn\" style=\"color:var(--red);border-color:var(--red)\" onclick=\"ACT('df')\">검색결과 전체삭제("+fmt(mr.length)+"건)</button></div>";
-    h+='<div style="font-size:11px"><div class="row" style="padding:4px 0;font-weight:600;border-bottom:1px solid var(--bd)"><span style="min-width:24px"><input type="checkbox" id="ckAll"></span><span style="min-width:88px">개찰일</span><span style="min-width:120px">발주처</span><span style="min-width:55px">사정율</span><span style="min-width:52px">기초</span><span style="flex:1">공고명</span><span style="min-width:36px"></span></div>';
-    pd.forEach(function(it){var r=it.r,ri=it.i;h+='<div class="row" style="padding:3px 0;border-bottom:1px solid var(--bd)"><span style="min-width:24px" onclick="event.stopPropagation()"><input type="checkbox" class="ck" value="'+ri+'"></span><span style="min-width:88px;color:var(--tx2);cursor:pointer" onclick="DETAIL('+ri+')">'+r[2]+'</span><span class="tr" style="min-width:120px;max-width:120px;cursor:pointer" onclick="DETAIL('+ri+')">'+r[0]+'</span><span style="min-width:55px;font-weight:500;cursor:pointer;color:'+(r[3]>=100?'var(--grn)':'var(--blue)')+'" onclick="DETAIL('+ri+')">'+fR(r[3],3)+'%</span><span style="min-width:52px;color:var(--tx2);cursor:pointer" onclick="DETAIL('+ri+')">'+fM(r[4])+'</span><span class="tr" style="flex:1;color:var(--tx3);cursor:pointer" onclick="DETAIL('+ri+')">'+r[5]+"</span><span style=\"min-width:36px\"><button class=\"btn\" style=\"padding:2px 5px;font-size:10px\" onclick=\"ACT('ed',"+ri+")\">편집</button></span></div>"});
-    h+='</div>';
-    if(tp>1)h+='<div class="row" style="justify-content:center;margin-top:8px;gap:4px"><button class="btn pgb" data-p="0">처음</button><button class="btn pgb" data-p="'+(pg-1)+'"'+(pg<1?' disabled':'')+'>←</button><span class="sub" style="padding:0 6px">'+(pg+1)+'/'+tp+'</span><button class="btn pgb" data-p="'+(pg+1)+'"'+(pg>=tp-1?' disabled':'')+'>→</button><button class="btn pgb" data-p="'+(tp-1)+'">끝</button></div>';
-    h+='</div>';
-    h+="<div style=\"border:1px solid var(--red);border-radius:10px;padding:14px;margin-top:10px\"><h3 style=\"color:var(--red)\">초기화</h3><div class=\"row\" style=\"gap:6px;margin-top:8px\"><button class=\"btn\" style=\"border-color:var(--red);color:var(--red)\" onclick=\"ACT('rs')\">시드복원</button><button class=\"btn\" style=\"background:var(--red);color:#fff;border-color:var(--red)\" onclick=\"ACT('da')\">전체삭제</button></div></div>";
-    h+="<div id=\"eM\" style=\"display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:100;justify-content:center;align-items:center\"><div style=\"background:var(--bg);border-radius:12px;padding:20px;max-width:380px;width:90%\"><h3>수정</h3><div style=\"display:grid;gap:8px;margin:12px 0\"><div><div class=\"ml\">발주처</div><input class=\"inp\" id=\"eO\"></div><div style=\"display:grid;grid-template-columns:1fr 1fr;gap:8px\"><div><div class=\"ml\">사정율</div><input class=\"inp\" id=\"eR\"></div><div><div class=\"ml\">기초금액</div><input class=\"inp\" id=\"eB\"></div></div><div style=\"display:grid;grid-template-columns:1fr 1fr;gap:8px\"><div><div class=\"ml\">개찰일</div><input class=\"inp\" id=\"eD\"></div><div><div class=\"ml\">공고명</div><input class=\"inp\" id=\"eN\"></div></div></div><div class=\"row\" style=\"gap:6px;margin-top:12px\"><button class=\"btn\" style=\"background:var(--blue);color:#fff;border-color:var(--blue)\" onclick=\"ACT('es')\">저장</button><button class=\"btn\" onclick=\"ACT('ec')\">취소</button><button class=\"btn\" style=\"color:var(--red);border-color:var(--red)\" onclick=\"ACT('ex')\">삭제</button></div></div></div>";
-  }
-
-  // GUIDE
-  if(TAB==='guide'){
-    h+='<h2>전기공사 입찰 가이드</h2>';
-    [['투찰금액 공식','<div class="c mono" style="margin-bottom:8px">투찰금액 = 기초금액 × (100% + 사정율) × 낙찰하한율</div><p>기초금액=추정가격+부가세. 사정율=15개 복수예비가격 중 추첨4개 평균의 증감률.</p>'],
-     ['예정가격 결정','<p>1. ±3%(±2%) 범위 15개 비밀작성<br>2. 참가업체 각 2개 추첨<br>3. 최다선택 4개 산술평균=예정가격<br>4. 중심극한정리로 0%근처 수렴</p>'],
-     ['낙찰하한율','<table style="width:100%;font-size:11px;border-collapse:collapse"><tr style="background:var(--bg2)"><th style="padding:5px;text-align:left;border-bottom:1px solid var(--bd)">발주처</th><th style="padding:5px;border-bottom:1px solid var(--bd)">추정가격</th><th style="padding:5px;border-bottom:1px solid var(--bd)">배점</th><th style="padding:5px;border-bottom:1px solid var(--bd)">낙찰률</th></tr><tr><td style="padding:5px;border-bottom:1px solid var(--bd)">조달청</td><td style="padding:5px;border-bottom:1px solid var(--bd)">8천만~3억</td><td style="padding:5px;border-bottom:1px solid var(--bd)">90점</td><td style="padding:5px;border-bottom:1px solid var(--bd)">87.745%</td></tr><tr><td style="padding:5px;border-bottom:1px solid var(--bd)">조달청</td><td style="padding:5px;border-bottom:1px solid var(--bd)">3~50억</td><td style="padding:5px;border-bottom:1px solid var(--bd)">70점</td><td style="padding:5px;border-bottom:1px solid var(--bd)">86.745%</td></tr><tr><td style="padding:5px;border-bottom:1px solid var(--bd)">지자체</td><td style="padding:5px;border-bottom:1px solid var(--bd)">1.5억~3억</td><td style="padding:5px;border-bottom:1px solid var(--bd)">80점</td><td style="padding:5px;border-bottom:1px solid var(--bd)">87.745%</td></tr><tr><td style="padding:5px;border-bottom:1px solid var(--bd)">지자체</td><td style="padding:5px;border-bottom:1px solid var(--bd)">3~50억</td><td style="padding:5px;border-bottom:1px solid var(--bd)">70점</td><td style="padding:5px;border-bottom:1px solid var(--bd)">86.745%</td></tr></table>'],
-     ['적격심사 (95점 합격)','<p><strong>시공경험</strong>: 5년실적≥기초금액×배수. 공동도급 보완가능.<br><strong>경영상태</strong>: 부채+유동+영업. 공동도급 보완불가, 전원만점 필수.<br><strong>입찰가격</strong>: 1점부족시 87.795%로 보완가능.</p>'],
-     ['핵심전략 (13,901건)','<p style="color:var(--red);font-weight:600">사정율편차 ≤0.05% 가 1위 필수조건</p><p>1위 11건 편차평균 0.009%. 0.1% 초과시 1위 확률 0%.<br>조달청(σ0.62) 예측용이, 철도공사(μ99.02%) 하회경향.</p>']
-    ].forEach(([t,c])=>{h+='<div class="cb"><h3>'+t+'</h3><div style="font-size:12px;color:var(--tx2);line-height:1.7">'+c+'</div></div>'});
-  }
-
-  el.innerHTML=h;
-
-  // Attach event delegation
-  el.querySelectorAll('[data-org]').forEach(e=>e.onclick=function(){_saveTab();ORG=this.dataset.org;TAB='orgs';_ts.orgs.ORG=ORG;drawHdr();drawBar();drawOut()});
-  el.querySelectorAll('.pgb').forEach(e=>e.onclick=function(){const p=parseInt(this.dataset.p);if(p>=0){PG=p;if(_ts[TAB])_ts[TAB].PG=PG;drawOut()}});
-  const bk=document.getElementById('bbk');
-  if(bk)bk.onclick=function(){ORG=null;_ts.orgs.ORG=null;drawBar();drawOut()};
-
-
-
-
-  
-  if(TAB==='upload'){setupDZ();var ca=document.getElementById('ckAll');if(ca)ca.onclick=function(){var x=document.querySelectorAll('.ck');for(var j=0;j<x.length;j++)x[j].checked=ca.checked}}
-
-  // 대시보드 초기 업로드 드롭존 바인딩
-  var idz=document.getElementById('initDropZone'),ifu=document.getElementById('initFup');
-  if(idz&&ifu){
-    idz.onclick=function(){ifu.click()};
-    ifu.onchange=function(){handleInitFiles(ifu.files)};
-    idz.ondragover=function(e){e.preventDefault();idz.style.borderColor='var(--blue)';idz.style.background='var(--bg3)'};
-    idz.ondragleave=function(){idz.style.borderColor='var(--blue)';idz.style.background='var(--bg2)'};
-    idz.ondrop=function(e){e.preventDefault();idz.style.borderColor='var(--blue)';idz.style.background='var(--bg2)';handleInitFiles(e.dataTransfer.files)};
-  }
-}
-
-function classifyOrg(nm){if(!nm)return'기타';if(nm.includes('조달청'))return'조달청';if(nm.includes('교육청')||nm.includes('교육지원청'))return'교육청';if(nm.includes('한국철도')||nm.includes('철도공사'))return'한국철도공사';if(nm.includes('교통공사'))return'교통공사';if(nm.includes('토지주택'))return'LH공사';if(nm.includes('국토교통부'))return'국토교통부';if(/(시|군|구)$/.test(nm)||nm.includes('특별시'))return'지자체';return'기타'}
-let pendRec=null,pendDup=[];
-async function handleFiles(fileList){
-  if(!fileList||!fileList.length)return;
-  const re=document.getElementById('uploadResult');
-  if(!re)return;
-  const files=Array.from(fileList).filter(f=>/\.(csv|json|xlsx?|CSV|JSON|XLSX?)$/i.test(f.name));
-  if(!files.length){re.innerHTML='<div style="color:var(--red)">CSV, JSON, Excel 파일만 지원합니다.</div>';return}
-  re.innerHTML='<div class="sub">'+files.length+'개 파일 처리 중...</div>';
-  let totalParsed=[];
-  for(const file of files){
-    try{
-      let rows;
-      const isExcel=/\.xlsx?$/i.test(file.name);
-      if(isExcel){
-        if(typeof XLSX==='undefined'){
-          re.innerHTML='<div class="sub">Excel 라이브러리 로딩 중...</div>';
-          await new Promise((resolve,reject)=>{
-            const s=document.createElement('script');
-            s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-            s.onload=resolve;s.onerror=()=>reject(new Error('SheetJS 로딩 실패'));
-            document.head.appendChild(s);
-          });
-        }
-        const ab=await file.arrayBuffer();
-        const wb=XLSX.read(ab,{type:'array'});
-        const ws=wb.Sheets[wb.SheetNames[0]];
-        rows=XLSX.utils.sheet_to_json(ws,{defval:''});
-      }else if(file.name.endsWith('.json')){
-        rows=JSON.parse(await file.text());
-      }else{
-        const text=await file.text();
-        const ls=text.split('\n').filter(l=>l.trim());
-        if(ls.length<2)continue;
-        const hd=ls[0].split(',').map(h=>h.trim().replace(/"/g,''));
-        rows=ls.slice(1).map(l=>{const v=l.split(',').map(x=>x.trim().replace(/"/g,''));const o={};hd.forEach((h,i)=>o[h]=v[i]);return o});
-      }
-      if(!rows||!rows.length)continue;
-      const isNak=rows[0]&&('발주기관' in rows[0])&&('예가/기초(100%)' in rows[0]);
-      if(isNak){
-        for(const r of rows){const org=r['발주기관'];const rate=parseFloat(r['예가/기초(100%)']);if(!org||isNaN(rate))continue;totalParsed.push({o:org,t:classifyOrg(org),d:String(r['개찰일']||'').substring(0,14),r:Math.round(rate*1e4)/1e4,b:parseInt(String(r['기초금액']||0).toString().replace(/,/g,''))||0,n:String(r['공고명']||'').substring(0,40),bn:String(r['공고번호']||'')})}
-      }else{
-        for(const r of rows){const org=r['발주처']||r.org||r['발주기관'];const rate=parseFloat(r['발주처사정율']||r['사정율']||r.rate||r['예가/기초(100%)']);if(!org||isNaN(rate))continue;totalParsed.push({o:org,t:classifyOrg(org),d:String(r['개찰일']||r.date||'').substring(0,14),r:Math.round(rate*1e4)/1e4,b:parseInt(String(r['기초금액']||r.base||0).toString().replace(/,/g,''))||0,n:String(r['공고명']||r.name||'').substring(0,40),bn:String(r['공고번호']||r['입찰공고번호']||r.bid_no||'')})}
-      }
-      re.innerHTML='<div class="sub">'+file.name+': '+(isNak?'낙찰정보':'CSV/JSON')+' 형식 감지</div>';
-    }catch(err){re.innerHTML+='<div style="color:var(--red);font-size:11px">'+file.name+': '+err.message+'</div>'}
-  }
-  if(!totalParsed.length){re.innerHTML='<div style="color:var(--red)">유효 데이터 없음</div>';return}
-  re.innerHTML='<div class="sub">'+files.length+'개 파일에서 '+totalParsed.length+'건 파싱 완료. 중복 확인 중...</div>';
-  const exBn=new Set();R.forEach(r=>{if(r[9])exBn.add(r[9])});
-  const dups=[],news=[];
-  totalParsed.forEach(p=>{if(p.bn&&exBn.has(p.bn))dups.push(p);else news.push(p)});
-  if(dups.length>0){
-    pendRec=news;pendDup=dups;
-    let h='<div style="border:1px solid var(--red);border-radius:10px;padding:14px;margin-top:10px">';
-    h+='<h3 style="color:var(--red)">중복 '+dups.length+'건 발견 ('+files.length+'개 파일, 총 '+totalParsed.length+'건 중)</h3>';
-    h+='<div class="sub" style="margin:6px 0">신규 '+news.length+'건 / 중복 '+dups.length+'건</div>';
-    h+='<div class="scr" style="max-height:150px;margin-bottom:10px">';
-    dups.slice(0,50).forEach(d=>{h+='<div class="rowb" style="font-size:11px"><span style="min-width:110px;color:var(--tx2)">'+d.bn+'</span><span style="min-width:90px">'+d.o+'</span><span class="tr" style="flex:1;color:var(--tx3)">'+d.n+'</span><span style="min-width:55px;text-align:right">'+fR(d.r,3)+'%</span></div>'});
-    if(dups.length>50)h+='<div class="sub" style="padding:4px 0">...외 '+(dups.length-50)+'건</div>';
-    h+='</div><div class="row" style="gap:6px">';
-    h+='<button class="btn" onclick="doUp(0)">신규 '+news.length+'건만</button>';
-    h+='<button class="btn" style="border-color:var(--red);color:var(--red)" onclick="doUp(1)">덮어쓰기+추가</button>';
-    h+='<button class="btn" onclick="doUp(-1)">취소</button>';
-    h+='</div></div>';
-    re.innerHTML=h;return;
-  }
-  addParsed(totalParsed);
-  re.innerHTML='<div style="color:var(--grn);font-weight:500">'+files.length+'개 파일 '+totalParsed.length+'건 추가 완료. 총 '+R.length+'건</div>';
-  drawHdr();drawOut();
-}
-async function handleFile(e){handleFiles(e.target&&e.target.files)}
-
-window.doUp=function(mode){
-  const re=document.getElementById('uploadResult');
-  if(mode<0){re.innerHTML='<div class="sub">취소됨</div>';pendRec=null;pendDup=[];return}
-  let toAdd=[...pendRec];
-  if(mode===1&&pendDup.length){
-    const dSet=new Set(pendDup.map(d=>d.bn));
-    R=R.filter(r=>!(r[9]&&dSet.has(r[9])));
-    toAdd=[...toAdd,...pendDup];
-  }
-  addParsed(toAdd);
-  re.innerHTML='<div style="color:var(--grn);font-weight:500">'+(mode===1?(pendRec.length+'건 신규+'+pendDup.length+'건 덮어쓰기'):(pendRec.length+'건 추가(중복'+pendDup.length+'건 건너뜀)'))+'. 총 '+R.length+'건</div>';
-  pendRec=null;pendDup=[];drawHdr();drawOut();
-};
-function addParsed(arr){for(const p of arr)R.push([p.o,p.t,p.d,p.r,p.b,p.n,'',null,null,p.bn]);rebuildS();saveS()}
-function rebuildS(){const om={};R.forEach(r=>{if(!om[r[0]])om[r[0]]={rs:[],t:r[1]};om[r[0]].rs.push(r[3])});S=Object.entries(om).map(([n,d])=>{const rs=d.rs,m=rs.reduce((a,b)=>a+b,0)/rs.length,s=rs.length>1?Math.sqrt(rs.reduce((a,b)=>a+(b-m)**2,0)/(rs.length-1)):0,sr=[...rs].sort((a,b)=>a-b);return{n,t:d.t,c:rs.length,m:Math.round(m*1e4)/1e4,s:Math.round(s*1e4)/1e4,md:Math.round(sr[Math.floor(rs.length/2)]*1e4)/1e4,mn:Math.round(Math.min(...rs)*1e4)/1e4,mx:Math.round(Math.max(...rs)*1e4)/1e4}}).sort((a,b)=>b.c-a.c)}
-async function saveS(){try{const h=Math.ceil(R.length/2);await window.storage.set('bid-v2-p0',JSON.stringify(R.slice(0,h)));await window.storage.set('bid-v2-p1',JSON.stringify(R.slice(h)));await window.storage.set('bid-v2-sm',JSON.stringify(S));await window.storage.set('bid-v2-meta',JSON.stringify({total:R.length,orgs:S.length}))}catch(e){}}
-
-// Boot - synchronous, no waiting
-
-
-var _ei=-1;
-function DETAIL(idx){
-  var r=R[idx];if(!r)return;
-  var m=document.getElementById('detailModal');
-  if(!m){m=document.createElement('div');m.id='detailModal';document.body.appendChild(m)}
-  m.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:150;display:flex;justify-content:center;align-items:center';
-  m.innerHTML='';
-  var box=document.createElement('div');
-  box.style.cssText='background:var(--bg);border-radius:12px;padding:20px;max-width:480px;width:92%;max-height:80vh;overflow-y:auto';
-  var fields=[
-    ['공고명',r[5]||'-'],
-    ['발주처',r[0]||'-'],
-    ['발주처 유형',r[1]||'-'],
-    ['개찰일',r[2]||'-'],
-    ['발주처 사정율',typeof r[3]==='number'?r[3].toFixed(4)+'%':'-'],
-    ['기초금액',r[4]?r[4].toLocaleString('ko-KR')+'원':'-'],
-    ['자사 순위',r[7]!=null?(r[7]>0?r[7]+'위':'하한미달'):'-'],
-    ['사정율 편차',r[8]!=null?r[8].toFixed(4)+'%':'-'],
-    ['공고번호',r[9]||'-']
-  ];
-  var hdr=document.createElement('div');
-  hdr.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:14px';
-  var title=document.createElement('h3');title.style.cssText='margin:0;font-size:15px';title.textContent='상세 정보';
-  var closeX=document.createElement('button');closeX.textContent='×';closeX.style.cssText='border:none;background:none;font-size:18px;cursor:pointer;color:var(--tx2);padding:0';
-  closeX.onclick=function(){m.style.display='none'};
-  hdr.appendChild(title);hdr.appendChild(closeX);box.appendChild(hdr);
-  var list=document.createElement('div');list.style.cssText='font-size:13px';
-  fields.forEach(function(f){
-    var row=document.createElement('div');row.style.cssText='display:flex;padding:8px 0;border-bottom:1px solid var(--bd)';
-    var lbl=document.createElement('span');lbl.style.cssText='min-width:100px;color:var(--tx3);font-size:12px';lbl.textContent=f[0];
-    var val=document.createElement('span');val.style.cssText='flex:1;word-break:break-all';val.textContent=f[1];
-    row.appendChild(lbl);row.appendChild(val);list.appendChild(row);
-  });
-  box.appendChild(list);
-  var btns=document.createElement('div');btns.style.cssText='margin-top:14px;display:flex;gap:6px';
-  var closeBtn=document.createElement('button');closeBtn.textContent='닫기';closeBtn.style.cssText='padding:8px 20px;font-size:13px;border:1px solid var(--bd);border-radius:8px;background:none;cursor:pointer;color:var(--tx)';
-  closeBtn.onclick=function(){m.style.display='none'};
-  var editBtn=document.createElement('button');editBtn.textContent='편집';editBtn.style.cssText='padding:8px 20px;font-size:13px;border:1px solid var(--blue);border-radius:8px;background:none;cursor:pointer;color:var(--blue)';
-  editBtn.onclick=function(){m.style.display='none';ACT('ed',idx)};
-  btns.appendChild(closeBtn);btns.appendChild(editBtn);box.appendChild(btns);
-  m.appendChild(box);
-  m.onclick=function(e){if(e.target===m)m.style.display='none'};
-}
-
-function ACT(a,p){
-  if(a==='dc'){var x=document.querySelectorAll('.ck:checked');if(!x.length)return;var ix=[];for(var i=0;i<x.length;i++)ix.push(parseInt(x[i].value));DLG(ix.length+'건 삭제?',function(){ix.sort(function(a,b){return b-a});for(var i=0;i<ix.length;i++)R.splice(ix[i],1);rebuildS();saveS();PG=0;drawHdr();drawBar();drawOut()})}
-  else if(a==='df'){var q=getV('mgSrch'),t=getV('mgTyp')||'전체',ix=[];for(var i=0;i<R.length;i++){var r=R[i];if((t==='전체'||r[1]===t)&&(!q||r[0].indexOf(q)>=0||r[5].indexOf(q)>=0))ix.push(i)}DLG(ix.length+'건 전체 삭제?',function(){ix.sort(function(a,b){return b-a});for(var i=0;i<ix.length;i++)R.splice(ix[i],1);rebuildS();saveS();PG=0;drawHdr();drawBar();drawOut()})}
-  else if(a==='rs'){DLG('시드 데이터는 코드에서 제거되었습니다.\nseed_data.json 파일을 업로드해 주세요.',function(){})}
-  else if(a==='da'){DLG(R.length+'건 전체 삭제?',function(){R=[];S=[];saveS();drawHdr();drawBar();drawOut()})}
-  else if(a==='ed'){_ei=p;var r=R[p];if(!r)return;var m=document.getElementById('eM');if(!m)return;m.style.display='flex';document.getElementById('eO').value=r[0]||'';document.getElementById('eR').value=r[3]||'';document.getElementById('eB').value=r[4]||'';document.getElementById('eD').value=r[2]||'';document.getElementById('eN').value=r[5]||''}
-  else if(a==='es'){if(_ei<0)return;R[_ei][0]=document.getElementById('eO').value;R[_ei][3]=parseFloat(document.getElementById('eR').value)||0;R[_ei][4]=parseInt(document.getElementById('eB').value)||0;R[_ei][2]=document.getElementById('eD').value;R[_ei][5]=document.getElementById('eN').value;R[_ei][1]=classifyOrg(R[_ei][0]);document.getElementById('eM').style.display='none';_ei=-1;rebuildS();saveS();drawHdr();drawOut()}
-  else if(a==='ec'){document.getElementById('eM').style.display='none';_ei=-1}
-  else if(a==='ex'){if(_ei<0)return;DLG('삭제?',function(){R.splice(_ei,1);document.getElementById('eM').style.display='none';_ei=-1;rebuildS();saveS();drawHdr();drawBar();drawOut()})}
-}
-function DLG(msg,fn){var d=document.getElementById('_d');if(!d){d=document.createElement('div');d.id='_d';document.body.appendChild(d)}d.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:200;display:flex;justify-content:center;align-items:center';d.innerHTML='';var b=document.createElement('div');b.style.cssText='background:var(--bg);border-radius:12px;padding:24px;max-width:340px;width:90%;text-align:center';var t=document.createElement('div');t.style.cssText='font-size:14px;line-height:1.7;margin-bottom:16px';t.textContent=msg;b.appendChild(t);var r=document.createElement('div');r.style.cssText='display:flex;gap:8px;justify-content:center';var n=document.createElement('button');n.textContent='취소';n.style.cssText='padding:8px 20px;font-size:13px;border:1px solid var(--bd);border-radius:8px;background:none;cursor:pointer;color:var(--tx)';n.onclick=function(){d.style.display='none'};var y=document.createElement('button');y.textContent='확인';y.style.cssText='padding:8px 20px;font-size:13px;border:none;border-radius:8px;background:var(--red);color:#fff;cursor:pointer';y.onclick=function(){d.style.display='none';fn()};r.appendChild(n);r.appendChild(y);b.appendChild(r);d.appendChild(b)}
-function setupDZ(){var z=document.getElementById('dropZone'),f=document.getElementById('fup');if(!z||!f)return;z.onclick=function(){f.click()};f.onchange=function(){handleFiles(f.files)};z.ondragover=function(e){e.preventDefault();z.style.borderColor='var(--blue)';z.style.background='var(--bg2)'};z.ondragleave=function(){z.style.borderColor='var(--bd)';z.style.background=''};z.ondrop=function(e){e.preventDefault();z.style.borderColor='var(--bd)';z.style.background='';handleFiles(e.dataTransfer.files)}}
-
-// 대시보드 초기화면 업로드 핸들러 (uploadResult → initUploadResult 사용)
-async function handleInitFiles(fileList){
-  if(!fileList||!fileList.length)return;
-  const re=document.getElementById('initUploadResult');
-  if(!re)return;
-  const files=Array.from(fileList).filter(f=>/\.(csv|json|xlsx?|CSV|JSON|XLSX?)$/i.test(f.name));
-  if(!files.length){re.innerHTML='<div style="color:var(--red)">CSV, JSON, Excel 파일만 지원합니다.</div>';return}
-  re.innerHTML='<div class="sub">'+files.length+'개 파일 처리 중...</div>';
-  let totalParsed=[];
-  for(const file of files){
-    try{
-      let rows;
-      const isExcel=/\.xlsx?$/i.test(file.name);
-      if(isExcel){
-        if(typeof XLSX==='undefined'){
-          re.innerHTML='<div class="sub">Excel 라이브러리 로딩 중...</div>';
-          await new Promise((resolve,reject)=>{
-            const s=document.createElement('script');
-            s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-            s.onload=resolve;s.onerror=()=>reject(new Error('SheetJS 로딩 실패'));
-            document.head.appendChild(s);
-          });
-        }
-        const ab=await file.arrayBuffer();
-        const wb=XLSX.read(ab,{type:'array'});
-        const ws=wb.Sheets[wb.SheetNames[0]];
-        rows=XLSX.utils.sheet_to_json(ws,{defval:''});
-      }else if(file.name.endsWith('.json')){
-        rows=JSON.parse(await file.text());
-      }else{
-        const text=await file.text();
-        const ls=text.split('\n').filter(l=>l.trim());
-        if(ls.length<2)continue;
-        const hd=ls[0].split(',').map(h=>h.trim().replace(/"/g,''));
-        rows=ls.slice(1).map(l=>{const v=l.split(',').map(x=>x.trim().replace(/"/g,''));const o={};hd.forEach((h,i)=>o[h]=v[i]);return o});
-      }
-      if(!rows||!rows.length)continue;
-      const isNak=rows[0]&&('발주기관' in rows[0])&&('예가/기초(100%)' in rows[0]);
-      if(isNak){
-        for(const r of rows){const org=r['발주기관'];const rate=parseFloat(r['예가/기초(100%)']);if(!org||isNaN(rate))continue;totalParsed.push({o:org,t:classifyOrg(org),d:String(r['개찰일']||'').substring(0,14),r:Math.round(rate*1e4)/1e4,b:parseInt(String(r['기초금액']||0).toString().replace(/,/g,''))||0,n:String(r['공고명']||'').substring(0,40),bn:String(r['공고번호']||'')})}
-      }else{
-        for(const r of rows){const org=r['발주처']||r.org||r['발주기관'];const rate=parseFloat(r['발주처사정율']||r['사정율']||r.rate||r['예가/기초(100%)']);if(!org||isNaN(rate))continue;totalParsed.push({o:org,t:classifyOrg(org),d:String(r['개찰일']||r.date||'').substring(0,14),r:Math.round(rate*1e4)/1e4,b:parseInt(String(r['기초금액']||r.base||0).toString().replace(/,/g,''))||0,n:String(r['공고명']||r.name||'').substring(0,40),bn:String(r['공고번호']||r['입찰공고번호']||r.bid_no||'')})}
-      }
-    }catch(err){re.innerHTML+='<div style="color:var(--red);font-size:11px">'+file.name+': '+err.message+'</div>'}
-  }
-  if(!totalParsed.length){re.innerHTML='<div style="color:var(--red)">유효 데이터 없음. 파일 형식을 확인해 주세요.</div>';return}
-  addParsed(totalParsed);
-  re.innerHTML='<div style="color:var(--grn);font-weight:500">'+totalParsed.length+'건 로드 완료!</div>';
-  TAB='dashboard';drawHdr();drawBar();drawOut();
-}
-
-// ── BOOT ──
-(async function boot(){
-  // 1) storage에서 로드 시도
-  try{
-    const meta=await window.storage.get('bid-v2-meta');
-    if(meta&&meta.value){
-      const m=JSON.parse(meta.value);
-      if(m.total>0){
-        const d0=await window.storage.get('bid-v2-p0');
-        const d1=await window.storage.get('bid-v2-p1');
-        const ds=await window.storage.get('bid-v2-sm');
-        if(d0&&d0.value)R=R.concat(JSON.parse(d0.value));
-        if(d1&&d1.value)R=R.concat(JSON.parse(d1.value));
-        if(ds&&ds.value)S=JSON.parse(ds.value);
-      }
-    }
-  }catch(e){}
-  // 2) UI 렌더링 (데이터 유무 상관없이)
-  drawHdr();drawBar();drawOut();
-})();
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
+</body>
+</html>
