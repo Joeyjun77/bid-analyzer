@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 
 const SB_URL="https://sadunejfkstxbxogzutl.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhZHVuZWpma3N0eGJ4b2d6dXRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2ODYxOTksImV4cCI6MjA5MDI2MjE5OX0.C5kNr-4urLImKfqOi_yl2-SUbrpcSgz2N3IiWGbObgc";
@@ -33,38 +34,23 @@ function parseBIFF8(buf){const u8=new Uint8Array(buf),dv=new DataView(buf),SS=51
 
 function parseHTML(t){const doc=new DOMParser().parseFromString(t,"text/html");const tables=doc.querySelectorAll("table");if(!tables.length)return null;let best=null,bN=0;tables.forEach(t=>{const n=t.querySelectorAll("tr").length;if(n>bN){bN=n;best=t}});if(!best||bN<2)return null;const res=[];best.querySelectorAll("tr").forEach(tr=>{const row=[];tr.querySelectorAll("td, th").forEach(c=>row.push(c.textContent.trim()));if(row.length>=5)res.push(row)});if(res.length<2)return null;const data=[];for(let i=1;i<res.length;i++){const rd={};res[i].forEach((v,j)=>{rd[j]=v});data.push(rd)}return data}
 
-async function parseXLSX(buf){
-  const zip={};const u8=new Uint8Array(buf);let pos=0;
-  while(pos<u8.length-4){if(u8[pos]!==0x50||u8[pos+1]!==0x4B||u8[pos+2]!==0x03||u8[pos+3]!==0x04){pos++;continue}
-    const fnLen=u8[pos+26]|(u8[pos+27]<<8),exLen=u8[pos+28]|(u8[pos+29]<<8),cSize=(u8[pos+18]|(u8[pos+19]<<8)|(u8[pos+20]<<16)|(u8[pos+21]<<24))>>>0,uSize=(u8[pos+22]|(u8[pos+23]<<8)|(u8[pos+24]<<16)|(u8[pos+25]<<24))>>>0,method=u8[pos+8]|(u8[pos+9]<<8);
-    const fnBuf=u8.slice(pos+30,pos+30+fnLen);const fn=new TextDecoder().decode(fnBuf);
-    const dataStart=pos+30+fnLen+exLen;const raw=u8.slice(dataStart,dataStart+cSize);
-    if(method===0){zip[fn]=raw}
-    else if(method===8){try{const ds=new DecompressionStream("deflate-raw");const w=ds.writable.getWriter();const rd=ds.readable.getReader();const chunks=[];const done=rd.read().then(function pump(r){if(r.done)return;chunks.push(r.value);return rd.read().then(pump)});w.write(raw);w.close();await done;const total=chunks.reduce((a,c)=>a+c.length,0);const out=new Uint8Array(total);let off=0;for(const c of chunks){out.set(c,off);off+=c.length}zip[fn]=out}catch(e){zip[fn]=raw}}
-    pos=dataStart+cSize}
-  const dec=name=>{const d=zip[name];return d?new TextDecoder().decode(d):""};
-  const ssXml=dec("xl/sharedStrings.xml"),shXml=dec("xl/worksheets/sheet1.xml");
-  if(!shXml)throw new Error("sheet1.xml 없음");
-  const dp=new DOMParser();const strs=[];
-  if(ssXml){const sd=dp.parseFromString(ssXml,"text/xml");const sis=sd.getElementsByTagName("si");
-    for(let i=0;i<sis.length;i++){const ts=sis[i].getElementsByTagName("t");let txt="";for(let j=0;j<ts.length;j++)txt+=(ts[j].textContent||"");strs.push(txt.replace(/\x00/g,""))}}
-  const shDoc=dp.parseFromString(shXml,"text/xml");const rowEls=shDoc.getElementsByTagName("row");
-  function c2i(ref){let col=0;for(let i=0;i<ref.length;i++){const ch=ref.charCodeAt(i);if(ch>=65&&ch<=90)col=col*26+(ch-64);else if(ch>=97&&ch<=122)col=col*26+(ch-96);else break}return col-1}
-  const allRows=[];
-  for(let ri=0;ri<rowEls.length;ri++){const rd={};const cells=rowEls[ri].getElementsByTagName("c");
-    for(let ci=0;ci<cells.length;ci++){const cell=cells[ci];const ref=cell.getAttribute("r")||"";const colIdx=c2i(ref);const typ=cell.getAttribute("t")||"";const vEl=cell.getElementsByTagName("v")[0];const val=vEl?vEl.textContent:"";
-      if(typ==="s"&&strs.length){rd[colIdx]=strs[parseInt(val)]||""}else if(val){const num=parseFloat(val);rd[colIdx]=isNaN(num)?val:num}else{rd[colIdx]=""}}
-    if(Object.keys(rd).length>=3)allRows.push(rd)}
-  if(allRows.length<2)throw new Error("데이터 부족");
+function parseXLSXSheetJS(buf){
+  const wb=XLSX.read(new Uint8Array(buf),{type:"array"});
+  const sn=wb.SheetNames[0];if(!sn)throw new Error("시트 없음");
+  const json=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:"",raw:false});
+  if(json.length<2)throw new Error("데이터 부족("+json.length+"행)");
   const kn=["번호","공고명","공고번호","발주기관","추정가격","기초금액","A값","순공사원가","예정가격","낙찰하한가","예가/기초(100%)","예가/기초(0%)","1순위업체","1순위사업자번호","1순위투찰금액","1순위사정율(100%)","1순위사정율(0%)","1순위기초대비","업체수","개찰일","입력일","업종","G2B물품분류","지역"];
-  const hdr=allRows[0];const cm={};for(const[ci,val]of Object.entries(hdr)){const idx=kn.indexOf(String(val).trim());if(idx>=0)cm[idx]=parseInt(ci)}
+  const hdr=json[0];const cm={};hdr.forEach((h,i)=>{const idx=kn.indexOf(String(h).trim());if(idx>=0)cm[idx]=i});
   const useMap=Object.keys(cm).length>=5;const data=[];
-  for(let i=1;i<allRows.length;i++){const r=allRows[i],rd={};if(useMap){for(const[ki,ci]of Object.entries(cm))rd[parseInt(ki)]=r[ci]!=null?r[ci]:""}else{for(const[ci,val]of Object.entries(r))rd[parseInt(ci)]=val}data.push(rd)}
+  for(let i=1;i<json.length;i++){const r=json[i];if(!r||r.length<3)continue;
+    const rd={};if(useMap){for(const[ki,ci]of Object.entries(cm))rd[parseInt(ki)]=r[ci]!=null?String(r[ci]):""}else{r.forEach((v,j)=>{rd[j]=v!=null?String(v):""})}
+    let hasData=false;for(const v of Object.values(rd)){if(v&&String(v).trim()){hasData=true;break}}
+    if(hasData)data.push(rd)}
   return data}
 
 async function parseFile(file){const buf=await file.arrayBuffer();const u8=new Uint8Array(buf);
   if(u8[0]===0xD0&&u8[1]===0xCF)return{rows:parseBIFF8(buf),f:"XLS"};
-  if(u8[0]===0x50&&u8[1]===0x4B){const rows=await parseXLSX(buf);return{rows,f:"XLSX"}}
+  if(u8[0]===0x50&&u8[1]===0x4B)return{rows:parseXLSXSheetJS(buf),f:"XLSX"}
   const text=await file.text();const html=parseHTML(text);if(html)return{rows:html,f:"HTML"};
   const csv=Papa.parse(text,{skipEmptyLines:true});if(csv.data){const v=csv.data.filter(r=>r.length>=5);if(v.length>=2){const kn=["번호","공고명","공고번호","발주기관","추정가격","기초금액","A값","순공사원가","예정가격","낙찰하한가","예가/기초(100%)","예가/기초(0%)","1순위업체","1순위사업자번호","1순위투찰금액","1순위사정율(100%)","1순위사정율(0%)","1순위기초대비","업체수","개찰일","입력일","업종","G2B물품분류","지역"];const cm={};v[0].forEach((h,i)=>{const idx=kn.indexOf(String(h).trim());if(idx>=0)cm[idx]=i});const um=Object.keys(cm).length>=5;const data=[];for(let i=1;i<v.length;i++){const r=v[i],rd={};if(um)for(const[ki,ci]of Object.entries(cm))rd[parseInt(ki)]=r[ci];else r.forEach((vv,j)=>{rd[j]=vv});data.push(rd)}return{rows:data,f:"CSV"}}}
   throw new Error("지원되지 않는 형식 (XLS/XLSX/CSV/HTML 파일을 사용하세요)")}
