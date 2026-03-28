@@ -2,6 +2,8 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
+function md5(s){const k=[7,12,17,22,5,9,14,20,4,11,16,23,6,10,15,21];const T=[];for(let i=0;i<64;i++)T[i]=(Math.abs(Math.sin(i+1))*0x100000000)>>>0;function f(x,n){return(x<<n)|(x>>>(32-n))}const bytes=[];for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);if(c<128)bytes.push(c);else if(c<2048){bytes.push(192|(c>>6));bytes.push(128|(c&63))}else{bytes.push(224|(c>>12));bytes.push(128|((c>>6)&63));bytes.push(128|(c&63))}}const bl=bytes.length*8;bytes.push(128);while(bytes.length%64!==56)bytes.push(0);bytes.push(bl&0xff,(bl>>8)&0xff,(bl>>16)&0xff,(bl>>24)&0xff,0,0,0,0);let a0=0x67452301,b0=0xefcdab89,c0=0x98badcfe,d0=0x10325476;for(let i=0;i<bytes.length;i+=64){const M=[];for(let j=0;j<16;j++)M[j]=bytes[i+j*4]|(bytes[i+j*4+1]<<8)|(bytes[i+j*4+2]<<16)|(bytes[i+j*4+3]<<24);let A=a0,B=b0,C=c0,D=d0;for(let j=0;j<64;j++){let F,g;if(j<16){F=(B&C)|((~B)&D);g=j}else if(j<32){F=(D&B)|((~D)&C);g=(5*j+1)%16}else if(j<48){F=B^C^D;g=(3*j+5)%16}else{F=C^(B|(~D));g=(7*j)%16}F=(F+A+T[j]+M[g])>>>0;A=D;D=C;C=B;B=(B+f(F,k[(j>>4)*4+(j%4)]))>>>0}a0=(a0+A)>>>0;b0=(b0+B)>>>0;c0=(c0+C)>>>0;d0=(d0+D)>>>0}const hex=n=>{let s="";for(let i=0;i<4;i++)s+=((n>>(i*8))&0xff).toString(16).padStart(2,"0");return s};return hex(a0)+hex(b0)+hex(c0)+hex(d0)}
+
 const SB_URL="https://sadunejfkstxbxogzutl.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhZHVuZWpma3N0eGJ4b2d6dXRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2ODYxOTksImV4cCI6MjA5MDI2MjE5OX0.C5kNr-4urLImKfqOi_yl2-SUbrpcSgz2N3IiWGbObgc";
 const hdrs={"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY,"Prefer":"return=minimal"};
@@ -80,8 +82,9 @@ function rowToDbRecord(r){
   const ag=clean(r[3]),at=clsAg(ag),ba=pnv(r[5]),ep=pnv(r[4]),av=pnv(r[6]);
   const od=pDt(clean(r[19])),era=isNew(at,od)?"new":"old";
   const dk=clean(r[1])+"|"+ag+"|"+clean(r[19])+"|"+ba;
-  if(!dk||dk==="|||||0"||dk.length<5)return null;
-  return{dedup_key:dk,pn:clean(r[1]),pn_no:clean(r[2]),ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:clean(r[7]),xp:sn(r[8]),floor_price:sn(r[9]),ar1:sn(r[10]),ar0:sn(r[11]),co:clean(r[12]),co_no:clean(r[13]),bp:sn(r[14]),br1:sn(r[15]),br0:sn(r[16]),base_ratio:sn(r[17]),pc:Math.round(pnv(r[18]))||0,od:od||null,input_date:pDt(clean(r[20]))||null,cat:clean(r[21]),g2b:clean(r[22]),reg:clean(r[23]),era,has_a:av>0,fr:eraFR(at,ep,od)}}
+  if(!dk||dk.length<5)return null;
+  const hk=md5(dk);
+  return{dedup_key:hk,pn:clean(r[1]),pn_no:clean(r[2]),ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:clean(r[7]),xp:sn(r[8]),floor_price:sn(r[9]),ar1:sn(r[10]),ar0:sn(r[11]),co:clean(r[12]),co_no:clean(r[13]),bp:sn(r[14]),br1:sn(r[15]),br0:sn(r[16]),base_ratio:sn(r[17]),pc:Math.round(pnv(r[18]))||0,od:od||null,input_date:pDt(clean(r[20]))||null,cat:clean(r[21]),g2b:clean(r[22]),reg:clean(r[23]),era,has_a:av>0,fr:eraFR(at,ep,od)}}
 
 function dbToLocal(r){return{id:r.id,pn:r.pn||"",ag:r.ag||"",at:r.at||"지자체",ep:Number(r.ep)||0,ba:Number(r.ba)||0,av:Number(r.av)||0,ar1:r.ar1!=null?Number(r.ar1):null,br1:r.br1!=null?Number(r.br1):null,pc:r.pc||0,od:r.od||"",odP:r.od,co:r.co||"",hasA:Number(r.av)>0,fr:Number(r.fr)||89.745,era:r.era||"new"}}
 
