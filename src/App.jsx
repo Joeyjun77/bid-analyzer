@@ -280,7 +280,7 @@ export default function App(){
           <button onClick={doManualPred} style={{width:"100%",padding:"10px",background:C.gold,border:"none",borderRadius:6,color:"#000",fontWeight:700,fontSize:13,cursor:"pointer"}}>예측 실행 + DB 저장</button>
           {pred&&<div style={{marginTop:16,padding:16,background:C.bg3,borderRadius:8,fontSize:12,lineHeight:2}}>
             <div style={{fontWeight:600,color:C.gold,marginBottom:8,fontSize:14}}>예측 결과</div>
-            <div>예측 사정율: <span style={{color:"#5dca96",fontWeight:700}}>{pred.adj.toFixed(4)}%</span></div>
+            <div>예측 사정율: <span style={{color:"#5dca96",fontWeight:700}}>{pred.adj.toFixed(4)}%</span> <span style={{color:C.txd,fontSize:11}}>( 100% 기준: {(100+pred.adj).toFixed(4)}% )</span></div>
             <div>예정가격(추정): <span style={{fontWeight:600}}>{tc(pred.xp)}원</span></div>
             <div>적용 투찰율: <span style={{color:C.gold}}>{pred.fr}%</span></div>
             <div style={{fontWeight:700,fontSize:14,color:C.gold,marginTop:8}}>추천 투찰금액: {tc(pred.bid)}원</div>
@@ -302,14 +302,16 @@ export default function App(){
             <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:8}}>예측 결과 ({predResults.length}건)</div>
             <div style={{background:C.bg3,borderRadius:8,overflow:"auto",maxHeight:400}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,tableLayout:"fixed"}}>
-                <colgroup><col style={{width:"25%"}}/><col style={{width:"12%"}}/><col style={{width:"12%"}}/><col style={{width:"8%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"13%"}}/><col style={{width:"10%"}}/></colgroup>
-                <thead><tr style={{background:C.bg3}}>{["공고명","발주기관","기초금액","A값","사정율","투찰율","추천투찰금액","개찰일"].map((h,i)=><th key={i} style={{padding:"6px 4px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
+                <colgroup><col style={{width:"20%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"7%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/><col style={{width:"12%"}}/><col style={{width:"10%"}}/></colgroup>
+                <thead><tr style={{background:C.bg3}}>{["공고명","발주기관","기초금액","A값","사정율","사정율(100%)","예정가격","투찰율","추천투찰금액","개찰일"].map((h,i)=><th key={i} style={{padding:"6px 4px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
                 <tbody>{predResults.map((r,i)=><tr key={i} style={{borderBottom:"1px solid "+C.bdr}}>
                   <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.pn}>{r.pn}</td>
                   <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ag}</td>
                   <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{r.ba?tc(r.ba):""}</td>
                   <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{r.av?tc(r.av):"0"}</td>
                   <td style={{padding:"5px 4px",textAlign:"right",color:"#5dca96"}}>{r.pred.adj.toFixed(4)}%</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",color:"#5dca96"}}>{(100+r.pred.adj).toFixed(4)}%</td>
+                  <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{tc(r.pred.xp)}</td>
                   <td style={{padding:"5px 4px",textAlign:"right",color:C.gold}}>{r.pred.fr}%</td>
                   <td style={{padding:"5px 4px",textAlign:"right",fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{tc(r.pred.bid)}</td>
                   <td style={{padding:"5px 4px",textAlign:"right"}}>{r.open_date||""}</td>
