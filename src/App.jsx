@@ -54,10 +54,28 @@ function parseBidDoc(rows){
   return result}
 
 // ─── 통계 ──────────────────────────────────────────────────
-function calcStats(recs,filter){const src=filter?recs.filter(filter):recs;const ts={},as={};for(const r of src){if(r.br1==null)continue;const t=r.at||"기타";if(!ts[t])ts[t]={n:0,sum:0,vals:[]};ts[t].n++;ts[t].sum+=r.br1;ts[t].vals.push(r.br1);const a=r.ag;if(a){if(!as[a])as[a]={n:0,sum:0,vals:[],type:t};as[a].n++;as[a].sum+=r.br1;as[a].vals.push(r.br1)}}const fin=o=>{for(const k of Object.keys(o)){const v=o[k];v.avg=v.n?v.sum/v.n:0;v.vals.sort((a,b)=>a-b);v.med=v.vals.length?v.vals[Math.floor(v.vals.length/2)]:0}};fin(ts);fin(as);return{ts,as}}
+function calcStats(recs,filter){const src=filter?recs.filter(filter):recs;const ts={},as={};for(const r of src){if(r.br1==null)continue;
+  // br1은 100% 기준(예: 99.95) → 사정율 = br1-100 (예: -0.05%)
+  const adj=r.br1-100;
+  // 이상치 필터: ±5% 범위 밖 제외
+  if(adj<-5||adj>5)continue;
+  const t=r.at||"기타";if(!ts[t])ts[t]={n:0,sum:0,vals:[]};ts[t].n++;ts[t].sum+=adj;ts[t].vals.push(adj);
+  const a=r.ag;if(a){if(!as[a])as[a]={n:0,sum:0,vals:[],type:t};as[a].n++;as[a].sum+=adj;as[a].vals.push(adj)}}
+  const fin=o=>{for(const k of Object.keys(o)){const v=o[k];v.avg=v.n?v.sum/v.n:0;v.vals.sort((a,b)=>a-b);v.med=v.vals.length?v.vals[Math.floor(v.vals.length/2)]:0}};fin(ts);fin(as);return{ts,as}}
 
 // ─── 예측 v2 ───────────────────────────────────────────────
-function predictV2({at,agName,ba,ep,av,pc},ts,as){if(!ba)return null;const agSt=as[agName];const tSt=ts[at]||ts["조달청"];let baseAdj;if(agSt&&agSt.n>=3)baseAdj=agSt.avg;else if(agSt&&agSt.n===2)baseAdj=agSt.avg*0.6+(tSt?tSt.avg:0)*0.4;else baseAdj=tSt?tSt.avg:0;const pcMul=pc>=100?0.7:pc>=30?1.0:pc>=10?1.5:2.5;const amtMul=ba>=5e9?0.5:ba>=1e9?1.0:1.2;const adj=baseAdj*pcMul*amtMul;const xp=ba*(1+adj/100);const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));let bid;if(av>0)bid=av+(xp-av)*(fr/100);else bid=xp*(fr/100);return{adj:Math.round(adj*10000)/10000,xp:Math.round(xp),bid:Math.ceil(bid),fr,baseAdj:Math.round(baseAdj*10000)/10000,pcMul,amtMul,src:agSt?`${agName}(${agSt.n}건)`:at}}
+function predictV2({at,agName,ba,ep,av,pc},ts,as){if(!ba)return null;const agSt=as[agName];const tSt=ts[at]||ts["조달청"];
+  // 사정율 추정 (이미 -100 보정된 값: 예 -0.05%)
+  let baseAdj;
+  if(agSt&&agSt.n>=3)baseAdj=agSt.avg;
+  else if(agSt&&agSt.n===2)baseAdj=agSt.avg*0.6+(tSt?tSt.avg:0)*0.4;
+  else baseAdj=tSt?tSt.avg:0;
+  // 사정율은 ±3% 범위이므로 보정 계수는 소폭만 적용
+  const adj=baseAdj;
+  const xp=ba*(1+adj/100);
+  const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
+  let bid;if(av>0)bid=av+(xp-av)*(fr/100);else bid=xp*(fr/100);
+  return{adj:Math.round(adj*10000)/10000,xp:Math.round(xp),bid:Math.ceil(bid),fr,baseAdj:Math.round(baseAdj*10000)/10000,src:agSt?`${agName}(${agSt.n}건)`:at}}
 
 // ─── 데이터 현황 ───────────────────────────────────────────
 function calcDataStatus(rows){if(!rows||!rows.length)return null;const withOd=rows.filter(r=>r.od);if(!withOd.length)return{total:rows.length,latestDate:null,latestPn:null,latestAg:"",sameDayCount:0};withOd.sort((a,b)=>(b.od>a.od?1:b.od<a.od?-1:0));const l=withOd[0];const sc=withOd.filter(r=>r.od===l.od);return{total:rows.length,latestDate:l.od,latestPn:l.pn?(l.pn.length>35?l.pn.slice(0,35)+"…":l.pn):"(없음)",latestAg:l.ag||"",sameDayCount:sc.length}}
@@ -81,9 +99,10 @@ async function sbMatchPredictions(predictions,records){
     if(!p.pn_no)continue;
     const match=recMap[p.pn_no];
     if(match){
-      const adjErr=p.pred_adj_rate!=null&&match.br1!=null?Math.round((p.pred_adj_rate-match.br1)*10000)/10000:null;
+      const actualAdj=match.br1!=null?Math.round((match.br1-100)*10000)/10000:null;
+      const adjErr=p.pred_adj_rate!=null&&actualAdj!=null?Math.round((p.pred_adj_rate-actualAdj)*10000)/10000:null;
       const bidErr=p.pred_bid_amount!=null&&match.bp!=null?Math.round(p.pred_bid_amount-match.bp):null;
-      updates.push({id:p.id,actual_adj_rate:match.br1,actual_expected_price:match.xp,actual_bid_amount:match.bp,actual_winner:match.co,actual_participant_count:match.pc,adj_rate_error:adjErr,bid_amount_error:bidErr,match_status:"matched",matched_record_id:match.id,matched_at:new Date().toISOString()})
+      updates.push({id:p.id,actual_adj_rate:actualAdj,actual_expected_price:match.xp,actual_bid_amount:match.bp,actual_winner:match.co,actual_participant_count:match.pc,adj_rate_error:adjErr,bid_amount_error:bidErr,match_status:"matched",matched_record_id:match.id,matched_at:new Date().toISOString()})
     }
   }
   // patch each
@@ -265,7 +284,7 @@ export default function App(){
             <div>예정가격(추정): <span style={{fontWeight:600}}>{tc(pred.xp)}원</span></div>
             <div>적용 투찰율: <span style={{color:C.gold}}>{pred.fr}%</span></div>
             <div style={{fontWeight:700,fontSize:14,color:C.gold,marginTop:8}}>추천 투찰금액: {tc(pred.bid)}원</div>
-            <div style={{marginTop:8,fontSize:10,color:C.txd}}>근거: {pred.src} | 기본{pred.baseAdj.toFixed(4)}%×참여{pred.pcMul}×금액{pred.amtMul}</div>
+            <div style={{marginTop:8,fontSize:10,color:C.txd}}>근거: {pred.src} | 평균사정율 {pred.baseAdj.toFixed(4)}%</div>
           </div>}
         </div>}
 
