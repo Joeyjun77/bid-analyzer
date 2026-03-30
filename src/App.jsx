@@ -376,8 +376,8 @@ export default function App(){
       {/* ═══ 통계 탭 ═══ */}
       {tab==="stats"&&<div>
         <div style={{display:"flex",gap:4,marginBottom:12}}><button onClick={()=>setSV("type")} style={btnS(sV==="type",C.gold)}>기관유형별</button><button onClick={()=>setSV("agency")} style={btnS(sV==="agency",C.gold)}>발주기관별</button></div>
-        {sV==="type"&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"hidden"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr style={{background:C.bg3}}>{["기관유형","건수","평균사정율","중앙값"].map((h,i)=><th key={i} style={{padding:"8px 10px",textAlign:i>0?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead><tbody>{Object.entries(curSt.ts||{}).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=><tr key={k} style={{borderBottom:"1px solid "+C.bdr}}><td style={{padding:"7px 10px",color:C.gold}}>{k}</td><td style={{padding:"7px 10px",textAlign:"right"}}>{v.n}</td><td style={{padding:"7px 10px",textAlign:"right",color:"#5dca96"}}>{v.avg.toFixed(4)}%</td><td style={{padding:"7px 10px",textAlign:"right"}}>{v.med.toFixed(4)}%</td></tr>)}</tbody></table></div>}
-        {sV==="agency"&&<div><input value={agSch} onChange={e=>setAgSch(e.target.value)} placeholder="발주기관 검색 (초성 가능)" style={{...inpS,marginBottom:8}}/><div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"hidden",maxHeight:500,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr style={{background:C.bg3}}>{["발주기관","유형","건수","평균","중앙값"].map((h,i)=><th key={i} style={{padding:"8px 10px",textAlign:i>1?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead><tbody>{fAg.slice(0,100).map(([k,v])=><tr key={k} style={{borderBottom:"1px solid "+C.bdr}}><td style={{padding:"6px 10px",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</td><td style={{padding:"6px 10px",color:C.txd,fontSize:10}}>{v.type}</td><td style={{padding:"6px 10px",textAlign:"right"}}>{v.n}</td><td style={{padding:"6px 10px",textAlign:"right",color:"#5dca96"}}>{v.avg.toFixed(4)}%</td><td style={{padding:"6px 10px",textAlign:"right"}}>{v.med.toFixed(4)}%</td></tr>)}</tbody></table></div></div>}
+        {sV==="type"&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"hidden"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr style={{background:C.bg3}}>{["기관유형","건수","평균사정율(100%)","중앙값(100%)"].map((h,i)=><th key={i} style={{padding:"8px 10px",textAlign:i>0?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead><tbody>{Object.entries(curSt.ts||{}).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=><tr key={k} style={{borderBottom:"1px solid "+C.bdr}}><td style={{padding:"7px 10px",color:C.gold}}>{k}</td><td style={{padding:"7px 10px",textAlign:"right"}}>{v.n}</td><td style={{padding:"7px 10px",textAlign:"right",color:"#5dca96"}}>{(100+v.avg).toFixed(4)}%</td><td style={{padding:"7px 10px",textAlign:"right"}}>{(100+v.med).toFixed(4)}%</td></tr>)}</tbody></table></div>}
+        {sV==="agency"&&<div><input value={agSch} onChange={e=>setAgSch(e.target.value)} placeholder="발주기관 검색 (초성 가능)" style={{...inpS,marginBottom:8}}/><div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"hidden",maxHeight:500,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr style={{background:C.bg3}}>{["발주기관","유형","건수","평균(100%)","중앙값(100%)"].map((h,i)=><th key={i} style={{padding:"8px 10px",textAlign:i>1?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead><tbody>{fAg.slice(0,100).map(([k,v])=><tr key={k} style={{borderBottom:"1px solid "+C.bdr}}><td style={{padding:"6px 10px",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</td><td style={{padding:"6px 10px",color:C.txd,fontSize:10}}>{v.type}</td><td style={{padding:"6px 10px",textAlign:"right"}}>{v.n}</td><td style={{padding:"6px 10px",textAlign:"right",color:"#5dca96"}}>{(100+v.avg).toFixed(4)}%</td><td style={{padding:"6px 10px",textAlign:"right"}}>{(100+v.med).toFixed(4)}%</td></tr>)}</tbody></table></div></div>}
       </div>}
 
       {/* ═══ 데이터 탭 ═══ */}
@@ -385,7 +385,7 @@ export default function App(){
         <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}><input value={search} onChange={e=>{setSearch(e.target.value);setDataPage(0)}} placeholder="검색" style={{...inpS,flex:1,minWidth:150}}/>{selCount>0&&<button onClick={()=>setDlgType("sel")} style={{padding:"5px 12px",background:"rgba(220,50,50,0.1)",border:"1px solid rgba(220,50,50,0.3)",borderRadius:5,color:"#e55",fontSize:11,cursor:"pointer"}}>{selCount}건 삭제</button>}<span style={{fontSize:10,color:C.txd}}>{filteredRecs.length}건</span></div>
         <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:10,tableLayout:"fixed"}}>
           <colgroup><col style={{width:28}}/><col style={{width:"20%"}}/><col style={{width:"12%"}}/><col style={{width:"6%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"5%"}}/><col style={{width:"6%"}}/></colgroup>
-          <thead><tr style={{background:C.bg3}}><th style={{padding:6}}><input type="checkbox" checked={allSel} onChange={()=>{const n={};if(!allSel)pagedRecs.forEach(r=>{n[r.id]=true});setSel(n)}}/></th>{["공고명","발주기관","유형","기초금액","사정율","1순위","개찰일","시대","상태"].map((h,i)=><th key={i} style={{padding:"6px 3px",textAlign:i>=3?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:9}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{background:C.bg3}}><th style={{padding:6}}><input type="checkbox" checked={allSel} onChange={()=>{const n={};if(!allSel)pagedRecs.forEach(r=>{n[r.id]=true});setSel(n)}}/></th>{["공고명","발주기관","유형","기초금액","사정율(100%)","1순위","개찰일","시대","상태"].map((h,i)=><th key={i} style={{padding:"6px 3px",textAlign:i>=3?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:9}}>{h}</th>)}</tr></thead>
           <tbody>{pagedRecs.map(r=>{
             const isYuchal=r.co==="유찰";
             const isBroken=!isYuchal&&(r.ba==null||r.ba===0)&&r.br1==null;
@@ -400,7 +400,7 @@ export default function App(){
               <td style={{padding:"5px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:isYuchal?0.5:1}} title={r.ag}>{r.ag||""}</td>
               <td style={{padding:"5px 3px",color:C.txd,fontSize:9}}>{r.at}</td>
               <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{r.ba?tc(r.ba):""}</td>
-              <td style={{padding:"5px 3px",textAlign:"right",color:"#5dca96"}}>{r.ar1!=null?Number(r.ar1).toFixed(4):""}</td>
+              <td style={{padding:"5px 3px",textAlign:"right",color:"#5dca96"}}>{r.ar1!=null?Number(r.ar1).toFixed(4)+"%":""}</td>
               <td style={{padding:"5px 3px",textAlign:"right",color:C.gold}}>{r.br1!=null?Number(r.br1).toFixed(4):""}</td>
               <td style={{padding:"5px 3px",textAlign:"right"}}>{r.od||""}</td>
               <td style={{padding:"5px 3px",textAlign:"center",color:r.era==="new"?"#5dca96":"#e24b4a",fontSize:9}}>{r.era==="new"?"신":"구"}</td>
@@ -430,11 +430,11 @@ export default function App(){
             <div style={{fontSize:10,color:C.txd,marginBottom:10}}>근거: {pred.src} | 사정율 표준편차 {pred.adjStd.toFixed(4)}%</div>
             {/* 3 시나리오 테이블 */}
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:12}}>
-              <thead><tr style={{background:C.bg2}}>{["시나리오","사정율","사정율(100%)","예정가격","투찰금액"].map((h,i)=><th key={i} style={{padding:"6px 8px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
+              <thead><tr style={{background:C.bg2}}>{["시나리오","사정율(100%)","사정율","예정가격","투찰금액"].map((h,i)=><th key={i} style={{padding:"6px 8px",textAlign:i>=3?"right":i>=1?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
               <tbody>{pred.scenarios.map((s,i)=><tr key={i} style={{borderBottom:"1px solid "+C.bdr,background:i===1?"rgba(212,168,52,0.06)":"transparent"}}>
                 <td style={{padding:"6px 8px",fontWeight:i===1?600:400}}>{s.name}</td>
-                <td style={{padding:"6px 8px",color:"#5dca96"}}>{s.adj.toFixed(4)}%</td>
-                <td style={{padding:"6px 8px",textAlign:"right"}}>{(100+s.adj).toFixed(4)}%</td>
+                <td style={{padding:"6px 8px",textAlign:"right",color:"#5dca96",fontWeight:500}}>{(100+s.adj).toFixed(4)}%</td>
+                <td style={{padding:"6px 8px",textAlign:"right",color:C.txd,fontSize:10}}>{s.adj.toFixed(4)}%</td>
                 <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{tc(s.xp)}</td>
                 <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{tc(s.bid)}</td>
               </tr>)}</tbody>
@@ -478,15 +478,15 @@ export default function App(){
           </div>
           {filteredPreds.length>0?<div style={{overflow:"auto",maxHeight:500}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,tableLayout:"fixed"}}>
-              <colgroup><col style={{width:"20%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"7%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/><col style={{width:"12%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/></colgroup>
-              <thead><tr style={{background:C.bg3}}>{["공고명","발주기관","기초금액","A값","사정율","사정율(100%)","예정가격","투찰율","추천투찰금액","개찰일","구분"].map((h,i)=><th key={i} style={{padding:"6px 3px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:9}}>{h}</th>)}</tr></thead>
+              <colgroup><col style={{width:"20%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/><col style={{width:"12%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/></colgroup>
+              <thead><tr style={{background:C.bg3}}>{["공고명","발주기관","기초금액","A값","사정율(100%)","사정율","예정가격","투찰율","추천투찰금액","개찰일","구분"].map((h,i)=><th key={i} style={{padding:"6px 3px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:9}}>{h}</th>)}</tr></thead>
               <tbody>{filteredPreds.map(p=><tr key={p.id} style={{borderBottom:"1px solid "+C.bdr}}>
                 <td style={{padding:"5px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"5px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{p.ba?tc(p.ba):""}</td>
                 <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{p.av?tc(p.av):"0"}</td>
-                <td style={{padding:"5px 3px",textAlign:"right",color:"#5dca96"}}>{p.pred_adj_rate!=null?Number(p.pred_adj_rate).toFixed(4)+"%":""}</td>
-                <td style={{padding:"5px 3px",textAlign:"right",color:"#5dca96"}}>{p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
+                <td style={{padding:"5px 3px",textAlign:"right",color:"#5dca96",fontWeight:500}}>{p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
+                <td style={{padding:"5px 3px",textAlign:"right",color:C.txd,fontSize:9}}>{p.pred_adj_rate!=null?Number(p.pred_adj_rate).toFixed(4)+"%":""}</td>
                 <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{p.pred_expected_price?tc(p.pred_expected_price):""}</td>
                 <td style={{padding:"5px 3px",textAlign:"right",color:C.gold}}>{p.pred_floor_rate?Number(p.pred_floor_rate).toFixed(3)+"%":""}</td>
                 <td style={{padding:"5px 3px",textAlign:"right",fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{p.pred_bid_amount?tc(p.pred_bid_amount):""}</td>
@@ -531,15 +531,15 @@ export default function App(){
         <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"auto",maxHeight:500}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,tableLayout:"fixed"}}>
             <colgroup><col style={{width:"22%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/></colgroup>
-            <thead><tr style={{background:C.bg3}}>{["공고명","발주기관","예측사정율","실제사정율","오차","추천금액","실제금액","개찰일","상태"].map((h,i)=>
+            <thead><tr style={{background:C.bg3}}>{["공고명","발주기관","예측(100%)","실제(100%)","오차","추천금액","실제금액","개찰일","상태"].map((h,i)=>
               <th key={i} style={{padding:"6px 4px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
             <tbody>{compList.slice(0,100).map(p=>{
               const errColor=p.adj_rate_error!=null?(Math.abs(p.adj_rate_error)<0.3?"#5dca96":Math.abs(p.adj_rate_error)<1?"#d4a834":"#e24b4a"):C.txd;
               return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr}}>
                 <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
-                <td style={{padding:"5px 4px",textAlign:"right",color:"#5dca96"}}>{p.pred_adj_rate!=null?Number(p.pred_adj_rate).toFixed(4):""}</td>
-                <td style={{padding:"5px 4px",textAlign:"right",color:C.gold}}>{p.actual_adj_rate!=null?Number(p.actual_adj_rate).toFixed(4):""}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#5dca96"}}>{p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:C.gold}}>{p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
                 <td style={{padding:"5px 4px",textAlign:"right",color:errColor,fontWeight:600}}>{p.adj_rate_error!=null?Number(p.adj_rate_error).toFixed(4):"-"}</td>
                 <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{p.pred_bid_amount?tc(p.pred_bid_amount):""}</td>
                 <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{p.actual_bid_amount?tc(p.actual_bid_amount):""}</td>
