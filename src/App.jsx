@@ -207,6 +207,78 @@ async function sbMatchPredictions(predictions,records){
   }
   return updates.length}
 
+// ─── bid_details CRUD ────────────────────────────────────
+async function sbSaveDetail(detail){
+  const body=sanitizeJson(JSON.stringify(detail));
+  const res=await fetch(SB_URL+"/rest/v1/bid_details?on_conflict=pn_no",{method:"POST",headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},body});
+  return res.ok}
+async function sbFetchDetails(){
+  try{const res=await fetch(SB_URL+"/rest/v1/bid_details?select=*&order=od.desc&limit=200",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}}
+async function sbFetchDetailsByAg(ag){
+  try{const res=await fetch(SB_URL+"/rest/v1/bid_details?ag=eq."+encodeURIComponent(ag)+"&select=*&order=od.desc&limit=50",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}}
+
+// ─── SUCVIEW XLS 파싱 ──────────────────────────────────────
+function isSucviewFile(rows){return rows.length>7&&String(rows[0]?.[0]||"").trim()==="공고명"&&String(rows[2]?.[0]||"").trim()==="공고번호"}
+
+function parseSucview(rows,fileName){
+  const g=(r,c)=>String(rows[r]?.[c]||"").trim();
+  const pn=g(0,2);const pn_no=g(2,2);const ag=g(2,8);const at=clsAg(ag);
+  const odRaw=g(3,2);const od=pDt(odRaw);
+  const ba=pnv(g(3,8).replace(/,/g,""));
+  const ep=pnv(g(4,2).replace(/,/g,""));
+  const floorRaw=g(4,8);const floor_rate=parseFloat(floorRaw)||0;
+  // 예정가격 + A값 파싱: "46,778,225 (A값:2,809,541)"
+  const xpRaw=g(5,2);let xp=0,av=0;
+  const xpM=xpRaw.match(/([\d,]+)\s*\(A값[:\s]*([\d,]+)\)/);
+  if(xpM){xp=pnv(xpM[1]);av=pnv(xpM[2])}else{xp=pnv(xpRaw.replace(/\(.*\)/,""))}
+  // 사정율 파싱: "98.8358% (-1.1641%)"
+  const arRaw=g(5,8);const arM=arRaw.match(/\(([-\d.]+)%?\)/);
+  const adj_rate=arM?parseFloat(arM[1]):0;
+  // 복수예비가격 15개 사정율
+  const pre_rates=[];
+  for(let i=8;i<=12;i++){[3,7,11].forEach(j=>{const v=parseFloat(String(rows[i]?.[j]||""));if(!isNaN(v))pre_rates.push(Math.round(v*10000)/10000)})}
+  // 선택번호 파싱: "복 수 예 가  [ 선택번호:  ② ④ ⑦ ⑪ ]"
+  const selRaw=g(7,0);const circled={"①":1,"②":2,"③":3,"④":4,"⑤":5,"⑥":6,"⑦":7,"⑧":8,"⑨":9,"⑩":10,"⑪":11,"⑫":12,"⑬":13,"⑭":14,"⑮":15};
+  const selNums=[];for(const[ch,n]of Object.entries(circled)){if(selRaw.includes(ch))selNums.push(n)}
+  const selected_nums=selNums.join(",");
+  const pre_avg=pre_rates.length?Math.round(pre_rates.reduce((a,b)=>a+b,0)/pre_rates.length*10000)/10000:0;
+  const pre_min=pre_rates.length?Math.min(...pre_rates):0;
+  const pre_max=pre_rates.length?Math.max(...pre_rates):0;
+  // 나의업체 (row17), 1순위 (row19)
+  let my_rank=null,my_bid_rate=null,my_adj_rate=null,win_bid_rate=null,win_adj_rate=null;
+  const myRaw=g(17,0);const myRankM=myRaw.match(/\((\d+)\)/);
+  if(myRankM)my_rank=parseInt(myRankM[1]);
+  my_bid_rate=parseFloat(g(17,8))||null;my_adj_rate=parseFloat(g(17,11))||null;
+  win_bid_rate=parseFloat(g(19,8))||null;win_adj_rate=parseFloat(g(19,11))||null;
+  // 참여업체 투찰 분포
+  const bidRates=[];
+  let startRow=-1;
+  for(let i=20;i<Math.min(rows.length,25);i++){if(String(rows[i]?.[0]).trim()==="순위"&&String(rows[i]?.[1]||"").includes("등록번호")){startRow=i+1;break}}
+  if(startRow>0){for(let i=startRow;i<rows.length;i++){const rank=parseInt(String(rows[i]?.[0]));if(isNaN(rank))break;const br=parseFloat(String(rows[i]?.[8]));if(!isNaN(br)&&br>0&&br<200)bidRates.push(br)}}
+  const participant_count=bidRates.length;
+  const sorted=[...bidRates].sort((a,b)=>a-b);
+  const bid_median=sorted.length?sorted[Math.floor(sorted.length/2)]:null;
+  const bid_q1=sorted.length>=4?sorted[Math.floor(sorted.length*0.25)]:bid_median;
+  const bid_q3=sorted.length>=4?sorted[Math.floor(sorted.length*0.75)]:bid_median;
+  const bid_dist={"<89":0,"89-89.5":0,"89.5-90":0,"90-90.5":0,"90.5-91":0,"91-91.5":0,"91.5-92":0,">92":0};
+  bidRates.forEach(r=>{if(r<89)bid_dist["<89"]++;else if(r<89.5)bid_dist["89-89.5"]++;else if(r<90)bid_dist["89.5-90"]++;else if(r<90.5)bid_dist["90-90.5"]++;else if(r<91)bid_dist["90.5-91"]++;else if(r<91.5)bid_dist["91-91.5"]++;else if(r<92)bid_dist["91.5-92"]++;else bid_dist[">92"]++});
+  return{pn_no,pn,ag,at,od,ba,ep,xp,av,floor_rate,adj_rate,pre_rates,selected_nums,pre_avg,pre_min,pre_max,participant_count,bid_dist,bid_median,bid_q1,bid_q3,my_rank,my_bid_rate,my_adj_rate,win_bid_rate,win_adj_rate,source_file:fileName}}
+
+// ─── 추첨 시뮬레이션 (C(15,4)=1365) ─────────────────────
+function simDraws(preRates){
+  if(!preRates||preRates.length!==15)return null;
+  const avgs=[];
+  for(let a=0;a<12;a++)for(let b=a+1;b<13;b++)for(let c=b+1;c<14;c++)for(let d=c+1;d<15;d++){
+    avgs.push(Math.round((preRates[a]+preRates[b]+preRates[c]+preRates[d])/4*10000)/10000)}
+  avgs.sort((a,b)=>a-b);const n=avgs.length;
+  const negCount=avgs.filter(v=>v<0).length;
+  const hist={};avgs.forEach(v=>{const b=(Math.floor(v*2)/2).toFixed(1);hist[b]=(hist[b]||0)+1});
+  return{total:n,avgs,min:avgs[0],max:avgs[n-1],
+    p10:avgs[Math.floor(n*0.1)],p25:avgs[Math.floor(n*0.25)],p50:avgs[Math.floor(n*0.5)],p75:avgs[Math.floor(n*0.75)],p90:avgs[Math.floor(n*0.9)],
+    negPct:Math.round(negCount/n*1000)/10,hist,
+    belowMinus05:Math.round(avgs.filter(v=>v<-0.5).length/n*1000)/10,
+    belowMinus10:Math.round(avgs.filter(v=>v<-1.0).length/n*1000)/10}}
+
 // ─── 컴포넌트 ──────────────────────────────────────────────
 const inpS={width:"100%",padding:"7px 10px",background:"#0c0c1a",border:"1px solid #252540",borderRadius:5,color:"#e8e8f0",fontSize:12,outline:"none"};
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
@@ -228,6 +300,9 @@ export default function App(){
   const[predictions,setPredictions]=useState([]); // DB에서 로드한 예측 내역
   const[compFilter,setCompFilter]=useState("all"); // all | matched | pending
   const[predListFilter,setPredListFilter]=useState("all"); // all | file_upload | manual
+  // 상세 데이터 관련
+  const[bidDetails,setBidDetails]=useState([]); // bid_details DB
+  const[simResult,setSimResult]=useState(null); // 추첨 시뮬레이션 결과
 
   const refreshStats=useCallback(rows=>{setAllS(calcStats(rows));setNewS(calcStats(rows,r=>r.era==="new"));setOldS(calcStats(rows,r=>r.era==="old"))},[]);
 
@@ -243,20 +318,42 @@ export default function App(){
         const preds=await sbFetchPredictions();
         setPredictions(preds||[]);
       }catch(e){setPredictions([])}
+      try{const dets=await sbFetchDetails();setBidDetails(dets||[])}catch(e){setBidDetails([])}
       setDbLoading(false);
     })()},[refreshStats]);
 
-  // 낙찰정보리스트 업로드
+  // 파일 업로드 (낙찰정보리스트 + SUCVIEW 자동 판별)
   const loadFiles=useCallback(async(fileList)=>{
     const files=Array.from(fileList).filter(Boolean);if(!files.length)return;setBusy(true);setMsg({type:"",text:""});setUploadLog([]);const logs=[];
-    for(const file of files){try{const{rows:raw,format}=await parseFile(file);if(!raw.length)throw new Error("0건");const hdr=raw[0]||[];const isPn=hdr.some(v=>String(v).includes("공고명"));if(!isPn)throw new Error("공고명 컬럼 없음");const nr=toRecords(raw.slice(1));await sbUpsert(nr);const nc=nr.filter(r=>r.era==="new").length,oc=nr.filter(r=>r.era==="old").length;logs.push({name:file.name,type:"ok",text:`[${format}] ${nr.length}건 | 신${nc}·구${oc}`});setUploadLog([...logs])}catch(e){logs.push({name:file.name,type:"err",text:e.message});setUploadLog([...logs])}}
-    try{const[rows,preds]=await Promise.all([sbFetchAll(),sbFetchPredictions()]);setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));
-      // 자동 매칭 실행
+    for(const file of files){
+      try{
+        const{rows:raw,format}=await parseFile(file);if(!raw.length)throw new Error("0건");
+        // SUCVIEW 파일 자동 판별
+        if(isSucviewFile(raw)){
+          const detail=parseSucview(raw,file.name);
+          if(!detail.pn_no)throw new Error("공고번호 없음");
+          await sbSaveDetail(detail);
+          const sim=simDraws(detail.pre_rates);
+          setSimResult(sim);
+          logs.push({name:file.name,type:"ok",text:`[상세] ${detail.ag} | 예가15개 + 참여${detail.participant_count}건 저장`});
+          setUploadLog([...logs]);continue
+        }
+        // 낙찰정보리스트
+        const hdr=raw[0]||[];const isPn=hdr.some(v=>String(v).includes("공고명"));
+        if(!isPn)throw new Error("공고명 컬럼 없음 (낙찰정보리스트 또는 SUCVIEW 상세파일을 올려주세요)");
+        const nr=toRecords(raw.slice(1));await sbUpsert(nr);
+        const nc=nr.filter(r=>r.era==="new").length,oc=nr.filter(r=>r.era==="old").length;
+        logs.push({name:file.name,type:"ok",text:`[${format}] ${nr.length}건 | 신${nc}·구${oc}`});
+        setUploadLog([...logs])
+      }catch(e){logs.push({name:file.name,type:"err",text:e.message});setUploadLog([...logs])}
+    }
+    try{const[rows,preds,dets]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails()]);
+      setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));setBidDetails(dets||[]);
       const matched=await sbMatchPredictions(preds,rows);
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭`})}
-      else setPredictions(preds);
+      else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:"업로드 완료"})}
     }catch(e){setMsg({type:"err",text:"DB 재로드 실패"})}
-    setSel({});if(logs.some(l=>l.type==="ok"))setTab("stats");setBusy(false)},[refreshStats]);
+    setSel({});if(logs.some(l=>l.type==="ok")&&!logs.some(l=>l.text.includes("[상세]")))setTab("stats");setBusy(false)},[refreshStats]);
 
   // 입찰서류함 예측
   const loadPredFile=useCallback(async(file)=>{
@@ -334,7 +431,7 @@ export default function App(){
 
     {/* 헤더 */}
     <div style={{padding:"10px 20px",borderBottom:"1px solid "+C.bdr,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-      <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:15,fontWeight:700,color:C.gold}}>입찰 분석 시스템 v2.2</span><span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span></div>
+      <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:15,fontWeight:700,color:C.gold}}>입찰 분석 시스템 v2.3</span><span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span></div>
       <div style={{display:"flex",gap:0,flexWrap:"wrap"}}><Tb id="upload" ch="업로드"/><Tb id="stats" ch="통계"/><Tb id="data" ch="데이터"/><Tb id="predict" ch="예측"/><Tb id="compare" ch="비교" badge={compStats.pending}/></div>
     </div>
 
@@ -351,8 +448,8 @@ export default function App(){
           <input id="fi" type="file" accept=".xls,.xlsx" multiple style={{display:"none"}} onChange={e=>{if(e.target.files?.length){loadFiles(e.target.files);e.target.value=""}}}/>
           {busy?<div style={{color:C.gold,fontSize:14}}>처리 중...</div>:<>
             <div style={{fontSize:36,opacity:0.4,marginBottom:8}}>↑</div>
-            <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>낙찰정보리스트 업로드</div>
-            <div style={{fontSize:11,color:C.txd}}>XLS/XLSX · 복수 파일 · 중복 제거 · 예측 자동 매칭</div>
+            <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>낙찰 데이터 업로드</div>
+            <div style={{fontSize:11,color:C.txd}}>낙찰정보리스트 XLS · SUCVIEW 상세파일 · 자동 판별 · 복수 파일</div>
             {dbLoading&&<div style={{marginTop:14,fontSize:11,color:C.txd}}>DB 연결 중...</div>}
             {!dbLoading&&recs.length===0&&<div style={{marginTop:14,padding:"12px 16px",background:"rgba(226,75,74,0.08)",border:"1px solid rgba(226,75,74,0.2)",borderRadius:6,textAlign:"left",fontSize:11,lineHeight:1.7,color:"#e24b4a"}}>
               낙찰 데이터가 없습니다. 낙찰정보리스트 XLS 파일을 업로드해주세요.
@@ -370,6 +467,45 @@ export default function App(){
           </>}
         </div>
         {uploadLog.length>0&&<div style={{marginTop:12}}>{uploadLog.map((l,i)=><div key={i} style={{padding:"6px 10px",fontSize:11,color:l.type==="ok"?"#5ca":"#e55",borderBottom:"1px solid "+C.bdr}}>{l.type==="ok"?"✓":"✕"} {l.name} — {l.text}</div>)}</div>}
+
+        {/* 상세 데이터 현황 */}
+        {bidDetails.length>0&&<div style={{marginTop:12,padding:"10px 16px",background:"rgba(93,202,165,0.06)",border:"1px solid rgba(93,202,165,0.15)",borderRadius:6,fontSize:11,lineHeight:1.7}}>
+          <div style={{fontWeight:600,color:"#5dca96",marginBottom:4,fontSize:12}}>복수예가 상세 데이터 ({bidDetails.length}건)</div>
+          {bidDetails.slice(0,5).map((d,i)=><div key={i} style={{color:C.txm,paddingBottom:3,borderBottom:i<Math.min(4,bidDetails.length-1)?"1px solid "+C.bdr:"none",marginBottom:3}}>
+            <span style={{color:C.txt}}>{d.ag}</span> <span style={{color:C.txd}}>|</span> <span style={{color:C.txd}}>{d.od}</span> <span style={{color:C.txd}}>|</span> 예가15개: <span style={{color:"#5dca96"}}>{d.pre_avg?.toFixed(4)}%</span> <span style={{color:C.txd}}>| 참여 {d.participant_count}건</span>
+          </div>)}
+          {bidDetails.length>5&&<div style={{color:C.txd,fontSize:10}}>외 {bidDetails.length-5}건...</div>}
+        </div>}
+
+        {/* 추첨 시뮬레이션 결과 (SUCVIEW 업로드 직후) */}
+        {simResult&&<div style={{marginTop:12,padding:"12px 16px",background:"rgba(168,180,255,0.06)",border:"1px solid rgba(168,180,255,0.2)",borderRadius:8,fontSize:11}}>
+          <div style={{fontWeight:600,color:"#a8b4ff",marginBottom:8,fontSize:13}}>추첨 시뮬레이션 (C(15,4) = {simResult.total}가지)</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:10}}>
+            {[{l:"P10",v:simResult.p10},{l:"P25",v:simResult.p25},{l:"중앙값",v:simResult.p50},{l:"P75",v:simResult.p75},{l:"P90",v:simResult.p90}].map((s,i)=>
+              <div key={i} style={{background:C.bg3,borderRadius:5,padding:"6px 8px",textAlign:"center"}}>
+                <div style={{fontSize:9,color:C.txd}}>{s.l}</div>
+                <div style={{fontSize:14,fontWeight:600,color:i===2?"#a8b4ff":C.txt}}>{(100+s.v).toFixed(4)}%</div>
+                <div style={{fontSize:9,color:C.txd}}>{s.v>=0?"+":""}{s.v.toFixed(4)}</div>
+              </div>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:8}}>
+            <div style={{padding:"5px 8px",background:C.bg3,borderRadius:5,textAlign:"center"}}><div style={{fontSize:9,color:C.txd}}>음수 확률</div><div style={{fontWeight:600,color:simResult.negPct>50?"#e24b4a":"#5dca96"}}>{simResult.negPct}%</div></div>
+            <div style={{padding:"5px 8px",background:C.bg3,borderRadius:5,textAlign:"center"}}><div style={{fontSize:9,color:C.txd}}>-0.5% 이하</div><div style={{fontWeight:600,color:simResult.belowMinus05>30?"#e24b4a":"#d4a834"}}>{simResult.belowMinus05}%</div></div>
+            <div style={{padding:"5px 8px",background:C.bg3,borderRadius:5,textAlign:"center"}}><div style={{fontSize:9,color:C.txd}}>-1.0% 이하</div><div style={{fontWeight:600,color:simResult.belowMinus10>15?"#e24b4a":"#5dca96"}}>{simResult.belowMinus10}%</div></div>
+          </div>
+          {/* 히스토그램 */}
+          <div style={{fontSize:10,color:C.txd,marginBottom:4}}>사정율 분포 (0.5% 구간)</div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:2,height:60}}>
+            {Object.entries(simResult.hist).sort((a,b)=>parseFloat(a[0])-parseFloat(b[0])).map(([k,v])=>{
+              const pct=v/simResult.total*100;const h=Math.max(2,pct/25*60);
+              return<div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                <div style={{width:"100%",height:h,background:parseFloat(k)<0?"rgba(226,75,74,0.5)":"rgba(93,202,165,0.5)",borderRadius:"2px 2px 0 0"}}/>
+                <div style={{fontSize:8,color:C.txd,whiteSpace:"nowrap"}}>{k}</div>
+              </div>})}
+          </div>
+          <div style={{marginTop:6,fontSize:10,color:C.txd}}>범위: {(100+simResult.min).toFixed(2)}% ~ {(100+simResult.max).toFixed(2)}%</div>
+        </div>}
+
         {recs.length>0&&<div style={{marginTop:16}}><button onClick={()=>setDlgType("all")} style={{padding:"6px 14px",background:"rgba(220,50,50,0.1)",border:"1px solid rgba(220,50,50,0.3)",borderRadius:5,color:"#e55",fontSize:11,cursor:"pointer"}}>전체 삭제 ({recs.length}건)</button></div>}
       </div>}
 
