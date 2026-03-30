@@ -280,117 +280,94 @@ function simDraws(preRates){
     belowMinus10:Math.round(avgs.filter(v=>v<-1.0).length/n*1000)/10}}
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
-const inpS={width:"100%",padding:"7px 10px",background:"#0c0c1a",border:"1px solid #252540",borderRadius:5,color:"#e8e8f0",fontSize:12,outline:"none"};
+const inpS={width:"100%",padding:"8px 10px",background:"#0c0c1a",border:"1px solid #252540",borderRadius:6,color:"#e8e8f0",fontSize:13,outline:"none"};
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
 const PAGE=50;
 
 // ═══════════════════════════════════════════════════════════
 export default function App(){
-  const[tab,setTab]=useState("upload");
+  const[tab,setTab]=useState("dash");
   const[recs,setRecs]=useState([]);
   const[allS,setAllS]=useState({ts:{},as:{}});const[newS,setNewS]=useState({ts:{},as:{}});const[oldS,setOldS]=useState({ts:{},as:{}});
-  const[drag,setDrag]=useState(false);const[busy,setBusy]=useState(false);const[msg,setMsg]=useState({type:"",text:""});
+  const[drag,setDrag]=useState(false);const[dragPred,setDragPred]=useState(false);const[busy,setBusy]=useState(false);const[msg,setMsg]=useState({type:"",text:""});
   const[uploadLog,setUploadLog]=useState([]);const[dataStatus,setDataStatus]=useState(null);
   const[inp,setInp]=useState({agency:"",baseAmount:"0",estimatedPrice:"0",aValue:"0"});const[pred,setPred]=useState(null);
-  const[search,setSearch]=useState("");const[sV,setSV]=useState("type");const[agSch,setAgSch]=useState("");const[eF,setEF]=useState("all");
+  const[search,setSearch]=useState("");const[agSch,setAgSch]=useState("");const[eF,setEF]=useState("all");const[atF,setAtF]=useState("all");
   const[sel,setSel]=useState({});const[dlgType,setDlgType]=useState("");const[dataPage,setDataPage]=useState(0);const[dbLoading,setDbLoading]=useState(true);
-  // 예측 관련
-  const[predMode,setPredMode]=useState("manual"); // manual | file
-  const[predResults,setPredResults]=useState([]); // 파일 업로드 예측 결과
-  const[predictions,setPredictions]=useState([]); // DB에서 로드한 예측 내역
-  const[compFilter,setCompFilter]=useState("all"); // all | matched | pending
-  const[predListFilter,setPredListFilter]=useState("all"); // all | file_upload | manual
-  // 상세 데이터 관련
-  const[bidDetails,setBidDetails]=useState([]); // bid_details DB
-  const[simResult,setSimResult]=useState(null); // 추첨 시뮬레이션 결과
+  const[predResults,setPredResults]=useState([]);
+  const[predictions,setPredictions]=useState([]);
+  const[compFilter,setCompFilter]=useState("all");
+  const[bidDetails,setBidDetails]=useState([]);
+  const[simResult,setSimResult]=useState(null);
+  const[expandedDetail,setExpandedDetail]=useState(null);
 
   const refreshStats=useCallback(rows=>{setAllS(calcStats(rows));setNewS(calcStats(rows,r=>r.era==="new"));setOldS(calcStats(rows,r=>r.era==="old"))},[]);
 
   // DB 로드
-  useEffect(()=>{
-    (async()=>{
-      try{
-        const rows=await sbFetchAll();
-        setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));
-        if(rows.length>0)setTab("stats");
-      }catch(e){setMsg({type:"err",text:"낙찰DB 로드 실패: "+e.message})}
-      try{
-        const preds=await sbFetchPredictions();
-        setPredictions(preds||[]);
-      }catch(e){setPredictions([])}
-      try{const dets=await sbFetchDetails();setBidDetails(dets||[])}catch(e){setBidDetails([])}
-      setDbLoading(false);
-    })()},[refreshStats]);
+  useEffect(()=>{(async()=>{
+    try{const rows=await sbFetchAll();setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));if(rows.length>0)setTab("dash")}catch(e){setMsg({type:"err",text:"DB 로드 실패: "+e.message})}
+    try{const preds=await sbFetchPredictions();setPredictions(preds||[])}catch(e){setPredictions([])}
+    try{const dets=await sbFetchDetails();setBidDetails(dets||[])}catch(e){setBidDetails([])}
+    setDbLoading(false)
+  })()},[refreshStats]);
 
-  // 파일 업로드 (낙찰정보리스트 + SUCVIEW 자동 판별)
+  // 파일 업로드 (3종 자동 판별)
   const loadFiles=useCallback(async(fileList)=>{
     const files=Array.from(fileList).filter(Boolean);if(!files.length)return;setBusy(true);setMsg({type:"",text:""});setUploadLog([]);const logs=[];
     for(const file of files){
       try{
-        const{rows:raw,format}=await parseFile(file);if(!raw.length)throw new Error("0건");
-        // SUCVIEW 파일 자동 판별
+        const{rows:raw,format}=await parseFile(file);if(!raw.length)throw new Error("빈 파일");
         if(isSucviewFile(raw)){
-          const detail=parseSucview(raw,file.name);
-          if(!detail.pn_no)throw new Error("공고번호 없음");
-          await sbSaveDetail(detail);
-          const sim=simDraws(detail.pre_rates);
-          setSimResult(sim);
-          logs.push({name:file.name,type:"ok",text:`[상세] ${detail.ag} | 예가15개 + 참여${detail.participant_count}건 저장`});
-          setUploadLog([...logs]);continue
-        }
-        // 낙찰정보리스트
+          const detail=parseSucview(raw,file.name);if(!detail.pn_no)throw new Error("공고번호 없음");
+          await sbSaveDetail(detail);const sim=simDraws(detail.pre_rates);setSimResult(sim);
+          logs.push({name:file.name,type:"ok",text:`[상세] ${detail.ag} | 예가15개 + 참여${detail.participant_count}건`});
+          setUploadLog([...logs]);continue}
         const hdr=raw[0]||[];const isPn=hdr.some(v=>String(v).includes("공고명"));
-        if(!isPn)throw new Error("공고명 컬럼 없음 (낙찰정보리스트 또는 SUCVIEW 상세파일을 올려주세요)");
+        if(!isPn)throw new Error("지원하지 않는 파일 형식");
         const nr=toRecords(raw.slice(1));await sbUpsert(nr);
         const nc=nr.filter(r=>r.era==="new").length,oc=nr.filter(r=>r.era==="old").length;
-        logs.push({name:file.name,type:"ok",text:`[${format}] ${nr.length}건 | 신${nc}·구${oc}`});
-        setUploadLog([...logs])
-      }catch(e){logs.push({name:file.name,type:"err",text:e.message});setUploadLog([...logs])}
-    }
+        logs.push({name:file.name,type:"ok",text:`[${format}] ${nr.length}건 | 신${nc}·구${oc}`});setUploadLog([...logs])
+      }catch(e){logs.push({name:file.name,type:"err",text:e.message});setUploadLog([...logs])}}
     try{const[rows,preds,dets]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails()]);
       setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));setBidDetails(dets||[]);
       const matched=await sbMatchPredictions(preds,rows);
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭`})}
       else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:"업로드 완료"})}
     }catch(e){setMsg({type:"err",text:"DB 재로드 실패"})}
-    setSel({});if(logs.some(l=>l.type==="ok")&&!logs.some(l=>l.text.includes("[상세]")))setTab("stats");setBusy(false)},[refreshStats]);
+    setSel({});setBusy(false)},[refreshStats]);
 
   // 입찰서류함 예측
   const loadPredFile=useCallback(async(file)=>{
     if(!file)return;setBusy(true);setMsg({type:"",text:""});
-    try{
-      const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length)throw new Error("예측 대상 0건");
-      const results=items.map(item=>{
-        const p=predictV3({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as);
-        return{...item,pred:p}}).filter(r=>r.pred);
+    try{const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length)throw new Error("예측 대상 0건");
+      const results=items.map(item=>{const p=predictV3({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as);return{...item,pred:p}}).filter(r=>r.pred);
       setPredResults(results);
-      // DB 저장
       const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,source:"file_upload",match_status:"pending"}));
-      await sbSavePredictions(dbRows);
-      const preds=await sbFetchPredictions();setPredictions(preds);
-      setMsg({type:"ok",text:`${results.length}건 예측 완료 · DB 저장됨`});
-    }catch(e){setMsg({type:"err",text:"예측 실패: "+e.message})}
-    setBusy(false)},[allS]);
+      await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds);
+      setMsg({type:"ok",text:`${results.length}건 예측 완료 · DB 저장`})
+    }catch(e){setMsg({type:"err",text:"예측 실패: "+e.message})}setBusy(false)},[allS]);
 
-  // 수동 예측 + DB 저장
+  // 수동 예측
   const doManualPred=useCallback(async()=>{
     const p=predictV3({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as);
     setPred(p);
-    if(p){
-      const dk=md5("pred|manual|"+inp.agency+"|"+inp.baseAmount+"|"+Date.now());
+    if(p){const dk=md5("pred|manual|"+inp.agency+"|"+inp.baseAmount+"|"+Date.now());
       const row={dedup_key:dk,pn:"수동입력: "+inp.agency,pn_no:null,ag:inp.agency.trim(),at:clsAg(inp.agency),ep:tn(inp.estimatedPrice)||null,ba:tn(inp.baseAmount),av:tn(inp.aValue),raw_cost:null,cat:null,open_date:null,pred_adj_rate:p.adj,pred_expected_price:p.xp,pred_floor_rate:p.fr,pred_bid_amount:p.bid,pred_source:p.src,pred_base_adj:p.baseAdj,source:"manual",match_status:"pending"};
-      try{await sbSavePredictions([row]);const preds=await sbFetchPredictions();setPredictions(preds)}catch(e){/* silent */}
-    }},[inp,allS]);
+      try{await sbSavePredictions([row]);const preds=await sbFetchPredictions();setPredictions(preds)}catch(e){/* silent */}}},[inp,allS]);
 
   // 삭제
   const selCount=Object.keys(sel).filter(k=>sel[k]).length;
   const[delConfirm,setDelConfirm]=useState("");
   const doDelete=useCallback(async()=>{
-    if(dlgType==="all"&&delConfirm!=="삭제"){return}
+    if(dlgType==="all"&&delConfirm!=="삭제")return;
     setBusy(true);try{if(dlgType==="all"){await sbDeleteAll();setRecs([]);refreshStats([]);setDataStatus(null);setMsg({type:"ok",text:"전체 삭제 완료"})}else if(dlgType==="sel"){const ids=Object.keys(sel).filter(k=>sel[k]).map(Number);await sbDeleteIds(ids);setRecs(prev=>{const next=prev.filter(r=>!sel[r.id]);refreshStats(next);setDataStatus(calcDataStatus(next));return next});setMsg({type:"ok",text:`${ids.length}건 삭제`});setSel({})}}catch(e){setMsg({type:"err",text:"삭제 실패"})}setDlgType("");setDelConfirm("");setBusy(false)},[dlgType,sel,refreshStats,delConfirm]);
 
+  // 파생 데이터
   const curSt=eF==="new"?newS:eF==="old"?oldS:allS;
-  const filteredRecs=useMemo(()=>{const t=search.toLowerCase();let src=recs;if(eF==="new")src=recs.filter(r=>r.era==="new");else if(eF==="old")src=recs.filter(r=>r.era==="old");return t?src.filter(r=>((r.pn||"")+(r.ag||"")+(r.co||"")).toLowerCase().includes(t)):src},[recs,search,eF]);
+  const filteredRecs=useMemo(()=>{const t=search.toLowerCase();let src=recs;
+    if(eF==="new")src=recs.filter(r=>r.era==="new");else if(eF==="old")src=recs.filter(r=>r.era==="old");
+    if(atF!=="all")src=src.filter(r=>r.at===atF);
+    return t?src.filter(r=>((r.pn||"")+(r.ag||"")+(r.co||"")).toLowerCase().includes(t)):src},[recs,search,eF,atF]);
   const pagedRecs=useMemo(()=>filteredRecs.slice(dataPage*PAGE,(dataPage+1)*PAGE),[filteredRecs,dataPage]);
   const totalPages=Math.max(1,Math.ceil(filteredRecs.length/PAGE));
   const fAg=useMemo(()=>{const t=agSch.toLowerCase();return Object.entries(curSt.as||{}).filter(([k])=>!t||mSch(k,t)).sort((a,b)=>b[1].n-a[1].n)},[curSt.as,agSch]);
@@ -398,293 +375,310 @@ export default function App(){
   const nC=recs.filter(r=>r.era==="new").length,oC=recs.filter(r=>r.era==="old").length;
   const allSel=pagedRecs.length>0&&pagedRecs.every(r=>sel[r.id]);
 
-  // 비교 탭 통계
   const compStats=useMemo(()=>{
-    const preds=predictions||[];
-    const matched=preds.filter(p=>p.match_status==="matched");
-    const pending=preds.filter(p=>p.match_status==="pending");
+    const preds=predictions||[];const matched=preds.filter(p=>p.match_status==="matched");const pending=preds.filter(p=>p.match_status==="pending");
     const errors=matched.filter(p=>p.adj_rate_error!=null).map(p=>Math.abs(p.adj_rate_error));
     const avgErr=errors.length?Math.round(errors.reduce((a,b)=>a+b,0)/errors.length*10000)/10000:0;
-    // 기관유형별
     const byType={};matched.forEach(p=>{const t=p.at||"기타";if(!byType[t])byType[t]={n:0,errSum:0};byType[t].n++;if(p.adj_rate_error!=null)byType[t].errSum+=Math.abs(p.adj_rate_error)});
     Object.values(byType).forEach(v=>{v.avgErr=v.n?Math.round(v.errSum/v.n*10000)/10000:0});
-    return{total:preds.length,matched:matched.length,pending:pending.length,avgErr,byType,matchedList:matched,pendingList:pending}},[predictions]);
-  const compList=useMemo(()=>{const p=predictions||[];if(compFilter==="matched")return compStats.matchedList;if(compFilter==="pending")return compStats.pendingList;return p},[predictions,compFilter,compStats]);
-  const filteredPreds=useMemo(()=>{const p=predictions||[];if(predListFilter==="all")return p;return p.filter(x=>x.source===predListFilter)},[predictions,predListFilter]);
+    return{total:preds.length,matched:matched.length,pending:pending.length,avgErr,byType}},[predictions]);
+  const compList=useMemo(()=>{const p=predictions||[];if(compFilter==="matched")return p.filter(x=>x.match_status==="matched");if(compFilter==="pending")return p.filter(x=>x.match_status==="pending");return p},[predictions,compFilter]);
 
-  const btnS=(act,c)=>({padding:"3px 10px",fontSize:10,fontWeight:act?600:400,background:act?c+"22":"#1a1a30",color:act?c:"#888",border:"1px solid "+(act?c+"44":"#252540"),borderRadius:4,cursor:"pointer",marginRight:4});
-  const Tb=({id,ch,badge})=>(<button onClick={()=>{setTab(id);setDataPage(0)}} style={{padding:"8px 14px",fontSize:11,fontWeight:tab===id?600:400,background:tab===id?C.bg3:"transparent",color:tab===id?C.gold:C.txm,border:"none",borderBottom:tab===id?`2px solid ${C.gold}`:"2px solid transparent",cursor:"pointer",position:"relative"}}>{ch}{badge>0&&<span style={{position:"absolute",top:2,right:2,background:"#e24b4a",color:"#fff",fontSize:8,padding:"1px 4px",borderRadius:6,minWidth:14,textAlign:"center"}}>{badge}</span>}</button>);
-  const Era=({id,ch})=>(<button onClick={()=>setEF(id)} style={btnS(eF===id,id==="new"?"#5dca96":id==="old"?"#e24b4a":C.gold)}>{ch}</button>);
+  // 스타일
+  const btnS=(act,c)=>({padding:"4px 12px",fontSize:11,fontWeight:act?600:400,background:act?c+"22":"#1a1a30",color:act?c:"#888",border:"1px solid "+(act?c+"44":"#252540"),borderRadius:5,cursor:"pointer"});
+  const Tb=({id,ch,badge})=>(<button onClick={()=>{setTab(id);setDataPage(0)}} style={{padding:"10px 20px",fontSize:12,fontWeight:tab===id?600:400,background:tab===id?C.bg3:"transparent",color:tab===id?C.gold:C.txm,border:"none",borderBottom:tab===id?`2px solid ${C.gold}`:"2px solid transparent",cursor:"pointer",position:"relative"}}>{ch}{badge>0&&<span style={{position:"absolute",top:4,right:4,background:"#e24b4a",color:"#fff",fontSize:8,padding:"1px 5px",borderRadius:8,minWidth:14,textAlign:"center"}}>{badge}</span>}</button>);
 
-  return(<div style={{fontFamily:"system-ui,sans-serif",background:C.bg,color:C.txt,minHeight:"100vh"}}>
+  // 시뮬레이션 인라인 뷰 컴포넌트
+  const SimView=({sim})=>{
+    if(!sim)return null;
+    return<div style={{padding:"12px 14px",background:"rgba(168,180,255,0.05)",border:"1px solid rgba(168,180,255,0.15)",borderRadius:8,marginTop:8,fontSize:12}}>
+      <div style={{fontWeight:600,color:"#a8b4ff",marginBottom:8}}>추첨 시뮬레이션 ({sim.total}가지)</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:8}}>
+        {[{l:"P10",v:sim.p10},{l:"P25",v:sim.p25},{l:"중앙값",v:sim.p50},{l:"P75",v:sim.p75},{l:"P90",v:sim.p90}].map((s,i)=>
+          <div key={i} style={{background:C.bg3,borderRadius:6,padding:"6px",textAlign:"center"}}>
+            <div style={{fontSize:10,color:C.txd}}>{s.l}</div>
+            <div style={{fontSize:14,fontWeight:600,color:i===2?"#a8b4ff":C.txt}}>{(100+s.v).toFixed(4)}%</div>
+          </div>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:8}}>
+        <div style={{background:C.bg3,borderRadius:6,padding:"5px",textAlign:"center"}}><div style={{fontSize:10,color:C.txd}}>음수 확률</div><div style={{fontWeight:600,color:sim.negPct>50?"#e24b4a":"#5dca96"}}>{sim.negPct}%</div></div>
+        <div style={{background:C.bg3,borderRadius:6,padding:"5px",textAlign:"center"}}><div style={{fontSize:10,color:C.txd}}>-0.5% 이하</div><div style={{fontWeight:600,color:sim.belowMinus05>30?"#e24b4a":"#d4a834"}}>{sim.belowMinus05}%</div></div>
+        <div style={{background:C.bg3,borderRadius:6,padding:"5px",textAlign:"center"}}><div style={{fontSize:10,color:C.txd}}>-1.0% 이하</div><div style={{fontWeight:600,color:sim.belowMinus10>15?"#e24b4a":"#5dca96"}}>{sim.belowMinus10}%</div></div>
+      </div>
+      <div style={{display:"flex",alignItems:"flex-end",gap:2,height:50}}>
+        {Object.entries(sim.hist).sort((a,b)=>parseFloat(a[0])-parseFloat(b[0])).map(([k,v])=>{
+          const pct=v/sim.total*100;const h=Math.max(2,pct/25*50);
+          return<div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
+            <div style={{width:"100%",height:h,background:parseFloat(k)<0?"rgba(226,75,74,0.5)":"rgba(93,202,165,0.5)",borderRadius:"2px 2px 0 0"}}/>
+            <div style={{fontSize:8,color:C.txd}}>{k}</div>
+          </div>})}
+      </div>
+    </div>};
+
+  return(<div style={{fontFamily:"system-ui,sans-serif",background:C.bg,color:C.txt,minHeight:"100vh",fontSize:13}}>
+    {/* 삭제 다이얼로그 */}
     {dlgType&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.6)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{setDlgType("");setDelConfirm("")}}><div onClick={e=>e.stopPropagation()} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:24,maxWidth:380,width:"90%"}}>
       <div style={{fontSize:14,fontWeight:600,color:"#e24b4a",marginBottom:8}}>{dlgType==="sel"?selCount+"건 삭제":"전체 삭제"}</div>
       <div style={{fontSize:12,color:C.txm,marginBottom:12}}>DB에서 영구 삭제됩니다. 복구할 수 없습니다.</div>
-      {dlgType==="all"&&<div style={{marginBottom:12}}>
-        <div style={{fontSize:11,color:C.txd,marginBottom:4}}>확인을 위해 <span style={{color:"#e24b4a",fontWeight:600}}>"삭제"</span>를 입력하세요</div>
-        <input value={delConfirm} onChange={e=>setDelConfirm(e.target.value)} placeholder="삭제" style={{...inpS,borderColor:"#e24b4a44"}}/>
-      </div>}
+      {dlgType==="all"&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:C.txd,marginBottom:4}}>확인: <span style={{color:"#e24b4a",fontWeight:600}}>"삭제"</span> 입력</div><input value={delConfirm} onChange={e=>setDelConfirm(e.target.value)} placeholder="삭제" style={{...inpS,borderColor:"#e24b4a44"}}/></div>}
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-        <button onClick={()=>{setDlgType("");setDelConfirm("")}} style={{padding:"6px 16px",background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,fontSize:11,cursor:"pointer"}}>취소</button>
-        <button onClick={doDelete} disabled={busy||(dlgType==="all"&&delConfirm!=="삭제")} style={{padding:"6px 16px",background:dlgType==="all"&&delConfirm!=="삭제"?"#555":"#e24b4a",border:"none",borderRadius:5,color:"#fff",fontSize:11,fontWeight:600,cursor:dlgType==="all"&&delConfirm!=="삭제"?"not-allowed":"pointer"}}>{busy?"처리중...":"삭제 실행"}</button>
+        <button onClick={()=>{setDlgType("");setDelConfirm("")}} style={{padding:"7px 16px",background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,fontSize:12,cursor:"pointer"}}>취소</button>
+        <button onClick={doDelete} disabled={busy||(dlgType==="all"&&delConfirm!=="삭제")} style={{padding:"7px 16px",background:dlgType==="all"&&delConfirm!=="삭제"?"#555":"#e24b4a",border:"none",borderRadius:5,color:"#fff",fontSize:12,fontWeight:600,cursor:dlgType==="all"&&delConfirm!=="삭제"?"not-allowed":"pointer"}}>{busy?"처리중...":"삭제 실행"}</button>
       </div></div></div>}
 
-    {/* 헤더 */}
+    {/* 헤더 + 3탭 */}
     <div style={{padding:"10px 20px",borderBottom:"1px solid "+C.bdr,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-      <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:15,fontWeight:700,color:C.gold}}>입찰 분석 시스템 v2.3</span><span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span></div>
-      <div style={{display:"flex",gap:0,flexWrap:"wrap"}}><Tb id="upload" ch="업로드"/><Tb id="stats" ch="통계"/><Tb id="data" ch="데이터"/><Tb id="predict" ch="예측"/><Tb id="compare" ch="비교" badge={compStats.pending}/></div>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <span style={{fontSize:16,fontWeight:700,color:C.gold}}>입찰 분석 시스템</span>
+        <span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span>
+      </div>
+      <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/></div>
     </div>
+    {msg.text&&<div style={{margin:"0 auto",maxWidth:1000,padding:"8px 16px"}}><div style={{padding:"8px 14px",background:msg.type==="ok"?"rgba(93,202,165,0.08)":"rgba(220,50,50,0.08)",border:`1px solid ${msg.type==="ok"?"rgba(93,202,165,0.3)":"rgba(220,50,50,0.3)"}`,borderRadius:6,fontSize:12,color:msg.type==="ok"?"#5ca":"#e55"}}>{msg.type==="ok"?"✓ ":"✕ "}{msg.text}</div></div>}
 
-    <div style={{maxWidth:980,margin:"0 auto",padding:"16px 12px"}}>
-      {/* 시대 필터 */}
-      {(tab==="stats"||tab==="data")&&<div style={{marginBottom:12,display:"flex",gap:4}}><Era id="all" ch="전체"/><Era id="new" ch="신기준"/><Era id="old" ch="구기준"/></div>}
-      {msg.text&&<div style={{marginBottom:12,padding:"8px 14px",background:msg.type==="ok"?"rgba(93,202,165,0.08)":"rgba(220,50,50,0.08)",border:`1px solid ${msg.type==="ok"?"rgba(93,202,165,0.3)":"rgba(220,50,50,0.3)"}`,borderRadius:6,fontSize:11,color:msg.type==="ok"?"#5ca":"#e55"}}>{msg.type==="ok"?"✓ ":"✕ "}{msg.text}</div>}
+    <div style={{maxWidth:1000,margin:"0 auto",padding:"16px 16px"}}>
 
-      {/* ═══ 업로드 탭 ═══ */}
-      {tab==="upload"&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:20}}>
-        <div style={{border:`2px dashed ${drag?C.gold:C.bdr}`,borderRadius:10,padding:"44px 20px",textAlign:"center",cursor:busy?"default":"pointer",background:drag?"rgba(212,168,52,0.05)":"transparent"}}
-          onDrop={e=>{e.preventDefault();setDrag(false);if(!busy)loadFiles(e.dataTransfer.files)}} onDragOver={e=>{e.preventDefault();if(!busy)setDrag(true)}} onDragLeave={()=>setDrag(false)}
-          onClick={()=>{if(!busy)document.getElementById("fi").click()}}>
-          <input id="fi" type="file" accept=".xls,.xlsx" multiple style={{display:"none"}} onChange={e=>{if(e.target.files?.length){loadFiles(e.target.files);e.target.value=""}}}/>
-          {busy?<div style={{color:C.gold,fontSize:14}}>처리 중...</div>:<>
-            <div style={{fontSize:36,opacity:0.4,marginBottom:8}}>↑</div>
-            <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>낙찰 데이터 업로드</div>
-            <div style={{fontSize:11,color:C.txd}}>낙찰정보리스트 XLS · SUCVIEW 상세파일 · 자동 판별 · 복수 파일</div>
-            {dbLoading&&<div style={{marginTop:14,fontSize:11,color:C.txd}}>DB 연결 중...</div>}
-            {!dbLoading&&recs.length===0&&<div style={{marginTop:14,padding:"12px 16px",background:"rgba(226,75,74,0.08)",border:"1px solid rgba(226,75,74,0.2)",borderRadius:6,textAlign:"left",fontSize:11,lineHeight:1.7,color:"#e24b4a"}}>
-              낙찰 데이터가 없습니다. 낙찰정보리스트 XLS 파일을 업로드해주세요.
-            </div>}
-            {dataStatus&&dataStatus.total>0&&<div style={{marginTop:14,padding:"10px 16px",background:"rgba(212,168,52,0.06)",border:"1px solid rgba(212,168,52,0.15)",borderRadius:6,textAlign:"left",fontSize:11,lineHeight:1.7}}>
-              <div style={{fontWeight:600,color:C.gold,marginBottom:4,fontSize:12}}>데이터 현황</div>
-              <div style={{color:C.txm}}>총 <span style={{color:C.txt,fontWeight:600}}>{dataStatus.total.toLocaleString()}건</span> 저장{dataStatus.futureCount>0&&<span style={{color:C.txd,fontSize:10}}> (미래 개찰일 {dataStatus.futureCount}건 포함)</span>}</div>
-              {dataStatus.latestDate&&<div style={{color:C.txm}}>최신 개찰일: <span style={{color:"#5dca96",fontWeight:600}}>{dataStatus.latestDate}</span> <span style={{color:C.txd}}>({dataStatus.sameDayCount}건)</span></div>}
-              {dataStatus.latestDate&&<div style={{color:C.txd,fontSize:10,marginTop:2}}>{dataStatus.latestPn}{dataStatus.latestAg&&<span style={{marginLeft:6,color:"#888"}}>- {dataStatus.latestAg}</span>}</div>}
-              {dataStatus.uploadTime&&<div style={{marginTop:6,paddingTop:6,borderTop:"1px solid "+C.bdr}}>
-                <div style={{color:C.txm}}>최근 업로드: <span style={{color:"#a8b4ff",fontWeight:500}}>{dataStatus.uploadTime.slice(0,16).replace("T"," ")}</span> <span style={{color:C.txd}}>({dataStatus.uploadBatchCount}건)</span></div>
-                {dataStatus.uploadOd&&<div style={{color:C.txd,fontSize:10,marginTop:2}}>개찰일 {dataStatus.uploadOd} | {dataStatus.uploadPn}{dataStatus.uploadAg&&<span style={{marginLeft:6}}>- {dataStatus.uploadAg}</span>}</div>}
-              </div>}
-            </div>}
-          </>}
+    {/* ═══ 대시보드 탭 ═══ */}
+    {tab==="dash"&&<div>
+      {/* 드롭존 */}
+      <div style={{border:`2px dashed ${drag?C.gold:C.bdr}`,borderRadius:10,padding:"20px",textAlign:"center",cursor:busy?"default":"pointer",background:drag?"rgba(212,168,52,0.04)":"transparent",marginBottom:16}}
+        onDrop={e=>{e.preventDefault();setDrag(false);if(!busy)loadFiles(e.dataTransfer.files)}} onDragOver={e=>{e.preventDefault();if(!busy)setDrag(true)}} onDragLeave={()=>setDrag(false)}
+        onClick={()=>{if(!busy)document.getElementById("fi").click()}}>
+        <input id="fi" type="file" accept=".xls,.xlsx" multiple style={{display:"none"}} onChange={e=>{if(e.target.files?.length){loadFiles(e.target.files);e.target.value=""}}}/>
+        {busy?<div style={{color:C.gold,fontSize:14}}>처리 중...</div>:<>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>파일을 드래그하거나 클릭하세요</div>
+          <div style={{fontSize:11,color:C.txd}}>낙찰정보리스트 / SUCVIEW 상세 / 입찰서류함 — 자동 판별</div>
+          {dbLoading&&<div style={{marginTop:8,fontSize:11,color:C.txd}}>DB 연결 중...</div>}
+        </>}
+      </div>
+      {uploadLog.length>0&&<div style={{marginBottom:12}}>{uploadLog.map((l,i)=><div key={i} style={{padding:"6px 12px",fontSize:12,color:l.type==="ok"?"#5ca":"#e55",borderBottom:"1px solid "+C.bdr}}>{l.type==="ok"?"✓":"✕"} {l.name} — {l.text}</div>)}</div>}
+
+      {/* 요약 카드 4개 */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+        {[
+          {l:"낙찰 데이터",v:recs.length.toLocaleString(),s:dataStatus?.latestDate?"최신 "+dataStatus.latestDate:"",c:C.txt},
+          {l:"상세 데이터",v:String(bidDetails.length),s:"복수예가 15개",c:"#a8b4ff"},
+          {l:"예측 대기",v:String(compStats.pending),s:"미매칭",c:compStats.pending>0?"#e24b4a":"#5dca96"},
+          {l:"평균 오차",v:compStats.matched>0?compStats.avgErr.toFixed(2)+"%":"—",s:compStats.matched+"건 매칭",c:"#d4a834"}
+        ].map((c,i)=><div key={i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"12px",textAlign:"center",cursor:"pointer"}} onClick={()=>{if(i===0)setTab("analysis");if(i===2||i===3)setTab("predict")}}>
+          <div style={{fontSize:11,color:C.txd,marginBottom:4}}>{c.l}</div>
+          <div style={{fontSize:22,fontWeight:600,color:c.c}}>{c.v}</div>
+          <div style={{fontSize:10,color:C.txd,marginTop:2}}>{c.s}</div>
+        </div>)}
+      </div>
+
+      {/* 복수예가 상세 데이터 리스트 */}
+      {bidDetails.length>0&&<div style={{marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:600,color:C.gold,marginBottom:8}}>복수예가 상세 데이터 ({bidDetails.length}건)</div>
+        {bidDetails.slice(0,10).map((d,i)=><div key={d.id||i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,marginBottom:6,overflow:"hidden"}}>
+          <div style={{padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
+            onClick={()=>setExpandedDetail(expandedDetail===d.pn_no?null:d.pn_no)}>
+            <div style={{display:"flex",gap:8,alignItems:"center",flex:1,minWidth:0}}>
+              <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:"rgba(168,180,255,0.15)",color:"#a8b4ff",flexShrink:0}}>상세</span>
+              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12,fontWeight:500}}>{d.ag} — {(d.pn||"").length>40?(d.pn||"").slice(0,40)+"…":d.pn}</span>
+            </div>
+            <div style={{fontSize:11,color:C.txd,flexShrink:0,marginLeft:8}}>{d.od} <span style={{color:"#a8b4ff"}}>{expandedDetail===d.pn_no?"접기":"펼치기"}</span></div>
+          </div>
+          <div style={{padding:"0 14px 8px",display:"flex",gap:12,fontSize:11,color:C.txm}}>
+            <span>기초 {d.ba?tc(d.ba):""}</span>
+            <span>사정율 <span style={{color:"#5dca96"}}>{d.adj_rate!=null?(100+Number(d.adj_rate)).toFixed(4)+"%":""}</span></span>
+            <span>참여 {d.participant_count}건</span>
+          </div>
+          {expandedDetail===d.pn_no&&<div style={{borderTop:"1px solid "+C.bdr,padding:"12px 14px",background:"#0e0e22"}}>
+            <SimView sim={simDraws(d.pre_rates)}/>
+          </div>}
+        </div>)}
+      </div>}
+
+      {/* SUCVIEW 업로드 직후 시뮬레이션 */}
+      {simResult&&bidDetails.length===0&&<SimView sim={simResult}/>}
+
+      {/* 최근 활동 */}
+      {(dataStatus||compStats.matched>0)&&<div>
+        <div style={{fontSize:13,fontWeight:600,color:C.gold,marginBottom:8}}>최근 활동</div>
+        <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"hidden"}}>
+          {dataStatus?.uploadTime&&<div style={{padding:"8px 12px",borderBottom:"1px solid "+C.bdr,fontSize:12,display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:6,height:6,borderRadius:"50%",background:"#5dca96",flexShrink:0}}/>
+            <span>낙찰정보 {dataStatus.uploadBatchCount}건 업로드</span>
+            <span style={{color:C.txd,marginLeft:"auto",fontSize:10}}>{dataStatus.uploadTime?.slice(0,16).replace("T"," ")}</span>
+          </div>}
+          {bidDetails.length>0&&<div style={{padding:"8px 12px",borderBottom:"1px solid "+C.bdr,fontSize:12,display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:6,height:6,borderRadius:"50%",background:"#a8b4ff",flexShrink:0}}/>
+            <span>SUCVIEW 상세 {bidDetails.length}건 저장</span>
+          </div>}
+          {compStats.matched>0&&<div style={{padding:"8px 12px",fontSize:12,display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:6,height:6,borderRadius:"50%",background:"#d4a834",flexShrink:0}}/>
+            <span>{compStats.matched}건 예측 자동 매칭 (평균 오차 {compStats.avgErr.toFixed(4)}%)</span>
+          </div>}
         </div>
-        {uploadLog.length>0&&<div style={{marginTop:12}}>{uploadLog.map((l,i)=><div key={i} style={{padding:"6px 10px",fontSize:11,color:l.type==="ok"?"#5ca":"#e55",borderBottom:"1px solid "+C.bdr}}>{l.type==="ok"?"✓":"✕"} {l.name} — {l.text}</div>)}</div>}
-
-        {/* 상세 데이터 현황 */}
-        {bidDetails.length>0&&<div style={{marginTop:12,padding:"10px 16px",background:"rgba(93,202,165,0.06)",border:"1px solid rgba(93,202,165,0.15)",borderRadius:6,fontSize:11,lineHeight:1.7}}>
-          <div style={{fontWeight:600,color:"#5dca96",marginBottom:4,fontSize:12}}>복수예가 상세 데이터 ({bidDetails.length}건)</div>
-          {bidDetails.slice(0,5).map((d,i)=><div key={i} style={{color:C.txm,paddingBottom:3,borderBottom:i<Math.min(4,bidDetails.length-1)?"1px solid "+C.bdr:"none",marginBottom:3}}>
-            <span style={{color:C.txt}}>{d.ag}</span> <span style={{color:C.txd}}>|</span> <span style={{color:C.txd}}>{d.od}</span> <span style={{color:C.txd}}>|</span> 예가15개: <span style={{color:"#5dca96"}}>{d.pre_avg?.toFixed(4)}%</span> <span style={{color:C.txd}}>| 참여 {d.participant_count}건</span>
-          </div>)}
-          {bidDetails.length>5&&<div style={{color:C.txd,fontSize:10}}>외 {bidDetails.length-5}건...</div>}
-        </div>}
-
-        {/* 추첨 시뮬레이션 결과 (SUCVIEW 업로드 직후) */}
-        {simResult&&<div style={{marginTop:12,padding:"12px 16px",background:"rgba(168,180,255,0.06)",border:"1px solid rgba(168,180,255,0.2)",borderRadius:8,fontSize:11}}>
-          <div style={{fontWeight:600,color:"#a8b4ff",marginBottom:8,fontSize:13}}>추첨 시뮬레이션 (C(15,4) = {simResult.total}가지)</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:10}}>
-            {[{l:"P10",v:simResult.p10},{l:"P25",v:simResult.p25},{l:"중앙값",v:simResult.p50},{l:"P75",v:simResult.p75},{l:"P90",v:simResult.p90}].map((s,i)=>
-              <div key={i} style={{background:C.bg3,borderRadius:5,padding:"6px 8px",textAlign:"center"}}>
-                <div style={{fontSize:9,color:C.txd}}>{s.l}</div>
-                <div style={{fontSize:14,fontWeight:600,color:i===2?"#a8b4ff":C.txt}}>{(100+s.v).toFixed(4)}%</div>
-                <div style={{fontSize:9,color:C.txd}}>{s.v>=0?"+":""}{s.v.toFixed(4)}</div>
-              </div>)}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:8}}>
-            <div style={{padding:"5px 8px",background:C.bg3,borderRadius:5,textAlign:"center"}}><div style={{fontSize:9,color:C.txd}}>음수 확률</div><div style={{fontWeight:600,color:simResult.negPct>50?"#e24b4a":"#5dca96"}}>{simResult.negPct}%</div></div>
-            <div style={{padding:"5px 8px",background:C.bg3,borderRadius:5,textAlign:"center"}}><div style={{fontSize:9,color:C.txd}}>-0.5% 이하</div><div style={{fontWeight:600,color:simResult.belowMinus05>30?"#e24b4a":"#d4a834"}}>{simResult.belowMinus05}%</div></div>
-            <div style={{padding:"5px 8px",background:C.bg3,borderRadius:5,textAlign:"center"}}><div style={{fontSize:9,color:C.txd}}>-1.0% 이하</div><div style={{fontWeight:600,color:simResult.belowMinus10>15?"#e24b4a":"#5dca96"}}>{simResult.belowMinus10}%</div></div>
-          </div>
-          {/* 히스토그램 */}
-          <div style={{fontSize:10,color:C.txd,marginBottom:4}}>사정율 분포 (0.5% 구간)</div>
-          <div style={{display:"flex",alignItems:"flex-end",gap:2,height:60}}>
-            {Object.entries(simResult.hist).sort((a,b)=>parseFloat(a[0])-parseFloat(b[0])).map(([k,v])=>{
-              const pct=v/simResult.total*100;const h=Math.max(2,pct/25*60);
-              return<div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <div style={{width:"100%",height:h,background:parseFloat(k)<0?"rgba(226,75,74,0.5)":"rgba(93,202,165,0.5)",borderRadius:"2px 2px 0 0"}}/>
-                <div style={{fontSize:8,color:C.txd,whiteSpace:"nowrap"}}>{k}</div>
-              </div>})}
-          </div>
-          <div style={{marginTop:6,fontSize:10,color:C.txd}}>범위: {(100+simResult.min).toFixed(2)}% ~ {(100+simResult.max).toFixed(2)}%</div>
-        </div>}
-
-        {recs.length>0&&<div style={{marginTop:16}}><button onClick={()=>setDlgType("all")} style={{padding:"6px 14px",background:"rgba(220,50,50,0.1)",border:"1px solid rgba(220,50,50,0.3)",borderRadius:5,color:"#e55",fontSize:11,cursor:"pointer"}}>전체 삭제 ({recs.length}건)</button></div>}
       </div>}
 
-      {/* ═══ 통계 탭 ═══ */}
-      {tab==="stats"&&<div>
-        <div style={{display:"flex",gap:4,marginBottom:12}}><button onClick={()=>setSV("type")} style={btnS(sV==="type",C.gold)}>기관유형별</button><button onClick={()=>setSV("agency")} style={btnS(sV==="agency",C.gold)}>발주기관별</button></div>
-        {sV==="type"&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"hidden"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr style={{background:C.bg3}}>{["기관유형","건수","평균사정율(100%)","중앙값(100%)"].map((h,i)=><th key={i} style={{padding:"8px 10px",textAlign:i>0?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead><tbody>{Object.entries(curSt.ts||{}).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=><tr key={k} style={{borderBottom:"1px solid "+C.bdr}}><td style={{padding:"7px 10px",color:C.gold}}>{k}</td><td style={{padding:"7px 10px",textAlign:"right"}}>{v.n}</td><td style={{padding:"7px 10px",textAlign:"right",color:"#5dca96"}}>{(100+v.avg).toFixed(4)}%</td><td style={{padding:"7px 10px",textAlign:"right"}}>{(100+v.med).toFixed(4)}%</td></tr>)}</tbody></table></div>}
-        {sV==="agency"&&<div><input value={agSch} onChange={e=>setAgSch(e.target.value)} placeholder="발주기관 검색 (초성 가능)" style={{...inpS,marginBottom:8}}/><div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"hidden",maxHeight:500,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}><thead><tr style={{background:C.bg3}}>{["발주기관","유형","건수","평균(100%)","중앙값(100%)"].map((h,i)=><th key={i} style={{padding:"8px 10px",textAlign:i>1?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead><tbody>{fAg.slice(0,100).map(([k,v])=><tr key={k} style={{borderBottom:"1px solid "+C.bdr}}><td style={{padding:"6px 10px",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k}</td><td style={{padding:"6px 10px",color:C.txd,fontSize:10}}>{v.type}</td><td style={{padding:"6px 10px",textAlign:"right"}}>{v.n}</td><td style={{padding:"6px 10px",textAlign:"right",color:"#5dca96"}}>{(100+v.avg).toFixed(4)}%</td><td style={{padding:"6px 10px",textAlign:"right"}}>{(100+v.med).toFixed(4)}%</td></tr>)}</tbody></table></div></div>}
-      </div>}
+      {recs.length>0&&<div style={{marginTop:16}}><button onClick={()=>setDlgType("all")} style={{padding:"6px 14px",background:"rgba(220,50,50,0.1)",border:"1px solid rgba(220,50,50,0.3)",borderRadius:5,color:"#e55",fontSize:11,cursor:"pointer"}}>전체 삭제 ({recs.length}건)</button></div>}
+    </div>}
 
-      {/* ═══ 데이터 탭 ═══ */}
-      {tab==="data"&&<div>
-        <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}><input value={search} onChange={e=>{setSearch(e.target.value);setDataPage(0)}} placeholder="검색" style={{...inpS,flex:1,minWidth:150}}/>{selCount>0&&<button onClick={()=>setDlgType("sel")} style={{padding:"5px 12px",background:"rgba(220,50,50,0.1)",border:"1px solid rgba(220,50,50,0.3)",borderRadius:5,color:"#e55",fontSize:11,cursor:"pointer"}}>{selCount}건 삭제</button>}<span style={{fontSize:10,color:C.txd}}>{filteredRecs.length}건</span></div>
-        <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:10,tableLayout:"fixed"}}>
-          <colgroup><col style={{width:28}}/><col style={{width:"20%"}}/><col style={{width:"12%"}}/><col style={{width:"6%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"5%"}}/><col style={{width:"6%"}}/></colgroup>
-          <thead><tr style={{background:C.bg3}}><th style={{padding:6}}><input type="checkbox" checked={allSel} onChange={()=>{const n={};if(!allSel)pagedRecs.forEach(r=>{n[r.id]=true});setSel(n)}}/></th>{["공고명","발주기관","유형","기초금액","사정율(100%)","1순위","개찰일","시대","상태"].map((h,i)=><th key={i} style={{padding:"6px 3px",textAlign:i>=3?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:9}}>{h}</th>)}</tr></thead>
+    {/* ═══ 분석 탭 (통계 + 데이터 통합) ═══ */}
+    {tab==="analysis"&&<div>
+      {/* 통합 필터 바 */}
+      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+        {["all","new","old"].map(id=><button key={id} onClick={()=>{setEF(id);setDataPage(0)}} style={btnS(eF===id,id==="new"?"#5dca96":id==="old"?"#e24b4a":C.gold)}>{id==="all"?"전체":id==="new"?"신기준":"구기준"}</button>)}
+        <div style={{width:1,height:20,background:C.bdr,margin:"0 4px"}}/>
+        {["all","지자체","교육청","군시설","한전","조달청","LH","수자원공사"].map(id=><button key={id} onClick={()=>{setAtF(id);setDataPage(0)}} style={btnS(atF===id,"#a8b4ff")}>{id==="all"?"전체 기관":id}</button>)}
+        <div style={{flex:1}}/>
+        <input value={search} onChange={e=>{setSearch(e.target.value);setDataPage(0)}} placeholder="검색 (공고명, 기관)" style={{...inpS,maxWidth:200,fontSize:12}}/>
+      </div>
+
+      {/* 통계 카드 */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+        {[
+          {l:"필터 건수",v:filteredRecs.length.toLocaleString()},
+          {l:"사정율 평균(100%)",v:curSt.ts&&Object.keys(curSt.ts).length?((100+(atF!=="all"&&curSt.ts[atF]?curSt.ts[atF].avg:Object.values(curSt.ts).reduce((s,v)=>s+v.sum,0)/Math.max(1,Object.values(curSt.ts).reduce((s,v)=>s+v.n,0)))).toFixed(4)+"%"):"—",c:"#5dca96"},
+          {l:"사정율 표준편차",v:curSt.ts&&Object.keys(curSt.ts).length?((atF!=="all"&&curSt.ts[atF]?curSt.ts[atF].std:0.7).toFixed(4)+"%"):"—"},
+          {l:"투찰율 중앙값",v:curSt.ts&&Object.keys(curSt.ts).length?((atF!=="all"&&curSt.ts[atF]?curSt.ts[atF].bidMed:0).toFixed(2)+"%"):"—",c:"#d4a834"}
+        ].map((c,i)=><div key={i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px",textAlign:"center"}}>
+          <div style={{fontSize:10,color:C.txd,marginBottom:3}}>{c.l}</div>
+          <div style={{fontSize:16,fontWeight:600,color:c.c||C.txt}}>{c.v}</div>
+        </div>)}
+      </div>
+
+      {/* 기관유형별 테이블 */}
+      <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"hidden",marginBottom:14}}>
+        <div style={{padding:"8px 14px",fontSize:12,fontWeight:600,color:C.gold,borderBottom:"1px solid "+C.bdr}}>기관유형별 사정율</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{background:C.bg3}}>{["기관유형","건수","평균(100%)","중앙값(100%)","표준편차"].map((h,i)=><th key={i} style={{padding:"8px 10px",textAlign:i>0?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
+          <tbody>{Object.entries(curSt.ts||{}).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=><tr key={k} style={{borderBottom:"1px solid "+C.bdr,background:atF===k?"rgba(168,180,255,0.06)":"transparent",cursor:"pointer"}} onClick={()=>{setAtF(atF===k?"all":k);setDataPage(0)}}>
+            <td style={{padding:"8px 10px",color:C.gold}}>{k}</td>
+            <td style={{padding:"8px 10px",textAlign:"right"}}>{v.n.toLocaleString()}</td>
+            <td style={{padding:"8px 10px",textAlign:"right",color:"#5dca96"}}>{(100+v.avg).toFixed(4)}%</td>
+            <td style={{padding:"8px 10px",textAlign:"right"}}>{(100+v.med).toFixed(4)}%</td>
+            <td style={{padding:"8px 10px",textAlign:"right",color:C.txd}}>{v.std.toFixed(4)}%</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+
+      {/* 낙찰 데이터 목록 */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <span style={{fontSize:12,fontWeight:600,color:C.gold}}>낙찰 데이터 ({filteredRecs.length.toLocaleString()}건)</span>
+        {selCount>0&&<button onClick={()=>setDlgType("sel")} style={{padding:"4px 12px",background:"rgba(220,50,50,0.1)",border:"1px solid rgba(220,50,50,0.3)",borderRadius:5,color:"#e55",fontSize:11,cursor:"pointer"}}>{selCount}건 삭제</button>}
+      </div>
+      <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
+          <colgroup><col style={{width:30}}/><col style={{width:"22%"}}/><col style={{width:"12%"}}/><col style={{width:"6%"}}/><col style={{width:"12%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"5%"}}/></colgroup>
+          <thead><tr style={{background:C.bg3}}><th style={{padding:6}}><input type="checkbox" checked={allSel} onChange={()=>{const n={};if(!allSel)pagedRecs.forEach(r=>{n[r.id]=true});setSel(n)}}/></th>
+            {["공고명","발주기관","유형","기초금액","사정율(100%)","1순위","개찰일","시대"].map((h,i)=><th key={i} style={{padding:"8px 4px",textAlign:i>=3?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>{h}</th>)}</tr></thead>
           <tbody>{pagedRecs.map(r=>{
-            const isYuchal=r.co==="유찰";
-            const isBroken=!isYuchal&&(r.ba==null||r.ba===0)&&r.br1==null;
-            const isOutlier=r.br1!=null&&(r.br1<95||r.br1>105);
-            const stLabel=isYuchal?"유찰":isBroken?"내역":isOutlier?"이상":"";
-            const stColor=isYuchal?"#e24b4a":isBroken?"#d4a834":isOutlier?"#e24b4a":"";
-            const stBg=isYuchal?"rgba(226,75,74,0.12)":isBroken?"rgba(212,168,52,0.12)":isOutlier?"rgba(226,75,74,0.12)":"";
-            const rowBg=isYuchal?"rgba(226,75,74,0.03)":isBroken?"rgba(212,168,52,0.03)":"transparent";
+            const isYuchal=r.co==="유찰";const rowBg=isYuchal?"rgba(226,75,74,0.03)":"transparent";
             return<tr key={r.id} style={{borderBottom:"1px solid "+C.bdr,background:rowBg}}>
               <td style={{padding:4,textAlign:"center"}}><input type="checkbox" checked={!!sel[r.id]} onChange={()=>setSel(p=>({...p,[r.id]:!p[r.id]}))}/></td>
-              <td style={{padding:"5px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:isYuchal?0.5:1}} title={r.pn}>{r.pn||"(없음)"}</td>
-              <td style={{padding:"5px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:isYuchal?0.5:1}} title={r.ag}>{r.ag||""}</td>
-              <td style={{padding:"5px 3px",color:C.txd,fontSize:9}}>{r.at}</td>
-              <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{r.ba?tc(r.ba):""}</td>
-              <td style={{padding:"5px 3px",textAlign:"right",color:"#5dca96"}}>{r.ar1!=null?Number(r.ar1).toFixed(4)+"%":""}</td>
-              <td style={{padding:"5px 3px",textAlign:"right",color:C.gold}}>{r.br1!=null?Number(r.br1).toFixed(4):""}</td>
-              <td style={{padding:"5px 3px",textAlign:"right"}}>{r.od||""}</td>
-              <td style={{padding:"5px 3px",textAlign:"center",color:r.era==="new"?"#5dca96":"#e24b4a",fontSize:9}}>{r.era==="new"?"신":"구"}</td>
-              <td style={{padding:"5px 3px",textAlign:"center"}}>{stLabel&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:3,background:stBg,color:stColor}}>{stLabel}</span>}</td>
-            </tr>})}</tbody></table></div>
-        <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:10}}><button disabled={dataPage===0} onClick={()=>setDataPage(p=>p-1)} style={{padding:"4px 10px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:4,color:C.txt,cursor:dataPage===0?"default":"pointer"}}>◀</button><span style={{fontSize:10,color:C.txd}}>{dataPage+1}/{totalPages}</span><button disabled={dataPage>=totalPages-1} onClick={()=>setDataPage(p=>p+1)} style={{padding:"4px 10px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:4,color:C.txt,cursor:dataPage>=totalPages-1?"default":"pointer"}}>▶</button></div>
-      </div>}
+              <td style={{padding:"6px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:isYuchal?.5:1}} title={r.pn}>{r.pn||"(없음)"}</td>
+              <td style={{padding:"6px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.ag}>{r.ag||""}</td>
+              <td style={{padding:"6px 4px",color:C.txd,fontSize:10}}>{r.at}</td>
+              <td style={{padding:"6px 4px",textAlign:"right",fontFamily:"monospace"}}>{r.ba?tc(r.ba):""}</td>
+              <td style={{padding:"6px 4px",textAlign:"right",color:"#5dca96"}}>{r.ar1!=null?Number(r.ar1).toFixed(4)+"%":""}</td>
+              <td style={{padding:"6px 4px",textAlign:"right",color:C.gold}}>{r.br1!=null?Number(r.br1).toFixed(4):""}</td>
+              <td style={{padding:"6px 4px",textAlign:"right"}}>{r.od||""}</td>
+              <td style={{padding:"6px 4px",textAlign:"center",color:r.era==="new"?"#5dca96":"#e24b4a",fontSize:10}}>{r.era==="new"?"신":"구"}</td>
+            </tr>})}</tbody>
+        </table>
+      </div>
+      <div style={{display:"flex",justifyContent:"center",gap:8,marginTop:10,alignItems:"center"}}><button disabled={dataPage===0} onClick={()=>setDataPage(p=>p-1)} style={{padding:"5px 12px",fontSize:11,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,cursor:dataPage===0?"default":"pointer"}}>◀</button><span style={{fontSize:11,color:C.txd}}>{dataPage+1}/{totalPages}</span><button disabled={dataPage>=totalPages-1} onClick={()=>setDataPage(p=>p+1)} style={{padding:"5px 12px",fontSize:11,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,cursor:dataPage>=totalPages-1?"default":"pointer"}}>▶</button></div>
+    </div>}
 
-      {/* ═══ 예측 탭 ═══ */}
-      {tab==="predict"&&<div>
-        <div style={{display:"flex",gap:4,marginBottom:12}}>
-          <button onClick={()=>setPredMode("manual")} style={btnS(predMode==="manual","#5dca96")}>수동 입력</button>
-          <button onClick={()=>setPredMode("file")} style={btnS(predMode==="file","#5dca96")}>파일 업로드</button>
-        </div>
-
-        {predMode==="manual"&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:20,marginBottom:16}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-            <div><div style={{fontSize:10,color:C.txm,marginBottom:4}}>발주기관</div><input value={inp.agency} onChange={e=>setInp(p=>({...p,agency:e.target.value}))} placeholder="기관명" style={inpS} list="agL"/><datalist id="agL">{agencyList.slice(0,20).map(a=><option key={a} value={a}/>)}</datalist></div>
-            <div><div style={{fontSize:10,color:C.txm,marginBottom:4}}>기관유형: <span style={{color:C.gold}}>{clsAg(inp.agency)}</span></div></div>
-            <div><div style={{fontSize:10,color:C.txm,marginBottom:4}}>기초금액</div><NI value={inp.baseAmount} onChange={v=>setInp(p=>({...p,baseAmount:v}))}/></div>
-            <div><div style={{fontSize:10,color:C.txm,marginBottom:4}}>추정가격</div><NI value={inp.estimatedPrice} onChange={v=>setInp(p=>({...p,estimatedPrice:v}))}/></div>
-            <div><div style={{fontSize:10,color:C.txm,marginBottom:4}}>A값 (없으면 0)</div><NI value={inp.aValue} onChange={v=>setInp(p=>({...p,aValue:v}))}/></div>
+    {/* ═══ 예측 탭 (수동 + 파일 + 내역 + 비교 통합) ═══ */}
+    {tab==="predict"&&<div>
+      {/* 수동 입력 + 파일 업로드 나란히 */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        {/* 수동 입력 */}
+        <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16}}>
+          <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:10}}>수동 입력</div>
+          <div style={{marginBottom:8}}><div style={{fontSize:11,color:C.txm,marginBottom:3}}>발주기관</div><input value={inp.agency} onChange={e=>setInp(p=>({...p,agency:e.target.value}))} placeholder="기관명" style={inpS} list="agL"/><datalist id="agL">{agencyList.slice(0,20).map(a=><option key={a} value={a}/>)}</datalist></div>
+          {inp.agency&&<div style={{fontSize:11,color:C.txd,marginBottom:8}}>유형: <span style={{color:C.gold}}>{clsAg(inp.agency)}</span></div>}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <div><div style={{fontSize:11,color:C.txm,marginBottom:3}}>기초금액</div><NI value={inp.baseAmount} onChange={v=>setInp(p=>({...p,baseAmount:v}))}/></div>
+            <div><div style={{fontSize:11,color:C.txm,marginBottom:3}}>추정가격</div><NI value={inp.estimatedPrice} onChange={v=>setInp(p=>({...p,estimatedPrice:v}))}/></div>
           </div>
-          <button onClick={doManualPred} style={{width:"100%",padding:"10px",background:C.gold,border:"none",borderRadius:6,color:"#000",fontWeight:700,fontSize:13,cursor:"pointer"}}>예측 실행 + DB 저장</button>
-          {pred&&<div style={{marginTop:16,padding:16,background:C.bg3,borderRadius:8,fontSize:12}}>
-            <div style={{fontWeight:600,color:C.gold,marginBottom:10,fontSize:14}}>예측 결과 (범위 예측)</div>
-            <div style={{fontSize:10,color:C.txd,marginBottom:10}}>근거: {pred.src} | 사정율 표준편차 {pred.adjStd.toFixed(4)}%</div>
-            {/* 3 시나리오 테이블 */}
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:12}}>
-              <thead><tr style={{background:C.bg2}}>{["시나리오","사정율(100%)","사정율","예정가격","투찰금액"].map((h,i)=><th key={i} style={{padding:"6px 8px",textAlign:i>=3?"right":i>=1?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
-              <tbody>{pred.scenarios.map((s,i)=><tr key={i} style={{borderBottom:"1px solid "+C.bdr,background:i===1?"rgba(212,168,52,0.06)":"transparent"}}>
-                <td style={{padding:"6px 8px",fontWeight:i===1?600:400}}>{s.name}</td>
-                <td style={{padding:"6px 8px",textAlign:"right",color:"#5dca96",fontWeight:500}}>{(100+s.adj).toFixed(4)}%</td>
-                <td style={{padding:"6px 8px",textAlign:"right",color:C.txd,fontSize:10}}>{s.adj.toFixed(4)}%</td>
-                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{tc(s.xp)}</td>
-                <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{tc(s.bid)}</td>
-              </tr>)}</tbody>
-            </table>
-            {/* 투찰율 기반 추천 */}
-            <div style={{padding:"10px 12px",background:"rgba(93,202,165,0.06)",border:"1px solid rgba(93,202,165,0.15)",borderRadius:6,marginBottom:10}}>
-              <div style={{fontWeight:600,color:"#5dca96",marginBottom:6,fontSize:12}}>투찰율 기반 추천 (더 안정적)</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,fontSize:10,marginBottom:6}}>
-                <div><span style={{color:C.txd}}>Q1:</span> <span style={{color:C.txt}}>{pred.bidRateRec.q1}%</span></div>
-                <div><span style={{color:C.txd}}>중앙값:</span> <span style={{color:"#5dca96",fontWeight:600}}>{pred.bidRateRec.med}%</span></div>
-                <div><span style={{color:C.txd}}>Q3:</span> <span style={{color:C.txt}}>{pred.bidRateRec.q3}%</span></div>
-                <div><span style={{color:C.txd}}>표준편차:</span> <span style={{color:C.txt}}>{pred.bidRateRec.std}%</span></div>
-              </div>
-              <div style={{fontSize:12}}>투찰율 중앙값 기준 추천금액: <span style={{fontWeight:700,color:C.gold,fontSize:14}}>{tc(pred.bidByRate)}원</span></div>
-            </div>
-            <div style={{fontSize:10,color:C.txd,lineHeight:1.6}}>적용 낙찰하한율: {pred.fr}% | 사정율은 추첨 결과에 따라 ±{pred.adjStd.toFixed(2)}% 변동하므로 범위로 판단하세요</div>
-          </div>}
-        </div>}
-
-        {predMode==="file"&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:20,marginBottom:16}}>
-          <div style={{border:`2px dashed ${C.bdr}`,borderRadius:10,padding:"30px 20px",textAlign:"center",cursor:busy?"default":"pointer"}}
+          <div style={{marginBottom:10}}><div style={{fontSize:11,color:C.txm,marginBottom:3}}>A값 (없으면 0)</div><NI value={inp.aValue} onChange={v=>setInp(p=>({...p,aValue:v}))}/></div>
+          <button onClick={doManualPred} style={{width:"100%",padding:"10px",background:C.gold,border:"none",borderRadius:6,color:"#000",fontWeight:700,fontSize:13,cursor:"pointer"}}>예측 실행</button>
+        </div>
+        {/* 파일 업로드 (드래그앤드롭 수정) */}
+        <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,overflow:"hidden"}}>
+          <div style={{border:`2px dashed ${dragPred?C.gold:C.bdr}`,borderRadius:10,padding:"30px 16px",textAlign:"center",cursor:busy?"default":"pointer",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:dragPred?"rgba(212,168,52,0.04)":"transparent"}}
+            onDrop={e=>{e.preventDefault();setDragPred(false);if(!busy&&e.dataTransfer.files?.[0])loadPredFile(e.dataTransfer.files[0])}}
+            onDragOver={e=>{e.preventDefault();if(!busy)setDragPred(true)}} onDragLeave={()=>setDragPred(false)}
             onClick={()=>{if(!busy)document.getElementById("pfi").click()}}>
             <input id="pfi" type="file" accept=".xls,.xlsx" style={{display:"none"}} onChange={e=>{if(e.target.files?.[0]){loadPredFile(e.target.files[0]);e.target.value=""}}}/>
             {busy?<div style={{color:C.gold,fontSize:14}}>예측 처리 중...</div>:<>
-              <div style={{fontSize:28,opacity:0.4,marginBottom:6}}>↑</div>
-              <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>입찰서류함 업로드</div>
-              <div style={{fontSize:11,color:C.txd}}>XLS 파일의 각 건에 대해 일괄 예측 실행 + DB 저장</div>
+              <div style={{fontSize:28,opacity:0.3,marginBottom:6}}>↑</div>
+              <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>입찰서류함 드래그 또는 클릭</div>
+              <div style={{fontSize:11,color:C.txd}}>XLS 파일 각 건에 대해 일괄 예측 + DB 저장</div>
             </>}
           </div>
-        </div>}
-
-        {/* ── 예측 내역 리스트 (DB 기반, 항상 표시) ── */}
-        <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{fontSize:13,fontWeight:600,color:C.gold}}>예측 내역 ({(predictions||[]).length}건)</div>
-            <div style={{display:"flex",gap:4}}>
-              <button onClick={()=>setPredListFilter("all")} style={btnS(predListFilter==="all",C.gold)}>전체</button>
-              <button onClick={()=>setPredListFilter("file_upload")} style={btnS(predListFilter==="file_upload","#5dca96")}>파일</button>
-              <button onClick={()=>setPredListFilter("manual")} style={btnS(predListFilter==="manual","#5dca96")}>수동</button>
-            </div>
-          </div>
-          {filteredPreds.length>0?<div style={{overflow:"auto",maxHeight:500}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,tableLayout:"fixed"}}>
-              <colgroup><col style={{width:"20%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/><col style={{width:"12%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/></colgroup>
-              <thead><tr style={{background:C.bg3}}>{["공고명","발주기관","기초금액","A값","사정율(100%)","사정율","예정가격","투찰율","추천투찰금액","개찰일","구분"].map((h,i)=><th key={i} style={{padding:"6px 3px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:9}}>{h}</th>)}</tr></thead>
-              <tbody>{filteredPreds.map(p=><tr key={p.id} style={{borderBottom:"1px solid "+C.bdr}}>
-                <td style={{padding:"5px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
-                <td style={{padding:"5px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
-                <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{p.ba?tc(p.ba):""}</td>
-                <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{p.av?tc(p.av):"0"}</td>
-                <td style={{padding:"5px 3px",textAlign:"right",color:"#5dca96",fontWeight:500}}>{p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
-                <td style={{padding:"5px 3px",textAlign:"right",color:C.txd,fontSize:9}}>{p.pred_adj_rate!=null?Number(p.pred_adj_rate).toFixed(4)+"%":""}</td>
-                <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{p.pred_expected_price?tc(p.pred_expected_price):""}</td>
-                <td style={{padding:"5px 3px",textAlign:"right",color:C.gold}}>{p.pred_floor_rate?Number(p.pred_floor_rate).toFixed(3)+"%":""}</td>
-                <td style={{padding:"5px 3px",textAlign:"right",fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{p.pred_bid_amount?tc(p.pred_bid_amount):""}</td>
-                <td style={{padding:"5px 3px",textAlign:"right",fontSize:9}}>{p.open_date||""}</td>
-                <td style={{padding:"5px 3px",textAlign:"center"}}><span style={{fontSize:8,padding:"1px 4px",borderRadius:3,background:p.source==="file_upload"?"rgba(93,202,165,0.15)":"rgba(212,168,52,0.15)",color:p.source==="file_upload"?"#5dca96":C.gold}}>{p.source==="file_upload"?"파일":"수동"}</span></td>
-              </tr>)}</tbody>
-            </table>
-          </div>:<div style={{textAlign:"center",padding:30,color:C.txd,fontSize:12}}>예측 내역이 없습니다. 위에서 수동 입력 또는 파일 업로드로 예측을 실행하세요.</div>}
         </div>
+      </div>
+
+      {/* 수동 예측 결과 */}
+      {pred&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16,marginBottom:16}}>
+        <div style={{fontWeight:600,color:C.gold,marginBottom:8,fontSize:14}}>예측 결과</div>
+        <div style={{fontSize:11,color:C.txd,marginBottom:10}}>근거: {pred.src} | 표준편차 {pred.adjStd.toFixed(4)}%</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:12}}>
+          <thead><tr style={{background:C.bg3}}>{["시나리오","사정율(100%)","사정율","예정가격","투찰금액"].map((h,i)=><th key={i} style={{padding:"7px 10px",textAlign:i>=3?"right":i>=1?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
+          <tbody>{pred.scenarios.map((s,i)=><tr key={i} style={{borderBottom:"1px solid "+C.bdr,background:i===1?"rgba(212,168,52,0.06)":"transparent"}}>
+            <td style={{padding:"7px 10px",fontWeight:i===1?600:400}}>{s.name}</td>
+            <td style={{padding:"7px 10px",textAlign:"right",color:"#5dca96",fontWeight:500}}>{(100+s.adj).toFixed(4)}%</td>
+            <td style={{padding:"7px 10px",textAlign:"right",color:C.txd,fontSize:11}}>{s.adj.toFixed(4)}%</td>
+            <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"monospace"}}>{tc(s.xp)}</td>
+            <td style={{padding:"7px 10px",textAlign:"right",fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{tc(s.bid)}</td>
+          </tr>)}</tbody>
+        </table>
+        <div style={{padding:"10px 12px",background:"rgba(93,202,165,0.06)",border:"1px solid rgba(93,202,165,0.15)",borderRadius:6,marginBottom:8}}>
+          <div style={{fontWeight:600,color:"#5dca96",marginBottom:6,fontSize:12}}>투찰율 기반 추천</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,fontSize:11,marginBottom:6}}>
+            <div><span style={{color:C.txd}}>Q1:</span> {pred.bidRateRec.q1}%</div>
+            <div><span style={{color:C.txd}}>중앙값:</span> <span style={{color:"#5dca96",fontWeight:600}}>{pred.bidRateRec.med}%</span></div>
+            <div><span style={{color:C.txd}}>Q3:</span> {pred.bidRateRec.q3}%</div>
+            <div><span style={{color:C.txd}}>표준편차:</span> {pred.bidRateRec.std}%</div>
+          </div>
+          <div style={{fontSize:13}}>추천금액: <span style={{fontWeight:700,color:C.gold,fontSize:15}}>{tc(pred.bidByRate)}원</span></div>
+        </div>
+        <div style={{fontSize:11,color:C.txd}}>낙찰하한율: {pred.fr}%</div>
       </div>}
 
-      {/* ═══ 비교 탭 ═══ */}
-      {tab==="compare"&&<div>
-        {/* 요약 카드 */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:16}}>
-          {[{label:"총 예측",value:compStats.total,color:C.txt},{label:"매칭 완료",value:compStats.matched,color:"#5dca96"},{label:"평균 오차",value:compStats.avgErr.toFixed(4)+"%",color:C.gold},{label:"대기 중",value:compStats.pending,color:"#e24b4a"}].map((c,i)=>
-            <div key={i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"12px 10px",textAlign:"center"}}>
-              <div style={{fontSize:10,color:C.txd,marginBottom:4}}>{c.label}</div>
-              <div style={{fontSize:18,fontWeight:600,color:c.color}}>{c.value}</div>
+      {/* 예측 내역 + 비교 통합 */}
+      <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16}}>
+        <div style={{fontSize:13,fontWeight:600,color:C.gold,marginBottom:10}}>예측 내역 + 정확도 비교</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
+          {[{l:"총 예측",v:compStats.total,c:C.txt},{l:"매칭 완료",v:compStats.matched,c:"#5dca96"},{l:"평균 오차",v:compStats.matched>0?compStats.avgErr.toFixed(4)+"%":"—",c:"#d4a834"},{l:"대기 중",v:compStats.pending,c:"#e24b4a"}].map((c,i)=>
+            <div key={i} style={{background:C.bg3,borderRadius:6,padding:"8px",textAlign:"center"}}>
+              <div style={{fontSize:10,color:C.txd}}>{c.l}</div>
+              <div style={{fontSize:18,fontWeight:600,color:c.c}}>{c.v}</div>
             </div>)}
         </div>
-
-        {/* 기관유형별 정확도 */}
-        {Object.keys(compStats.byType).length>0&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"hidden",marginBottom:16}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-            <thead><tr style={{background:C.bg3}}>{["기관유형","매칭 건수","평균 오차"].map((h,i)=><th key={i} style={{padding:"8px 10px",textAlign:i>0?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
-            <tbody>{Object.entries(compStats.byType).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>
-              <tr key={k} style={{borderBottom:"1px solid "+C.bdr}}>
-                <td style={{padding:"7px 10px",color:C.gold}}>{k}</td>
-                <td style={{padding:"7px 10px",textAlign:"right"}}>{v.n}건</td>
-                <td style={{padding:"7px 10px",textAlign:"right",color:v.avgErr<0.5?"#5dca96":"#e24b4a"}}>{v.avgErr.toFixed(4)}%</td>
-              </tr>)}</tbody>
-          </table>
-        </div>}
-
-        {/* 필터 + 목록 */}
-        <div style={{display:"flex",gap:4,marginBottom:8}}>
-          <button onClick={()=>setCompFilter("all")} style={btnS(compFilter==="all",C.gold)}>전체 ({(predictions||[]).length})</button>
+        <div style={{display:"flex",gap:4,marginBottom:10}}>
+          <button onClick={()=>setCompFilter("all")} style={btnS(compFilter==="all",C.gold)}>전체 ({compStats.total})</button>
           <button onClick={()=>setCompFilter("matched")} style={btnS(compFilter==="matched","#5dca96")}>매칭 ({compStats.matched})</button>
           <button onClick={()=>setCompFilter("pending")} style={btnS(compFilter==="pending","#e24b4a")}>대기 ({compStats.pending})</button>
         </div>
-        <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"auto",maxHeight:500}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"22%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/></colgroup>
+        {compList.length>0?<div style={{overflow:"auto",maxHeight:500}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
+            <colgroup><col style={{width:"22%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"12%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/></colgroup>
             <thead><tr style={{background:C.bg3}}>{["공고명","발주기관","예측(100%)","실제(100%)","오차","추천금액","실제금액","개찰일","상태"].map((h,i)=>
-              <th key={i} style={{padding:"6px 4px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
+              <th key={i} style={{padding:"7px 6px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>{h}</th>)}</tr></thead>
             <tbody>{compList.slice(0,100).map(p=>{
               const errColor=p.adj_rate_error!=null?(Math.abs(p.adj_rate_error)<0.3?"#5dca96":Math.abs(p.adj_rate_error)<1?"#d4a834":"#e24b4a"):C.txd;
               return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr}}>
-                <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
-                <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
-                <td style={{padding:"5px 4px",textAlign:"right",color:"#5dca96"}}>{p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
-                <td style={{padding:"5px 4px",textAlign:"right",color:C.gold}}>{p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
-                <td style={{padding:"5px 4px",textAlign:"right",color:errColor,fontWeight:600}}>{p.adj_rate_error!=null?Number(p.adj_rate_error).toFixed(4):"-"}</td>
-                <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{p.pred_bid_amount?tc(p.pred_bid_amount):""}</td>
-                <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{p.actual_bid_amount?tc(p.actual_bid_amount):""}</td>
-                <td style={{padding:"5px 4px",textAlign:"right"}}>{p.open_date||""}</td>
-                <td style={{padding:"5px 4px",textAlign:"center"}}><span style={{fontSize:9,padding:"2px 6px",borderRadius:3,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span></td>
+                <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
+                <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
+                <td style={{padding:"6px",textAlign:"right",color:"#5dca96"}}>{p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
+                <td style={{padding:"6px",textAlign:"right",color:C.gold}}>{p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
+                <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600}}>{p.adj_rate_error!=null?Number(p.adj_rate_error).toFixed(4):""}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace"}}>{p.pred_bid_amount?tc(p.pred_bid_amount):""}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace"}}>{p.actual_bid_amount?tc(p.actual_bid_amount):""}</td>
+                <td style={{padding:"6px",textAlign:"right"}}>{p.open_date||""}</td>
+                <td style={{padding:"6px",textAlign:"center"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span></td>
               </tr>})}</tbody>
           </table>
-        </div>
-        {(predictions||[]).length===0&&<div style={{textAlign:"center",padding:40,color:C.txd,fontSize:12}}>예측 내역이 없습니다. 예측 탭에서 먼저 예측을 실행하세요.</div>}
-      </div>}
+        </div>:<div style={{textAlign:"center",padding:30,color:C.txd,fontSize:12}}>예측 내역이 없습니다.</div>}
+      </div>
+    </div>}
+
     </div>
   </div>)}
