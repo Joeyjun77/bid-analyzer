@@ -8,10 +8,43 @@ const hdrs={"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"B
 const hdrsSel={"apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY};
 const C={bg:"#0c0c1a",bg2:"#12122a",bg3:"#1a1a30",txt:"#e8e8f0",txm:"#a0a0b8",txd:"#666680",bdr:"#252540",gold:"#d4a834"};
 
-// ─── 낙찰하한율 ────────────────────────────────────────────
-const OLD_RULES={"조달청":[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:0,max:1e9,rate:87.745}],"지자체":[{min:1e10,max:3e11,rate:79.995},{min:5e9,max:1e10,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:0,max:1e9,rate:87.745}],"교육청":[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:0,max:1e9,rate:87.745}],"한전":[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:0,max:1e9,rate:87.745}],"LH":[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:0,max:1e9,rate:87.745}],"군시설":[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:0,max:1e9,rate:87.745}],"수자원공사":[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:0,max:1e9,rate:87.745}]};
-const NEW_RULES={};Object.keys(OLD_RULES).forEach(k=>{NEW_RULES[k]=OLD_RULES[k].map(r=>({...r,rate:r.rate+2}))});
-function getFloorRate(at,ep,isNew){const rules=isNew?NEW_RULES:OLD_RULES;const t=rules[at]||rules["조달청"];for(const r of t){if(ep>=r.min&&ep<r.max)return r.rate}return t[t.length-1].rate}
+// ─── 낙찰하한율 (2026 기관별 개정 반영) ──────────────────────
+// 구기준: 산식기준 88/100 기반
+// 신기준: 조달청계열 → 90/100, 지자체/교육청 → 88/100 유지 (구간만 변경)
+// 시행일: 기관별 상이 (cutoffDate 참조)
+const RATE_TABLE={
+  // ── 조달청 (시행 2026.01.30) ──
+  "조달청":{cutoff:"2026-01-30",
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:87.745}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:89.745}]},
+  // ── 지자체 (행정안전부 기준, 시행 2025.07.01) - 88/100 유지 ──
+  "지자체":{cutoff:"2025-07-01",
+    old:[{min:1e10,max:3e11,rate:79.995},{min:5e9,max:1e10,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:4e8,max:1e9,rate:87.745},{min:2e8,max:4e8,rate:87.745},{min:0,max:2e8,rate:87.745}],
+    new:[{min:1e10,max:3e11,rate:81.995},{min:5e9,max:1e10,rate:87.495},{min:3e9,max:5e9,rate:88.745},{min:1e9,max:3e9,rate:88.745},{min:4e8,max:1e9,rate:89.745},{min:2e8,max:4e8,rate:89.745},{min:0,max:2e8,rate:89.745}]},
+  // ── 교육청 (행정안전부 기준 준용) ──
+  "교육청":{cutoff:"2025-07-01",
+    old:[{min:5e9,max:1e11,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:4e8,max:1e9,rate:87.745},{min:2e8,max:4e8,rate:87.745},{min:0,max:2e8,rate:87.745}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:3e9,max:5e9,rate:88.745},{min:1e9,max:3e9,rate:88.745},{min:4e8,max:1e9,rate:89.745},{min:2e8,max:4e8,rate:89.745},{min:0,max:2e8,rate:89.745}]},
+  // ── 한전 (한국전력공사) ──
+  "한전":{cutoff:"2026-01-30",
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:87.745}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:89.745}]},
+  // ── LH (한국토지주택공사, 시행 2026.02.01) ──
+  "LH":{cutoff:"2026-02-01",
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:87.745}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:89.745}]},
+  // ── 군시설 (시행 2026.01.19, 자체훈령/계약예규 상이 가능) ──
+  "군시설":{cutoff:"2026-01-19",
+    old:[{min:5e9,max:1e11,rate:83.495},{min:1e9,max:5e9,rate:84.745},{min:3e8,max:1e9,rate:85.745},{min:0,max:3e8,rate:85.745}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:89.745}]},
+  // ── 수자원공사 (시행 2026.02.27) ──
+  "수자원공사":{cutoff:"2026-02-27",
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:87.745}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:89.745}]}
+};
+function getFloorRate(at,ep,isNew){const tbl=RATE_TABLE[at]||RATE_TABLE["조달청"];const rules=isNew?tbl.new:tbl.old;for(const r of rules){if(ep>=r.min&&ep<r.max)return r.rate}return rules[rules.length-1].rate}
+function getCutoffDate(at){return(RATE_TABLE[at]||RATE_TABLE["조달청"]).cutoff}
+function isNewEra(at,od){if(!od)return false;return od>=getCutoffDate(at)}
 
 // ─── 유틸 ──────────────────────────────────────────────────
 function clsAg(n){if(!n)return"조달청";const s=n.trim();if(/조달청/.test(s))return"조달청";if(/교육/.test(s))return"교육청";if(/한국전력|한전/.test(s))return"한전";if(/LH|주택공사|토지주택/.test(s))return"LH";if(/군|사단|국방|해군|공군|육군|해병/.test(s))return"군시설";if(/수자원/.test(s))return"수자원공사";return"지자체"}
@@ -21,7 +54,7 @@ function sn(v){const n=pnv(v);return n===0?null:n}
 function tc(v){return Number(v||0).toLocaleString()}
 function tn(s){return Number(String(s).replace(/,/g,""))||0}
 function pDt(v){if(!v)return null;const s=String(v).trim();let m;if((m=s.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/)))return`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;if((m=s.match(/^(\d{2})[-./](\d{1,2})[-./](\d{1,2})/)))return`20${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;return null}
-function eraFR(at,ep,od){const isNew=(at==="지자체"||at==="교육청")?(od>="2025-07-01"):(od>="2026-01-30");return getFloorRate(at,ep||0,isNew)}
+function eraFR(at,ep,od){return getFloorRate(at,ep||0,isNewEra(at,od))}
 const CHO="ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
 function getCho(c){const code=c.charCodeAt(0);if(code>=0xAC00&&code<=0xD7A3)return CHO[Math.floor((code-0xAC00)/588)];return c}
 function mSch(t,q){if(!q)return true;const tl=t.toLowerCase(),ql=q.toLowerCase();if(tl.includes(ql))return true;return Array.from(t).map(getCho).join("").includes(q)}
@@ -34,7 +67,7 @@ function sanitizeJson(s){return s.replace(/\\u0000/g,"").replace(/[\uD800-\uDFFF
 async function parseFile(file){const buf=await file.arrayBuffer();const wb=XLSX.read(new Uint8Array(buf),{type:"array",codepage:949,cellDates:false,raw:true});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true});if(!rows.length)throw new Error("빈 파일");return{rows,format:file.name.toLowerCase().endsWith(".xlsx")?"XLSX":"XLS"}}
 
 // 낙찰정보리스트 레코드 변환
-function toRecord(r){const pn=clean(r[1]);if(!pn||pn.length<2)return null;const ag=clean(r[3]);const at=clsAg(ag);const ep=sn(r[4]);const ba=sn(r[5]);const av=pnv(r[6]);const od=pDt(clean(r[19]));const era=(at==="지자체"||at==="교육청")?(od>="2025-07-01"?"new":"old"):(od>="2026-01-30"?"new":"old");const dk=pn+"|"+ag+"|"+(od||"")+"|"+(ba||"");if(dk.length<5)return null;return{dedup_key:md5(dk),pn,pn_no:clean(r[2]),ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:clean(r[7]),xp:sn(r[8]),floor_price:sn(r[9]),ar1:sn(r[10]),ar0:sn(r[11]),co:clean(r[12]),co_no:clean(r[13]),bp:sn(r[14]),br1:sn(r[15]),br0:sn(r[16]),base_ratio:sn(r[17]),pc:Math.round(pnv(r[18]))||0,od:od||null,input_date:pDt(clean(r[20]))||null,cat:clean(r[21]),g2b:clean(r[22]),reg:clean(r[23]),era,has_a:av>0,fr:eraFR(at,ep,od)}}
+function toRecord(r){const pn=clean(r[1]);if(!pn||pn.length<2)return null;const ag=clean(r[3]);const at=clsAg(ag);const ep=sn(r[4]);const ba=sn(r[5]);const av=pnv(r[6]);const od=pDt(clean(r[19]));const era=isNewEra(at,od)?"new":"old";const dk=pn+"|"+ag+"|"+(od||"")+"|"+(ba||"");if(dk.length<5)return null;return{dedup_key:md5(dk),pn,pn_no:clean(r[2]),ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:clean(r[7]),xp:sn(r[8]),floor_price:sn(r[9]),ar1:sn(r[10]),ar0:sn(r[11]),co:clean(r[12]),co_no:clean(r[13]),bp:sn(r[14]),br1:sn(r[15]),br0:sn(r[16]),base_ratio:sn(r[17]),pc:Math.round(pnv(r[18]))||0,od:od||null,input_date:pDt(clean(r[20]))||null,cat:clean(r[21]),g2b:clean(r[22]),reg:clean(r[23]),era,has_a:av>0,fr:eraFR(at,ep,od)}}
 function toRecords(rows){return rows.map(toRecord).filter(Boolean)}
 
 // 입찰서류함 파싱 (헤더가 2행, 데이터 3행부터)
@@ -118,8 +151,29 @@ function predictV3({at,agName,ba,ep,av},ts,as){
     // 하위 호환용
     adj:Math.round(ref.med*10000)/10000,xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:Math.round(ref.avg*10000)/10000}}
 
-// ─── 데이터 현황 ───────────────────────────────────────────
-function calcDataStatus(rows){if(!rows||!rows.length)return null;const withOd=rows.filter(r=>r.od);if(!withOd.length)return{total:rows.length,latestDate:null,latestPn:null,latestAg:"",sameDayCount:0};withOd.sort((a,b)=>(b.od>a.od?1:b.od<a.od?-1:0));const l=withOd[0];const sc=withOd.filter(r=>r.od===l.od);return{total:rows.length,latestDate:l.od,latestPn:l.pn?(l.pn.length>35?l.pn.slice(0,35)+"…":l.pn):"(없음)",latestAg:l.ag||"",sameDayCount:sc.length}}
+// ─── 데이터 현황 (최근 업로드 + 실제 최신 개찰일 분리) ────
+function calcDataStatus(rows){
+  if(!rows||!rows.length)return null;
+  const today=new Date().toISOString().slice(0,10);
+  // 실제 최신 개찰일 (오늘 이하)
+  const pastOd=rows.filter(r=>r.od&&r.od<=today);
+  pastOd.sort((a,b)=>(b.od>a.od?1:b.od<a.od?-1:0));
+  const latest=pastOd[0]||null;
+  const latestDate=latest?latest.od:null;
+  const sameDayCount=latestDate?pastOd.filter(r=>r.od===latestDate).length:0;
+  // 최근 업로드 배치 (created_at 기준)
+  const withCa=rows.filter(r=>r.created_at);
+  withCa.sort((a,b)=>(b.created_at>a.created_at?1:b.created_at<a.created_at?-1:0));
+  const latestUpload=withCa[0]||null;
+  const uploadTime=latestUpload?latestUpload.created_at:null;
+  // 같은 배치(created_at 같은 초)의 건수
+  let uploadBatchCount=0;
+  if(uploadTime){const ts=uploadTime.slice(0,19);uploadBatchCount=withCa.filter(r=>r.created_at&&r.created_at.slice(0,19)===ts).length}
+  // 미래 데이터 수
+  const futureCount=rows.filter(r=>r.od&&r.od>today).length;
+  return{total:rows.length,latestDate,latestPn:latest?(latest.pn||"").length>35?(latest.pn||"").slice(0,35)+"…":(latest.pn||"(없음)"):"",latestAg:latest?latest.ag||"":"",sameDayCount,
+    uploadTime,uploadBatchCount,uploadPn:latestUpload?(latestUpload.pn||"").length>35?(latestUpload.pn||"").slice(0,35)+"…":(latestUpload.pn||""):"",uploadAg:latestUpload?latestUpload.ag||"":"",uploadOd:latestUpload?latestUpload.od:"",
+    futureCount}}
 
 // ─── Supabase CRUD ─────────────────────────────────────────
 async function sbFetchAll(){const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_records?select=*&order=od.desc&offset="+offset+"&limit="+PAGE,{headers:hdrsSel});const rows=await res.json();if(!Array.isArray(rows))break;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}
@@ -280,7 +334,7 @@ export default function App(){
 
     {/* 헤더 */}
     <div style={{padding:"10px 20px",borderBottom:"1px solid "+C.bdr,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-      <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:15,fontWeight:700,color:C.gold}}>입찰 분석 시스템 v2.1</span><span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span></div>
+      <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:15,fontWeight:700,color:C.gold}}>입찰 분석 시스템 v2.2</span><span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span></div>
       <div style={{display:"flex",gap:0,flexWrap:"wrap"}}><Tb id="upload" ch="업로드"/><Tb id="stats" ch="통계"/><Tb id="data" ch="데이터"/><Tb id="predict" ch="예측"/><Tb id="compare" ch="비교" badge={compStats.pending}/></div>
     </div>
 
@@ -305,9 +359,13 @@ export default function App(){
             </div>}
             {dataStatus&&dataStatus.total>0&&<div style={{marginTop:14,padding:"10px 16px",background:"rgba(212,168,52,0.06)",border:"1px solid rgba(212,168,52,0.15)",borderRadius:6,textAlign:"left",fontSize:11,lineHeight:1.7}}>
               <div style={{fontWeight:600,color:C.gold,marginBottom:4,fontSize:12}}>데이터 현황</div>
-              <div style={{color:C.txm}}>총 <span style={{color:C.txt,fontWeight:600}}>{dataStatus.total.toLocaleString()}건</span> 저장</div>
-              {dataStatus.latestDate&&<><div style={{color:C.txm}}>최신 개찰일: <span style={{color:"#5dca96",fontWeight:600}}>{dataStatus.latestDate}</span> <span style={{color:C.txd}}>({dataStatus.sameDayCount}건)</span></div>
-              <div style={{color:C.txd,fontSize:10,marginTop:2}}>{dataStatus.latestPn}{dataStatus.latestAg&&<span style={{marginLeft:6,color:"#888"}}>- {dataStatus.latestAg}</span>}</div></>}
+              <div style={{color:C.txm}}>총 <span style={{color:C.txt,fontWeight:600}}>{dataStatus.total.toLocaleString()}건</span> 저장{dataStatus.futureCount>0&&<span style={{color:C.txd,fontSize:10}}> (미래 개찰일 {dataStatus.futureCount}건 포함)</span>}</div>
+              {dataStatus.latestDate&&<div style={{color:C.txm}}>최신 개찰일: <span style={{color:"#5dca96",fontWeight:600}}>{dataStatus.latestDate}</span> <span style={{color:C.txd}}>({dataStatus.sameDayCount}건)</span></div>}
+              {dataStatus.latestDate&&<div style={{color:C.txd,fontSize:10,marginTop:2}}>{dataStatus.latestPn}{dataStatus.latestAg&&<span style={{marginLeft:6,color:"#888"}}>- {dataStatus.latestAg}</span>}</div>}
+              {dataStatus.uploadTime&&<div style={{marginTop:6,paddingTop:6,borderTop:"1px solid "+C.bdr}}>
+                <div style={{color:C.txm}}>최근 업로드: <span style={{color:"#a8b4ff",fontWeight:500}}>{dataStatus.uploadTime.slice(0,16).replace("T"," ")}</span> <span style={{color:C.txd}}>({dataStatus.uploadBatchCount}건)</span></div>
+                {dataStatus.uploadOd&&<div style={{color:C.txd,fontSize:10,marginTop:2}}>개찰일 {dataStatus.uploadOd} | {dataStatus.uploadPn}{dataStatus.uploadAg&&<span style={{marginLeft:6}}>- {dataStatus.uploadAg}</span>}</div>}
+              </div>}
             </div>}
           </>}
         </div>
