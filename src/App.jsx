@@ -113,43 +113,73 @@ function calcStats(recs,filter){const src=filter?recs.filter(filter):recs;const 
     v.bidStd=bl>=2?Math.sqrt(v.bidRates.reduce((s,x)=>s+(x-v.bidAvg)**2,0)/(bl-1)):0}};
   fin(ts);fin(as);return{ts,as}}
 
-// ─── 예측 v3 (범위 예측 + 투찰율 기반) ─────────────────────
-function predictV3({at,agName,ba,ep,av},ts,as){
+// ─── 예측 v4 (v3 + bid_details 복수예가 패턴 보정) ──────────
+function predictV4({at,agName,ba,ep,av},ts,as,details){
   if(!ba)return null;
   const agSt=as[agName];const tSt=ts[at]||ts["조달청"];
-  // 사정율 분포 가져오기 (기관 우선, 없으면 유형)
   let ref=tSt||{avg:0,q1:-0.5,med:0,q3:0.5,std:0.7,bidAvg:87.745,bidMed:87.745,bidQ1:87.5,bidQ3:88.0,bidStd:0.7};
   let src=at;
   if(agSt&&agSt.n>=5){ref=agSt;src=`${agName}(${agSt.n}건)`}
   else if(agSt&&agSt.n>=2){
-    // 블렌딩
     const w=agSt.n>=3?0.7:0.5;
     ref={avg:agSt.avg*w+tSt.avg*(1-w),q1:agSt.q1*w+tSt.q1*(1-w),med:agSt.med*w+tSt.med*(1-w),
       q3:agSt.q3*w+tSt.q3*(1-w),std:Math.max(agSt.std,tSt.std),
       bidAvg:agSt.bidAvg*w+tSt.bidAvg*(1-w),bidMed:agSt.bidMed*w+tSt.bidMed*(1-w),
       bidQ1:agSt.bidQ1*w+tSt.bidQ1*(1-w),bidQ3:agSt.bidQ3*w+tSt.bidQ3*(1-w),bidStd:Math.max(agSt.bidStd,tSt.bidStd)};
     src=`${agName}(${agSt.n}건)+${at}`}
+
+  // ★ bid_details 복수예가 패턴 보정
+  let detailInsight=null;
+  const dets=(details||[]).filter(d=>d.pre_rates&&Array.isArray(d.pre_rates)&&d.pre_rates.length===15);
+  // 같은 기관 → 같은 기관유형 순으로 찾기
+  const agDets=dets.filter(d=>d.ag===agName);
+  const atDets=agDets.length>=1?agDets:dets.filter(d=>d.at===at);
+  if(atDets.length>=1){
+    // 15개 평균의 평균 (편향 지표)
+    const preAvgs=atDets.map(d=>d.pre_avg||0);
+    const avgBias=preAvgs.reduce((a,b)=>a+b,0)/preAvgs.length;
+    // 음수 비율 분석
+    const allRates=atDets.flatMap(d=>d.pre_rates);
+    const negRatio=allRates.filter(v=>v<0).length/allRates.length;
+    // 실제 추첨 결과(adj_rate)와 15개 평균(pre_avg) 차이 → 추첨 편향
+    const drawBiases=atDets.filter(d=>d.adj_rate!=null&&d.pre_avg!=null).map(d=>d.adj_rate-d.pre_avg);
+    const avgDrawBias=drawBiases.length?drawBiases.reduce((a,b)=>a+b,0)/drawBiases.length:0;
+    // 최근 건의 C(15,4) 시뮬레이션
+    const latestSim=simDraws(atDets[0].pre_rates);
+    // 보정 적용: 기존 중앙값에 편향 보정
+    const biasAdj=avgBias*0.3+avgDrawBias*0.2; // 15개 평균 편향의 30% + 추첨편향의 20% 반영
+    const correctedMed=ref.med+biasAdj;
+    const correctedQ1=ref.q1+biasAdj;
+    const correctedQ3=ref.q3+biasAdj;
+    // 음수 비율이 높으면 표준편차도 보정
+    const correctedStd=negRatio>0.6?ref.std*1.1:ref.std;
+    detailInsight={
+      count:atDets.length,
+      source:agDets.length>=1?agName:at,
+      avgBias:Math.round(avgBias*10000)/10000,
+      negRatio:Math.round(negRatio*1000)/10,
+      avgDrawBias:Math.round(avgDrawBias*10000)/10000,
+      biasAdj:Math.round(biasAdj*10000)/10000,
+      latestSim,
+      corrected:true};
+    // 보정된 ref 적용
+    ref={...ref,med:correctedMed,q1:correctedQ1,q3:correctedQ3,std:correctedStd,avg:ref.avg+biasAdj};
+    src+=` + 상세${atDets.length}건 보정`}
+
   const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
   const calcBid=(adjRate)=>{const xp=ba*(1+adjRate/100);return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100))};
   const calcXp=(adjRate)=>Math.round(ba*(1+adjRate/100));
-  // 3가지 시나리오 (사정율 기반)
   const scenarios=[
     {name:"보수적 (Q1)",adj:Math.round(ref.q1*10000)/10000,xp:calcXp(ref.q1),bid:calcBid(ref.q1)},
     {name:"중앙값",adj:Math.round(ref.med*10000)/10000,xp:calcXp(ref.med),bid:calcBid(ref.med)},
     {name:"공격적 (Q3)",adj:Math.round(ref.q3*10000)/10000,xp:calcXp(ref.q3),bid:calcBid(ref.q3)}];
-  // 투찰율 기반 추천 (더 안정적)
-  const bidRateRec={
-    avg:Math.round(ref.bidAvg*10000)/10000,
-    med:Math.round(ref.bidMed*10000)/10000,
-    q1:Math.round(ref.bidQ1*10000)/10000,
-    q3:Math.round(ref.bidQ3*10000)/10000,
-    std:Math.round(ref.bidStd*10000)/10000};
-  // 투찰율 기반 추천 금액: 기초금액 × 투찰율중앙값/100 (단순화)
+  const bidRateRec={avg:Math.round(ref.bidAvg*10000)/10000,med:Math.round(ref.bidMed*10000)/10000,
+    q1:Math.round(ref.bidQ1*10000)/10000,q3:Math.round(ref.bidQ3*10000)/10000,std:Math.round(ref.bidStd*10000)/10000};
   const bidByRate=Math.ceil(ba*ref.bidMed/100);
   return{scenarios,fr,src,bidRateRec,bidByRate,
     adjAvg:Math.round(ref.avg*10000)/10000,adjStd:Math.round(ref.std*10000)/10000,
-    // 하위 호환용
-    adj:Math.round(ref.med*10000)/10000,xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:Math.round(ref.avg*10000)/10000}}
+    adj:Math.round(ref.med*10000)/10000,xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:Math.round(ref.avg*10000)/10000,
+    detailInsight}}
 
 // ─── 데이터 현황 (최근 업로드 + 실제 최신 개찰일 분리) ────
 function calcDataStatus(rows){
@@ -340,7 +370,7 @@ export default function App(){
   const loadPredFile=useCallback(async(file)=>{
     if(!file)return;setBusy(true);setMsg({type:"",text:""});
     try{const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length)throw new Error("예측 대상 0건");
-      const results=items.map(item=>{const p=predictV3({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as);return{...item,pred:p}}).filter(r=>r.pred);
+      const results=items.map(item=>{const p=predictV4({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);return{...item,pred:p}}).filter(r=>r.pred);
       setPredResults(results);
       const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,source:"file_upload",match_status:"pending"}));
       await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds);
@@ -349,7 +379,7 @@ export default function App(){
 
   // 수동 예측
   const doManualPred=useCallback(async()=>{
-    const p=predictV3({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as);
+    const p=predictV4({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,bidDetails);
     setPred(p);
     if(p){const dk=md5("pred|manual|"+inp.agency+"|"+inp.baseAmount+"|"+Date.now());
       const row={dedup_key:dk,pn:"수동입력: "+inp.agency,pn_no:null,ag:inp.agency.trim(),at:clsAg(inp.agency),ep:tn(inp.estimatedPrice)||null,ba:tn(inp.baseAmount),av:tn(inp.aValue),raw_cost:null,cat:null,open_date:null,pred_adj_rate:p.adj,pred_expected_price:p.xp,pred_floor_rate:p.fr,pred_bid_amount:p.bid,pred_source:p.src,pred_base_adj:p.baseAdj,source:"manual",match_status:"pending"};
@@ -640,6 +670,17 @@ export default function App(){
           <div style={{fontSize:13}}>추천금액: <span style={{fontWeight:700,color:C.gold,fontSize:15}}>{tc(pred.bidByRate)}원</span></div>
         </div>
         <div style={{fontSize:11,color:C.txd}}>낙찰하한율: {pred.fr}%</div>
+        {/* 복수예가 보정 정보 */}
+        {pred.detailInsight&&<div style={{marginTop:10,padding:"10px 12px",background:"rgba(168,180,255,0.06)",border:"1px solid rgba(168,180,255,0.15)",borderRadius:6}}>
+          <div style={{fontWeight:600,color:"#a8b4ff",marginBottom:6,fontSize:12}}>복수예가 패턴 보정 적용</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,fontSize:11,marginBottom:6}}>
+            <div><span style={{color:C.txd}}>참조:</span> {pred.detailInsight.source} ({pred.detailInsight.count}건)</div>
+            <div><span style={{color:C.txd}}>15개 평균편향:</span> <span style={{color:pred.detailInsight.avgBias<0?"#e24b4a":"#5dca96"}}>{pred.detailInsight.avgBias>=0?"+":""}{pred.detailInsight.avgBias}%</span></div>
+            <div><span style={{color:C.txd}}>음수 비율:</span> <span style={{color:pred.detailInsight.negRatio>55?"#e24b4a":"#5dca96"}}>{pred.detailInsight.negRatio}%</span></div>
+            <div><span style={{color:C.txd}}>보정량:</span> <span style={{color:"#a8b4ff"}}>{pred.detailInsight.biasAdj>=0?"+":""}{pred.detailInsight.biasAdj}%</span></div>
+          </div>
+          <div style={{fontSize:10,color:C.txd}}>상세 데이터의 복수예가 15개 편향 패턴을 기반으로 사정율 예측값을 보정했습니다.</div>
+        </div>}
       </div>}
 
       {/* 예측 내역 + 비교 통합 */}
