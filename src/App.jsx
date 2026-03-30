@@ -284,9 +284,29 @@ export default function App(){
       {/* ═══ 데이터 탭 ═══ */}
       {tab==="data"&&<div>
         <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}><input value={search} onChange={e=>{setSearch(e.target.value);setDataPage(0)}} placeholder="검색" style={{...inpS,flex:1,minWidth:150}}/>{selCount>0&&<button onClick={()=>setDlgType("sel")} style={{padding:"5px 12px",background:"rgba(220,50,50,0.1)",border:"1px solid rgba(220,50,50,0.3)",borderRadius:5,color:"#e55",fontSize:11,cursor:"pointer"}}>{selCount}건 삭제</button>}<span style={{fontSize:10,color:C.txd}}>{filteredRecs.length}건</span></div>
-        <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:10,tableLayout:"fixed"}}><colgroup><col style={{width:28}}/><col style={{width:"22%"}}/><col style={{width:"14%"}}/><col style={{width:"7%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"5%"}}/></colgroup>
-          <thead><tr style={{background:C.bg3}}><th style={{padding:6}}><input type="checkbox" checked={allSel} onChange={()=>{const n={};if(!allSel)pagedRecs.forEach(r=>{n[r.id]=true});setSel(n)}}/></th>{["공고명","발주기관","유형","기초금액","사정율","1순위","개찰일",""].map((h,i)=><th key={i} style={{padding:"6px 4px",textAlign:i>=3?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
-          <tbody>{pagedRecs.map(r=><tr key={r.id} style={{borderBottom:"1px solid "+C.bdr}}><td style={{padding:4,textAlign:"center"}}><input type="checkbox" checked={!!sel[r.id]} onChange={()=>setSel(p=>({...p,[r.id]:!p[r.id]}))}/></td><td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.pn}>{r.pn||"(없음)"}</td><td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.ag}>{r.ag||""}</td><td style={{padding:"5px 4px",color:C.txd}}>{r.at}</td><td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{r.ba?tc(r.ba):""}</td><td style={{padding:"5px 4px",textAlign:"right",color:"#5dca96"}}>{r.ar1!=null?r.ar1.toFixed(4):""}</td><td style={{padding:"5px 4px",textAlign:"right",color:C.gold}}>{r.br1!=null?r.br1.toFixed(4):""}</td><td style={{padding:"5px 4px",textAlign:"right"}}>{r.od||""}</td><td style={{padding:"5px 4px",textAlign:"center",color:r.era==="new"?"#5dca96":"#e24b4a",fontSize:9}}>{r.era==="new"?"신":"구"}</td></tr>)}</tbody></table></div>
+        <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:10,tableLayout:"fixed"}}>
+          <colgroup><col style={{width:28}}/><col style={{width:"20%"}}/><col style={{width:"12%"}}/><col style={{width:"6%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"5%"}}/><col style={{width:"6%"}}/></colgroup>
+          <thead><tr style={{background:C.bg3}}><th style={{padding:6}}><input type="checkbox" checked={allSel} onChange={()=>{const n={};if(!allSel)pagedRecs.forEach(r=>{n[r.id]=true});setSel(n)}}/></th>{["공고명","발주기관","유형","기초금액","사정율","1순위","개찰일","시대","상태"].map((h,i)=><th key={i} style={{padding:"6px 3px",textAlign:i>=3?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:9}}>{h}</th>)}</tr></thead>
+          <tbody>{pagedRecs.map(r=>{
+            const isYuchal=r.co==="유찰";
+            const isBroken=!isYuchal&&(r.ba==null||r.ba===0)&&r.br1==null;
+            const isOutlier=r.br1!=null&&(r.br1<95||r.br1>105);
+            const stLabel=isYuchal?"유찰":isBroken?"내역":isOutlier?"이상":"";
+            const stColor=isYuchal?"#e24b4a":isBroken?"#d4a834":isOutlier?"#e24b4a":"";
+            const stBg=isYuchal?"rgba(226,75,74,0.12)":isBroken?"rgba(212,168,52,0.12)":isOutlier?"rgba(226,75,74,0.12)":"";
+            const rowBg=isYuchal?"rgba(226,75,74,0.03)":isBroken?"rgba(212,168,52,0.03)":"transparent";
+            return<tr key={r.id} style={{borderBottom:"1px solid "+C.bdr,background:rowBg}}>
+              <td style={{padding:4,textAlign:"center"}}><input type="checkbox" checked={!!sel[r.id]} onChange={()=>setSel(p=>({...p,[r.id]:!p[r.id]}))}/></td>
+              <td style={{padding:"5px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:isYuchal?0.5:1}} title={r.pn}>{r.pn||"(없음)"}</td>
+              <td style={{padding:"5px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:isYuchal?0.5:1}} title={r.ag}>{r.ag||""}</td>
+              <td style={{padding:"5px 3px",color:C.txd,fontSize:9}}>{r.at}</td>
+              <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{r.ba?tc(r.ba):""}</td>
+              <td style={{padding:"5px 3px",textAlign:"right",color:"#5dca96"}}>{r.ar1!=null?Number(r.ar1).toFixed(4):""}</td>
+              <td style={{padding:"5px 3px",textAlign:"right",color:C.gold}}>{r.br1!=null?Number(r.br1).toFixed(4):""}</td>
+              <td style={{padding:"5px 3px",textAlign:"right"}}>{r.od||""}</td>
+              <td style={{padding:"5px 3px",textAlign:"center",color:r.era==="new"?"#5dca96":"#e24b4a",fontSize:9}}>{r.era==="new"?"신":"구"}</td>
+              <td style={{padding:"5px 3px",textAlign:"center"}}>{stLabel&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:3,background:stBg,color:stColor}}>{stLabel}</span>}</td>
+            </tr>})}</tbody></table></div>
         <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:10}}><button disabled={dataPage===0} onClick={()=>setDataPage(p=>p-1)} style={{padding:"4px 10px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:4,color:C.txt,cursor:dataPage===0?"default":"pointer"}}>◀</button><span style={{fontSize:10,color:C.txd}}>{dataPage+1}/{totalPages}</span><button disabled={dataPage>=totalPages-1} onClick={()=>setDataPage(p=>p+1)} style={{padding:"4px 10px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:4,color:C.txt,cursor:dataPage>=totalPages-1?"default":"pointer"}}>▶</button></div>
       </div>}
 
