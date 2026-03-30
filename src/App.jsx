@@ -88,7 +88,7 @@ async function sbDeleteAll(){await fetch(SB_URL+"/rest/v1/bid_records?id=gt.0",{
 
 // 예측 DB
 async function sbSavePredictions(preds){const BATCH=50;for(let i=0;i<preds.length;i+=BATCH){const batch=preds.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}const body=sanitizeJson(JSON.stringify(unique));await fetch(SB_URL+"/rest/v1/bid_predictions?on_conflict=dedup_key",{method:"POST",headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},body})}}
-async function sbFetchPredictions(){const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_predictions?select=*&order=created_at.desc&offset="+offset+"&limit="+PAGE,{headers:hdrsSel});const rows=await res.json();if(!Array.isArray(rows))break;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}
+async function sbFetchPredictions(){try{const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_predictions?select=*&order=created_at.desc&offset="+offset+"&limit="+PAGE,{headers:hdrsSel});if(!res.ok)return[];const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}catch(e){return[]}}
 
 // 자동 매칭: bid_predictions.pn_no → bid_records.pn_no
 async function sbMatchPredictions(predictions,records){
@@ -132,14 +132,24 @@ export default function App(){
   const[predResults,setPredResults]=useState([]); // 파일 업로드 예측 결과
   const[predictions,setPredictions]=useState([]); // DB에서 로드한 예측 내역
   const[compFilter,setCompFilter]=useState("all"); // all | matched | pending
+  const[predListFilter,setPredListFilter]=useState("all"); // all | file_upload | manual
 
   const refreshStats=useCallback(rows=>{setAllS(calcStats(rows));setNewS(calcStats(rows,r=>r.era==="new"));setOldS(calcStats(rows,r=>r.era==="old"))},[]);
 
   // DB 로드
   useEffect(()=>{
-    Promise.all([sbFetchAll(),sbFetchPredictions()]).then(([rows,preds])=>{
-      setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));setPredictions(preds);setDbLoading(false);if(rows.length>0)setTab("stats");
-    }).catch(e=>{setMsg({type:"err",text:"DB 로드 실패: "+e.message});setDbLoading(false)})},[refreshStats]);
+    (async()=>{
+      try{
+        const rows=await sbFetchAll();
+        setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));
+        if(rows.length>0)setTab("stats");
+      }catch(e){setMsg({type:"err",text:"낙찰DB 로드 실패: "+e.message})}
+      try{
+        const preds=await sbFetchPredictions();
+        setPredictions(preds||[]);
+      }catch(e){setPredictions([])}
+      setDbLoading(false);
+    })()},[refreshStats]);
 
   // 낙찰정보리스트 업로드
   const loadFiles=useCallback(async(fileList)=>{
@@ -195,15 +205,17 @@ export default function App(){
 
   // 비교 탭 통계
   const compStats=useMemo(()=>{
-    const matched=predictions.filter(p=>p.match_status==="matched");
-    const pending=predictions.filter(p=>p.match_status==="pending");
+    const preds=predictions||[];
+    const matched=preds.filter(p=>p.match_status==="matched");
+    const pending=preds.filter(p=>p.match_status==="pending");
     const errors=matched.filter(p=>p.adj_rate_error!=null).map(p=>Math.abs(p.adj_rate_error));
     const avgErr=errors.length?Math.round(errors.reduce((a,b)=>a+b,0)/errors.length*10000)/10000:0;
     // 기관유형별
     const byType={};matched.forEach(p=>{const t=p.at||"기타";if(!byType[t])byType[t]={n:0,errSum:0};byType[t].n++;if(p.adj_rate_error!=null)byType[t].errSum+=Math.abs(p.adj_rate_error)});
     Object.values(byType).forEach(v=>{v.avgErr=v.n?Math.round(v.errSum/v.n*10000)/10000:0});
-    return{total:predictions.length,matched:matched.length,pending:pending.length,avgErr,byType,matchedList:matched,pendingList:pending}},[predictions]);
-  const compList=useMemo(()=>{if(compFilter==="matched")return compStats.matchedList;if(compFilter==="pending")return compStats.pendingList;return predictions},[predictions,compFilter,compStats]);
+    return{total:preds.length,matched:matched.length,pending:pending.length,avgErr,byType,matchedList:matched,pendingList:pending}},[predictions]);
+  const compList=useMemo(()=>{const p=predictions||[];if(compFilter==="matched")return compStats.matchedList;if(compFilter==="pending")return compStats.pendingList;return p},[predictions,compFilter,compStats]);
+  const filteredPreds=useMemo(()=>{const p=predictions||[];if(predListFilter==="all")return p;return p.filter(x=>x.source===predListFilter)},[predictions,predListFilter]);
 
   const btnS=(act,c)=>({padding:"3px 10px",fontSize:10,fontWeight:act?600:400,background:act?c+"22":"#1a1a30",color:act?c:"#888",border:"1px solid "+(act?c+"44":"#252540"),borderRadius:4,cursor:"pointer",marginRight:4});
   const Tb=({id,ch,badge})=>(<button onClick={()=>{setTab(id);setDataPage(0)}} style={{padding:"8px 14px",fontSize:11,fontWeight:tab===id?600:400,background:tab===id?C.bg3:"transparent",color:tab===id?C.gold:C.txm,border:"none",borderBottom:tab===id?`2px solid ${C.gold}`:"2px solid transparent",cursor:"pointer",position:"relative"}}>{ch}{badge>0&&<span style={{position:"absolute",top:2,right:2,background:"#e24b4a",color:"#fff",fontSize:8,padding:"1px 4px",borderRadius:6,minWidth:14,textAlign:"center"}}>{badge}</span>}</button>);
@@ -269,7 +281,7 @@ export default function App(){
           <button onClick={()=>setPredMode("file")} style={btnS(predMode==="file","#5dca96")}>파일 업로드</button>
         </div>
 
-        {predMode==="manual"&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:20}}>
+        {predMode==="manual"&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:20,marginBottom:16}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
             <div><div style={{fontSize:10,color:C.txm,marginBottom:4}}>발주기관</div><input value={inp.agency} onChange={e=>setInp(p=>({...p,agency:e.target.value}))} placeholder="기관명" style={inpS} list="agL"/><datalist id="agL">{agencyList.slice(0,20).map(a=><option key={a} value={a}/>)}</datalist></div>
             <div><div style={{fontSize:10,color:C.txm,marginBottom:4}}>기관유형: <span style={{color:C.gold}}>{clsAg(inp.agency)}</span></div></div>
@@ -288,7 +300,7 @@ export default function App(){
           </div>}
         </div>}
 
-        {predMode==="file"&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:20}}>
+        {predMode==="file"&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:20,marginBottom:16}}>
           <div style={{border:`2px dashed ${C.bdr}`,borderRadius:10,padding:"30px 20px",textAlign:"center",cursor:busy?"default":"pointer"}}
             onClick={()=>{if(!busy)document.getElementById("pfi").click()}}>
             <input id="pfi" type="file" accept=".xls,.xlsx" style={{display:"none"}} onChange={e=>{if(e.target.files?.[0]){loadPredFile(e.target.files[0]);e.target.value=""}}}/>
@@ -298,28 +310,38 @@ export default function App(){
               <div style={{fontSize:11,color:C.txd}}>XLS 파일의 각 건에 대해 일괄 예측 실행 + DB 저장</div>
             </>}
           </div>
-          {predResults.length>0&&<div style={{marginTop:16}}>
-            <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:8}}>예측 결과 ({predResults.length}건)</div>
-            <div style={{background:C.bg3,borderRadius:8,overflow:"auto",maxHeight:400}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,tableLayout:"fixed"}}>
-                <colgroup><col style={{width:"20%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"7%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/><col style={{width:"12%"}}/><col style={{width:"10%"}}/></colgroup>
-                <thead><tr style={{background:C.bg3}}>{["공고명","발주기관","기초금액","A값","사정율","사정율(100%)","예정가격","투찰율","추천투찰금액","개찰일"].map((h,i)=><th key={i} style={{padding:"6px 4px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
-                <tbody>{predResults.map((r,i)=><tr key={i} style={{borderBottom:"1px solid "+C.bdr}}>
-                  <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.pn}>{r.pn}</td>
-                  <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ag}</td>
-                  <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{r.ba?tc(r.ba):""}</td>
-                  <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{r.av?tc(r.av):"0"}</td>
-                  <td style={{padding:"5px 4px",textAlign:"right",color:"#5dca96"}}>{r.pred.adj.toFixed(4)}%</td>
-                  <td style={{padding:"5px 4px",textAlign:"right",color:"#5dca96"}}>{(100+r.pred.adj).toFixed(4)}%</td>
-                  <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{tc(r.pred.xp)}</td>
-                  <td style={{padding:"5px 4px",textAlign:"right",color:C.gold}}>{r.pred.fr}%</td>
-                  <td style={{padding:"5px 4px",textAlign:"right",fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{tc(r.pred.bid)}</td>
-                  <td style={{padding:"5px 4px",textAlign:"right"}}>{r.open_date||""}</td>
-                </tr>)}</tbody>
-              </table>
-            </div>
-          </div>}
         </div>}
+
+        {/* ── 예측 내역 리스트 (DB 기반, 항상 표시) ── */}
+        <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontSize:13,fontWeight:600,color:C.gold}}>예측 내역 ({(predictions||[]).length}건)</div>
+            <div style={{display:"flex",gap:4}}>
+              <button onClick={()=>setPredListFilter("all")} style={btnS(predListFilter==="all",C.gold)}>전체</button>
+              <button onClick={()=>setPredListFilter("file_upload")} style={btnS(predListFilter==="file_upload","#5dca96")}>파일</button>
+              <button onClick={()=>setPredListFilter("manual")} style={btnS(predListFilter==="manual","#5dca96")}>수동</button>
+            </div>
+          </div>
+          {filteredPreds.length>0?<div style={{overflow:"auto",maxHeight:500}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,tableLayout:"fixed"}}>
+              <colgroup><col style={{width:"20%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"7%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/><col style={{width:"12%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/></colgroup>
+              <thead><tr style={{background:C.bg3}}>{["공고명","발주기관","기초금액","A값","사정율","사정율(100%)","예정가격","투찰율","추천투찰금액","개찰일","구분"].map((h,i)=><th key={i} style={{padding:"6px 3px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:9}}>{h}</th>)}</tr></thead>
+              <tbody>{filteredPreds.map(p=><tr key={p.id} style={{borderBottom:"1px solid "+C.bdr}}>
+                <td style={{padding:"5px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
+                <td style={{padding:"5px 3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
+                <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{p.ba?tc(p.ba):""}</td>
+                <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{p.av?tc(p.av):"0"}</td>
+                <td style={{padding:"5px 3px",textAlign:"right",color:"#5dca96"}}>{p.pred_adj_rate!=null?Number(p.pred_adj_rate).toFixed(4)+"%":""}</td>
+                <td style={{padding:"5px 3px",textAlign:"right",color:"#5dca96"}}>{p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
+                <td style={{padding:"5px 3px",textAlign:"right",fontFamily:"monospace"}}>{p.pred_expected_price?tc(p.pred_expected_price):""}</td>
+                <td style={{padding:"5px 3px",textAlign:"right",color:C.gold}}>{p.pred_floor_rate?Number(p.pred_floor_rate).toFixed(3)+"%":""}</td>
+                <td style={{padding:"5px 3px",textAlign:"right",fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{p.pred_bid_amount?tc(p.pred_bid_amount):""}</td>
+                <td style={{padding:"5px 3px",textAlign:"right",fontSize:9}}>{p.open_date||""}</td>
+                <td style={{padding:"5px 3px",textAlign:"center"}}><span style={{fontSize:8,padding:"1px 4px",borderRadius:3,background:p.source==="file_upload"?"rgba(93,202,165,0.15)":"rgba(212,168,52,0.15)",color:p.source==="file_upload"?"#5dca96":C.gold}}>{p.source==="file_upload"?"파일":"수동"}</span></td>
+              </tr>)}</tbody>
+            </table>
+          </div>:<div style={{textAlign:"center",padding:30,color:C.txd,fontSize:12}}>예측 내역이 없습니다. 위에서 수동 입력 또는 파일 업로드로 예측을 실행하세요.</div>}
+        </div>
       </div>}
 
       {/* ═══ 비교 탭 ═══ */}
@@ -348,7 +370,7 @@ export default function App(){
 
         {/* 필터 + 목록 */}
         <div style={{display:"flex",gap:4,marginBottom:8}}>
-          <button onClick={()=>setCompFilter("all")} style={btnS(compFilter==="all",C.gold)}>전체 ({predictions.length})</button>
+          <button onClick={()=>setCompFilter("all")} style={btnS(compFilter==="all",C.gold)}>전체 ({(predictions||[]).length})</button>
           <button onClick={()=>setCompFilter("matched")} style={btnS(compFilter==="matched","#5dca96")}>매칭 ({compStats.matched})</button>
           <button onClick={()=>setCompFilter("pending")} style={btnS(compFilter==="pending","#e24b4a")}>대기 ({compStats.pending})</button>
         </div>
@@ -372,7 +394,7 @@ export default function App(){
               </tr>})}</tbody>
           </table>
         </div>
-        {predictions.length===0&&<div style={{textAlign:"center",padding:40,color:C.txd,fontSize:12}}>예측 내역이 없습니다. 예측 탭에서 먼저 예측을 실행하세요.</div>}
+        {(predictions||[]).length===0&&<div style={{textAlign:"center",padding:40,color:C.txd,fontSize:12}}>예측 내역이 없습니다. 예측 탭에서 먼저 예측을 실행하세요.</div>}
       </div>}
     </div>
   </div>)}
