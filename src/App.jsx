@@ -192,7 +192,10 @@ export default function App(){
 
   // 삭제
   const selCount=Object.keys(sel).filter(k=>sel[k]).length;
-  const doDelete=useCallback(async()=>{setBusy(true);try{if(dlgType==="all"){await sbDeleteAll();setRecs([]);refreshStats([]);setDataStatus(null);setMsg({type:"ok",text:"전체 삭제 완료"})}else if(dlgType==="sel"){const ids=Object.keys(sel).filter(k=>sel[k]).map(Number);await sbDeleteIds(ids);setRecs(prev=>{const next=prev.filter(r=>!sel[r.id]);refreshStats(next);setDataStatus(calcDataStatus(next));return next});setMsg({type:"ok",text:`${ids.length}건 삭제`});setSel({})}}catch(e){setMsg({type:"err",text:"삭제 실패"})}setDlgType("");setBusy(false)},[dlgType,sel,refreshStats]);
+  const[delConfirm,setDelConfirm]=useState("");
+  const doDelete=useCallback(async()=>{
+    if(dlgType==="all"&&delConfirm!=="삭제"){return}
+    setBusy(true);try{if(dlgType==="all"){await sbDeleteAll();setRecs([]);refreshStats([]);setDataStatus(null);setMsg({type:"ok",text:"전체 삭제 완료"})}else if(dlgType==="sel"){const ids=Object.keys(sel).filter(k=>sel[k]).map(Number);await sbDeleteIds(ids);setRecs(prev=>{const next=prev.filter(r=>!sel[r.id]);refreshStats(next);setDataStatus(calcDataStatus(next));return next});setMsg({type:"ok",text:`${ids.length}건 삭제`});setSel({})}}catch(e){setMsg({type:"err",text:"삭제 실패"})}setDlgType("");setDelConfirm("");setBusy(false)},[dlgType,sel,refreshStats,delConfirm]);
 
   const curSt=eF==="new"?newS:eF==="old"?oldS:allS;
   const filteredRecs=useMemo(()=>{const t=search.toLowerCase();let src=recs;if(eF==="new")src=recs.filter(r=>r.era==="new");else if(eF==="old")src=recs.filter(r=>r.era==="old");return t?src.filter(r=>((r.pn||"")+(r.ag||"")+(r.co||"")).toLowerCase().includes(t)):src},[recs,search,eF]);
@@ -222,7 +225,17 @@ export default function App(){
   const Era=({id,ch})=>(<button onClick={()=>setEF(id)} style={btnS(eF===id,id==="new"?"#5dca96":id==="old"?"#e24b4a":C.gold)}>{ch}</button>);
 
   return(<div style={{fontFamily:"system-ui,sans-serif",background:C.bg,color:C.txt,minHeight:"100vh"}}>
-    {dlgType&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.6)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setDlgType("")}><div onClick={e=>e.stopPropagation()} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:24,maxWidth:360,width:"90%"}}><div style={{fontSize:14,fontWeight:600,color:C.gold,marginBottom:8}}>{dlgType==="sel"?selCount+"건 삭제":"전체 삭제"}</div><div style={{fontSize:12,color:C.txm,marginBottom:16}}>DB에서 영구 삭제됩니다.</div><div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><button onClick={()=>setDlgType("")} style={{padding:"6px 16px",background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,fontSize:11,cursor:"pointer"}}>취소</button><button onClick={doDelete} disabled={busy} style={{padding:"6px 16px",background:"#e24b4a",border:"none",borderRadius:5,color:"#fff",fontSize:11,fontWeight:600,cursor:"pointer"}}>{busy?"처리중...":"삭제"}</button></div></div></div>}
+    {dlgType&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.6)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{setDlgType("");setDelConfirm("")}}><div onClick={e=>e.stopPropagation()} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:24,maxWidth:380,width:"90%"}}>
+      <div style={{fontSize:14,fontWeight:600,color:"#e24b4a",marginBottom:8}}>{dlgType==="sel"?selCount+"건 삭제":"전체 삭제"}</div>
+      <div style={{fontSize:12,color:C.txm,marginBottom:12}}>DB에서 영구 삭제됩니다. 복구할 수 없습니다.</div>
+      {dlgType==="all"&&<div style={{marginBottom:12}}>
+        <div style={{fontSize:11,color:C.txd,marginBottom:4}}>확인을 위해 <span style={{color:"#e24b4a",fontWeight:600}}>"삭제"</span>를 입력하세요</div>
+        <input value={delConfirm} onChange={e=>setDelConfirm(e.target.value)} placeholder="삭제" style={{...inpS,borderColor:"#e24b4a44"}}/>
+      </div>}
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <button onClick={()=>{setDlgType("");setDelConfirm("")}} style={{padding:"6px 16px",background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,fontSize:11,cursor:"pointer"}}>취소</button>
+        <button onClick={doDelete} disabled={busy||(dlgType==="all"&&delConfirm!=="삭제")} style={{padding:"6px 16px",background:dlgType==="all"&&delConfirm!=="삭제"?"#555":"#e24b4a",border:"none",borderRadius:5,color:"#fff",fontSize:11,fontWeight:600,cursor:dlgType==="all"&&delConfirm!=="삭제"?"not-allowed":"pointer"}}>{busy?"처리중...":"삭제 실행"}</button>
+      </div></div></div>}
 
     {/* 헤더 */}
     <div style={{padding:"10px 20px",borderBottom:"1px solid "+C.bdr,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
@@ -246,7 +259,10 @@ export default function App(){
             <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>낙찰정보리스트 업로드</div>
             <div style={{fontSize:11,color:C.txd}}>XLS/XLSX · 복수 파일 · 중복 제거 · 예측 자동 매칭</div>
             {dbLoading&&<div style={{marginTop:14,fontSize:11,color:C.txd}}>DB 연결 중...</div>}
-            {dataStatus&&<div style={{marginTop:14,padding:"10px 16px",background:"rgba(212,168,52,0.06)",border:"1px solid rgba(212,168,52,0.15)",borderRadius:6,textAlign:"left",fontSize:11,lineHeight:1.7}}>
+            {!dbLoading&&recs.length===0&&<div style={{marginTop:14,padding:"12px 16px",background:"rgba(226,75,74,0.08)",border:"1px solid rgba(226,75,74,0.2)",borderRadius:6,textAlign:"left",fontSize:11,lineHeight:1.7,color:"#e24b4a"}}>
+              낙찰 데이터가 없습니다. 낙찰정보리스트 XLS 파일을 업로드해주세요.
+            </div>}
+            {dataStatus&&dataStatus.total>0&&<div style={{marginTop:14,padding:"10px 16px",background:"rgba(212,168,52,0.06)",border:"1px solid rgba(212,168,52,0.15)",borderRadius:6,textAlign:"left",fontSize:11,lineHeight:1.7}}>
               <div style={{fontWeight:600,color:C.gold,marginBottom:4,fontSize:12}}>데이터 현황</div>
               <div style={{color:C.txm}}>총 <span style={{color:C.txt,fontWeight:600}}>{dataStatus.total.toLocaleString()}건</span> 저장</div>
               {dataStatus.latestDate&&<><div style={{color:C.txm}}>최신 개찰일: <span style={{color:"#5dca96",fontWeight:600}}>{dataStatus.latestDate}</span> <span style={{color:C.txd}}>({dataStatus.sameDayCount}건)</span></div>
