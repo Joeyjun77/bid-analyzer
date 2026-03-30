@@ -312,6 +312,34 @@ function simDraws(preRates){
 // ─── 컴포넌트 ──────────────────────────────────────────────
 const inpS={width:"100%",padding:"8px 10px",background:"#0c0c1a",border:"1px solid #252540",borderRadius:6,color:"#e8e8f0",fontSize:13,outline:"none"};
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
+
+// 발주기관 자동완성 드롭다운 (초성 검색 지원)
+function AgencyInput({value,onChange,agencies,placeholder,stats}){
+  const[open,setOpen]=useState(false);
+  const[focus,setFocus]=useState(false);
+  const ref=useCallback(node=>{if(node){const handler=e=>{if(!node.contains(e.target))setOpen(false)};document.addEventListener("mousedown",handler);return()=>document.removeEventListener("mousedown",handler)}},[]);
+  const filtered=useMemo(()=>{
+    if(!value||!value.trim())return agencies.slice(0,30);
+    return agencies.filter(a=>mSch(a,value.trim())).slice(0,30)},[value,agencies]);
+  const statMap=useMemo(()=>{if(!stats)return{};const m={};Object.entries(stats).forEach(([k,v])=>{m[k]=v});return m},[stats]);
+  return<div ref={ref} style={{position:"relative"}}>
+    <input value={value} onChange={e=>{onChange(e.target.value);setOpen(true)}} onFocus={()=>{setOpen(true);setFocus(true)}} onBlur={()=>setFocus(false)}
+      placeholder={placeholder||"발주기관 검색 (초성 가능: ㅅㅇㄱㅌ)"} style={inpS}/>
+    {open&&filtered.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:50,background:"#12122a",border:"1px solid #353550",borderRadius:6,maxHeight:240,overflowY:"auto",marginTop:2,boxShadow:"0 4px 16px rgba(0,0,0,0.4)"}}>
+      {filtered.map((a,i)=>{
+        const st=statMap[a];
+        return<div key={a} style={{padding:"8px 12px",cursor:"pointer",borderBottom:"1px solid #1a1a30",fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}
+          onMouseDown={e=>{e.preventDefault();onChange(a);setOpen(false)}}>
+          <div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{a}</div>
+          {st&&<div style={{flexShrink:0,marginLeft:8,display:"flex",gap:8,fontSize:10,color:C.txd}}>
+            <span>{st.n}건</span>
+            <span style={{color:"#5dca96"}}>{(100+st.avg).toFixed(2)}%</span>
+          </div>}
+        </div>})}
+      {filtered.length===0&&<div style={{padding:"10px 12px",color:C.txd,fontSize:12}}>검색 결과 없음</div>}
+    </div>}
+  </div>}
+
 const PAGE=50;
 
 // ═══════════════════════════════════════════════════════════
@@ -553,8 +581,9 @@ export default function App(){
         {["all","new","old"].map(id=><button key={id} onClick={()=>{setEF(id);setDataPage(0)}} style={btnS(eF===id,id==="new"?"#5dca96":id==="old"?"#e24b4a":C.gold)}>{id==="all"?"전체":id==="new"?"신기준":"구기준"}</button>)}
         <div style={{width:1,height:20,background:C.bdr,margin:"0 4px"}}/>
         {["all","지자체","교육청","군시설","한전","조달청","LH","수자원공사"].map(id=><button key={id} onClick={()=>{setAtF(id);setDataPage(0)}} style={btnS(atF===id,"#a8b4ff")}>{id==="all"?"전체 기관":id}</button>)}
-        <div style={{flex:1}}/>
-        <input value={search} onChange={e=>{setSearch(e.target.value);setDataPage(0)}} placeholder="검색 (공고명, 기관)" style={{...inpS,maxWidth:200,fontSize:12}}/>
+        <div style={{flex:1,minWidth:180}}>
+          <AgencyInput value={search} onChange={v=>{setSearch(v);setDataPage(0)}} agencies={agencyList} stats={allS.as} placeholder="발주기관 또는 공고명 검색 (초성 가능)"/>
+        </div>
       </div>
 
       {/* 통계 카드 */}
@@ -620,7 +649,7 @@ export default function App(){
         {/* 수동 입력 */}
         <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16}}>
           <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:10}}>수동 입력</div>
-          <div style={{marginBottom:8}}><div style={{fontSize:11,color:C.txm,marginBottom:3}}>발주기관</div><input value={inp.agency} onChange={e=>setInp(p=>({...p,agency:e.target.value}))} placeholder="기관명" style={inpS} list="agL"/><datalist id="agL">{agencyList.slice(0,20).map(a=><option key={a} value={a}/>)}</datalist></div>
+          <div style={{marginBottom:8}}><div style={{fontSize:11,color:C.txm,marginBottom:3}}>발주기관</div><AgencyInput value={inp.agency} onChange={v=>setInp(p=>({...p,agency:v}))} agencies={agencyList} stats={allS.as} placeholder="기관명 검색 (초성 가능: ㅅㅇㄱㅌ)"/></div>
           {inp.agency&&<div style={{fontSize:11,color:C.txd,marginBottom:8}}>유형: <span style={{color:C.gold}}>{clsAg(inp.agency)}</span></div>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
             <div><div style={{fontSize:11,color:C.txm,marginBottom:3}}>기초금액</div><NI value={inp.baseAmount} onChange={v=>setInp(p=>({...p,baseAmount:v}))}/></div>
