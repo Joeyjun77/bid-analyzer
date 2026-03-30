@@ -53,29 +53,70 @@ function parseBidDoc(rows){
   }
   return result}
 
-// ─── 통계 ──────────────────────────────────────────────────
-function calcStats(recs,filter){const src=filter?recs.filter(filter):recs;const ts={},as={};for(const r of src){if(r.br1==null)continue;
-  // br1은 100% 기준(예: 99.95) → 사정율 = br1-100 (예: -0.05%)
-  const adj=r.br1-100;
-  // 이상치 필터: ±5% 범위 밖 제외
-  if(adj<-5||adj>5)continue;
-  const t=r.at||"기타";if(!ts[t])ts[t]={n:0,sum:0,vals:[]};ts[t].n++;ts[t].sum+=adj;ts[t].vals.push(adj);
-  const a=r.ag;if(a){if(!as[a])as[a]={n:0,sum:0,vals:[],type:t};as[a].n++;as[a].sum+=adj;as[a].vals.push(adj)}}
-  const fin=o=>{for(const k of Object.keys(o)){const v=o[k];v.avg=v.n?v.sum/v.n:0;v.vals.sort((a,b)=>a-b);v.med=v.vals.length?v.vals[Math.floor(v.vals.length/2)]:0}};fin(ts);fin(as);return{ts,as}}
+// ─── 통계 (사정율 분포 + 투찰율 통계) ──────────────────────
+function calcStats(recs,filter){const src=filter?recs.filter(filter):recs;const ts={},as={};
+  for(const r of src){if(r.br1==null)continue;
+    const adj=r.br1-100;if(adj<-5||adj>5)continue;
+    const bidRate=(r.bp&&r.xp&&r.xp>0)?r.bp/r.xp*100:null;
+    const t=r.at||"기타";
+    if(!ts[t])ts[t]={n:0,sum:0,vals:[],bidRates:[]};
+    ts[t].n++;ts[t].sum+=adj;ts[t].vals.push(adj);
+    if(bidRate&&bidRate>80&&bidRate<95)ts[t].bidRates.push(bidRate);
+    const a=r.ag;if(a){
+      if(!as[a])as[a]={n:0,sum:0,vals:[],bidRates:[],type:t};
+      as[a].n++;as[a].sum+=adj;as[a].vals.push(adj);
+      if(bidRate&&bidRate>80&&bidRate<95)as[a].bidRates.push(bidRate)}}
+  const fin=o=>{for(const k of Object.keys(o)){const v=o[k];v.avg=v.n?v.sum/v.n:0;v.vals.sort((a,b)=>a-b);
+    const len=v.vals.length;v.med=len?v.vals[Math.floor(len/2)]:0;
+    v.q1=len>=4?v.vals[Math.floor(len*0.25)]:v.avg;
+    v.q3=len>=4?v.vals[Math.floor(len*0.75)]:v.avg;
+    v.std=len>=2?Math.sqrt(v.vals.reduce((s,x)=>s+(x-v.avg)**2,0)/(len-1)):0;
+    // 투찰율 통계
+    v.bidRates.sort((a,b)=>a-b);const bl=v.bidRates.length;
+    v.bidAvg=bl?v.bidRates.reduce((s,x)=>s+x,0)/bl:0;
+    v.bidMed=bl?v.bidRates[Math.floor(bl/2)]:0;
+    v.bidQ1=bl>=4?v.bidRates[Math.floor(bl*0.25)]:v.bidAvg;
+    v.bidQ3=bl>=4?v.bidRates[Math.floor(bl*0.75)]:v.bidAvg;
+    v.bidStd=bl>=2?Math.sqrt(v.bidRates.reduce((s,x)=>s+(x-v.bidAvg)**2,0)/(bl-1)):0}};
+  fin(ts);fin(as);return{ts,as}}
 
-// ─── 예측 v2 ───────────────────────────────────────────────
-function predictV2({at,agName,ba,ep,av,pc},ts,as){if(!ba)return null;const agSt=as[agName];const tSt=ts[at]||ts["조달청"];
-  // 사정율 추정 (이미 -100 보정된 값: 예 -0.05%)
-  let baseAdj;
-  if(agSt&&agSt.n>=3)baseAdj=agSt.avg;
-  else if(agSt&&agSt.n===2)baseAdj=agSt.avg*0.6+(tSt?tSt.avg:0)*0.4;
-  else baseAdj=tSt?tSt.avg:0;
-  // 사정율은 ±3% 범위이므로 보정 계수는 소폭만 적용
-  const adj=baseAdj;
-  const xp=ba*(1+adj/100);
+// ─── 예측 v3 (범위 예측 + 투찰율 기반) ─────────────────────
+function predictV3({at,agName,ba,ep,av},ts,as){
+  if(!ba)return null;
+  const agSt=as[agName];const tSt=ts[at]||ts["조달청"];
+  // 사정율 분포 가져오기 (기관 우선, 없으면 유형)
+  let ref=tSt||{avg:0,q1:-0.5,med:0,q3:0.5,std:0.7,bidAvg:87.745,bidMed:87.745,bidQ1:87.5,bidQ3:88.0,bidStd:0.7};
+  let src=at;
+  if(agSt&&agSt.n>=5){ref=agSt;src=`${agName}(${agSt.n}건)`}
+  else if(agSt&&agSt.n>=2){
+    // 블렌딩
+    const w=agSt.n>=3?0.7:0.5;
+    ref={avg:agSt.avg*w+tSt.avg*(1-w),q1:agSt.q1*w+tSt.q1*(1-w),med:agSt.med*w+tSt.med*(1-w),
+      q3:agSt.q3*w+tSt.q3*(1-w),std:Math.max(agSt.std,tSt.std),
+      bidAvg:agSt.bidAvg*w+tSt.bidAvg*(1-w),bidMed:agSt.bidMed*w+tSt.bidMed*(1-w),
+      bidQ1:agSt.bidQ1*w+tSt.bidQ1*(1-w),bidQ3:agSt.bidQ3*w+tSt.bidQ3*(1-w),bidStd:Math.max(agSt.bidStd,tSt.bidStd)};
+    src=`${agName}(${agSt.n}건)+${at}`}
   const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
-  let bid;if(av>0)bid=av+(xp-av)*(fr/100);else bid=xp*(fr/100);
-  return{adj:Math.round(adj*10000)/10000,xp:Math.round(xp),bid:Math.ceil(bid),fr,baseAdj:Math.round(baseAdj*10000)/10000,src:agSt?`${agName}(${agSt.n}건)`:at}}
+  const calcBid=(adjRate)=>{const xp=ba*(1+adjRate/100);return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100))};
+  const calcXp=(adjRate)=>Math.round(ba*(1+adjRate/100));
+  // 3가지 시나리오 (사정율 기반)
+  const scenarios=[
+    {name:"보수적 (Q1)",adj:Math.round(ref.q1*10000)/10000,xp:calcXp(ref.q1),bid:calcBid(ref.q1)},
+    {name:"중앙값",adj:Math.round(ref.med*10000)/10000,xp:calcXp(ref.med),bid:calcBid(ref.med)},
+    {name:"공격적 (Q3)",adj:Math.round(ref.q3*10000)/10000,xp:calcXp(ref.q3),bid:calcBid(ref.q3)}];
+  // 투찰율 기반 추천 (더 안정적)
+  const bidRateRec={
+    avg:Math.round(ref.bidAvg*10000)/10000,
+    med:Math.round(ref.bidMed*10000)/10000,
+    q1:Math.round(ref.bidQ1*10000)/10000,
+    q3:Math.round(ref.bidQ3*10000)/10000,
+    std:Math.round(ref.bidStd*10000)/10000};
+  // 투찰율 기반 추천 금액: 기초금액 × 투찰율중앙값/100 (단순화)
+  const bidByRate=Math.ceil(ba*ref.bidMed/100);
+  return{scenarios,fr,src,bidRateRec,bidByRate,
+    adjAvg:Math.round(ref.avg*10000)/10000,adjStd:Math.round(ref.std*10000)/10000,
+    // 하위 호환용
+    adj:Math.round(ref.med*10000)/10000,xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:Math.round(ref.avg*10000)/10000}}
 
 // ─── 데이터 현황 ───────────────────────────────────────────
 function calcDataStatus(rows){if(!rows||!rows.length)return null;const withOd=rows.filter(r=>r.od);if(!withOd.length)return{total:rows.length,latestDate:null,latestPn:null,latestAg:"",sameDayCount:0};withOd.sort((a,b)=>(b.od>a.od?1:b.od<a.od?-1:0));const l=withOd[0];const sc=withOd.filter(r=>r.od===l.od);return{total:rows.length,latestDate:l.od,latestPn:l.pn?(l.pn.length>35?l.pn.slice(0,35)+"…":l.pn):"(없음)",latestAg:l.ag||"",sameDayCount:sc.length}}
@@ -169,7 +210,7 @@ export default function App(){
     try{
       const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length)throw new Error("예측 대상 0건");
       const results=items.map(item=>{
-        const p=predictV2({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,pc:0},allS.ts,allS.as);
+        const p=predictV3({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as);
         return{...item,pred:p}}).filter(r=>r.pred);
       setPredResults(results);
       // DB 저장
@@ -182,7 +223,7 @@ export default function App(){
 
   // 수동 예측 + DB 저장
   const doManualPred=useCallback(async()=>{
-    const p=predictV2({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue),pc:0},allS.ts,allS.as);
+    const p=predictV3({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as);
     setPred(p);
     if(p){
       const dk=md5("pred|manual|"+inp.agency+"|"+inp.baseAmount+"|"+Date.now());
@@ -326,13 +367,32 @@ export default function App(){
             <div><div style={{fontSize:10,color:C.txm,marginBottom:4}}>A값 (없으면 0)</div><NI value={inp.aValue} onChange={v=>setInp(p=>({...p,aValue:v}))}/></div>
           </div>
           <button onClick={doManualPred} style={{width:"100%",padding:"10px",background:C.gold,border:"none",borderRadius:6,color:"#000",fontWeight:700,fontSize:13,cursor:"pointer"}}>예측 실행 + DB 저장</button>
-          {pred&&<div style={{marginTop:16,padding:16,background:C.bg3,borderRadius:8,fontSize:12,lineHeight:2}}>
-            <div style={{fontWeight:600,color:C.gold,marginBottom:8,fontSize:14}}>예측 결과</div>
-            <div>예측 사정율: <span style={{color:"#5dca96",fontWeight:700}}>{pred.adj.toFixed(4)}%</span> <span style={{color:C.txd,fontSize:11}}>( 100% 기준: {(100+pred.adj).toFixed(4)}% )</span></div>
-            <div>예정가격(추정): <span style={{fontWeight:600}}>{tc(pred.xp)}원</span></div>
-            <div>적용 투찰율: <span style={{color:C.gold}}>{pred.fr}%</span></div>
-            <div style={{fontWeight:700,fontSize:14,color:C.gold,marginTop:8}}>추천 투찰금액: {tc(pred.bid)}원</div>
-            <div style={{marginTop:8,fontSize:10,color:C.txd}}>근거: {pred.src} | 평균사정율 {pred.baseAdj.toFixed(4)}%</div>
+          {pred&&<div style={{marginTop:16,padding:16,background:C.bg3,borderRadius:8,fontSize:12}}>
+            <div style={{fontWeight:600,color:C.gold,marginBottom:10,fontSize:14}}>예측 결과 (범위 예측)</div>
+            <div style={{fontSize:10,color:C.txd,marginBottom:10}}>근거: {pred.src} | 사정율 표준편차 {pred.adjStd.toFixed(4)}%</div>
+            {/* 3 시나리오 테이블 */}
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,marginBottom:12}}>
+              <thead><tr style={{background:C.bg2}}>{["시나리오","사정율","사정율(100%)","예정가격","투찰금액"].map((h,i)=><th key={i} style={{padding:"6px 8px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr}}>{h}</th>)}</tr></thead>
+              <tbody>{pred.scenarios.map((s,i)=><tr key={i} style={{borderBottom:"1px solid "+C.bdr,background:i===1?"rgba(212,168,52,0.06)":"transparent"}}>
+                <td style={{padding:"6px 8px",fontWeight:i===1?600:400}}>{s.name}</td>
+                <td style={{padding:"6px 8px",color:"#5dca96"}}>{s.adj.toFixed(4)}%</td>
+                <td style={{padding:"6px 8px",textAlign:"right"}}>{(100+s.adj).toFixed(4)}%</td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{tc(s.xp)}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{tc(s.bid)}</td>
+              </tr>)}</tbody>
+            </table>
+            {/* 투찰율 기반 추천 */}
+            <div style={{padding:"10px 12px",background:"rgba(93,202,165,0.06)",border:"1px solid rgba(93,202,165,0.15)",borderRadius:6,marginBottom:10}}>
+              <div style={{fontWeight:600,color:"#5dca96",marginBottom:6,fontSize:12}}>투찰율 기반 추천 (더 안정적)</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,fontSize:10,marginBottom:6}}>
+                <div><span style={{color:C.txd}}>Q1:</span> <span style={{color:C.txt}}>{pred.bidRateRec.q1}%</span></div>
+                <div><span style={{color:C.txd}}>중앙값:</span> <span style={{color:"#5dca96",fontWeight:600}}>{pred.bidRateRec.med}%</span></div>
+                <div><span style={{color:C.txd}}>Q3:</span> <span style={{color:C.txt}}>{pred.bidRateRec.q3}%</span></div>
+                <div><span style={{color:C.txd}}>표준편차:</span> <span style={{color:C.txt}}>{pred.bidRateRec.std}%</span></div>
+              </div>
+              <div style={{fontSize:12}}>투찰율 중앙값 기준 추천금액: <span style={{fontWeight:700,color:C.gold,fontSize:14}}>{tc(pred.bidByRate)}원</span></div>
+            </div>
+            <div style={{fontSize:10,color:C.txd,lineHeight:1.6}}>적용 낙찰하한율: {pred.fr}% | 사정율은 추첨 결과에 따라 ±{pred.adjStd.toFixed(2)}% 변동하므로 범위로 판단하세요</div>
           </div>}
         </div>}
 
