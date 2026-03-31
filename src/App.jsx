@@ -244,22 +244,40 @@ async function sbDeleteAll(){await fetch(SB_URL+"/rest/v1/bid_records?id=gt.0",{
 async function sbSavePredictions(preds){const BATCH=50;for(let i=0;i<preds.length;i+=BATCH){const batch=preds.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}const body=sanitizeJson(JSON.stringify(unique));await fetch(SB_URL+"/rest/v1/bid_predictions?on_conflict=dedup_key",{method:"POST",headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},body})}}
 async function sbFetchPredictions(){try{const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_predictions?select=*&order=created_at.desc&offset="+offset+"&limit="+PAGE,{headers:hdrsSel});if(!res.ok)return[];const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}catch(e){return[]}}
 
-// 자동 매칭: bid_predictions.pn_no → bid_records.pn_no
+// 자동 매칭: bid_predictions.pn_no → bid_records.pn_no (날짜 검증 포함)
 async function sbMatchPredictions(predictions,records){
-  const recMap={};for(const r of records){if(r.pn_no&&r.pn_no.length>5)recMap[r.pn_no]=r}
+  // pn_no 기준으로 모든 후보를 배열로 저장 (동일 pn_no 복수 존재 가능)
+  const recMap={};for(const r of records){if(r.pn_no&&r.pn_no.length>5){if(!recMap[r.pn_no])recMap[r.pn_no]=[];recMap[r.pn_no].push(r)}}
   const updates=[];
   for(const p of predictions){
     if(p.match_status==="matched")continue;
     if(!p.pn_no)continue;
-    const match=recMap[p.pn_no];
-    if(match){
-      const actualAdj=match.br1!=null?Math.round((match.br1-100)*10000)/10000:null;
-      const adjErr=p.pred_adj_rate!=null&&actualAdj!=null?Math.round((p.pred_adj_rate-actualAdj)*10000)/10000:null;
-      const bidErr=p.pred_bid_amount!=null&&match.bp!=null?Math.round(p.pred_bid_amount-match.bp):null;
-      updates.push({id:p.id,actual_adj_rate:actualAdj,actual_expected_price:match.xp,actual_bid_amount:match.bp,actual_winner:match.co,actual_participant_count:match.pc,adj_rate_error:adjErr,bid_amount_error:bidErr,match_status:"matched",matched_record_id:match.id,matched_at:new Date().toISOString()})
+    const candidates=recMap[p.pn_no];
+    if(!candidates||!candidates.length)continue;
+    // 후보가 1개면 바로 매칭, 복수면 날짜 가장 근접한 건 선택
+    let match=null;
+    if(candidates.length===1){match=candidates[0]}
+    else if(p.open_date){
+      // 예측 개찰일과 가장 가까운 낙찰 건 선택
+      const pOd=p.open_date;
+      let bestDist=Infinity;
+      for(const c of candidates){
+        if(!c.od)continue;
+        const dist=Math.abs(new Date(pOd)-new Date(c.od));
+        if(dist<bestDist){bestDist=dist;match=c}
+      }
+      // 30일 이상 차이나면 오매칭으로 판단하여 스킵
+      if(bestDist>30*24*60*60*1000)match=null;
+    }else{
+      // 개찰일 없으면 가장 최근 건
+      match=candidates.sort((a,b)=>(b.od>a.od?1:b.od<a.od?-1:0))[0];
     }
+    if(!match)continue;
+    const actualAdj=match.br1!=null?Math.round((match.br1-100)*10000)/10000:null;
+    const adjErr=p.pred_adj_rate!=null&&actualAdj!=null?Math.round((p.pred_adj_rate-actualAdj)*10000)/10000:null;
+    const bidErr=p.pred_bid_amount!=null&&match.bp!=null?Math.round(p.pred_bid_amount-match.bp):null;
+    updates.push({id:p.id,actual_adj_rate:actualAdj,actual_expected_price:match.xp,actual_bid_amount:match.bp,actual_winner:match.co,actual_participant_count:match.pc,adj_rate_error:adjErr,bid_amount_error:bidErr,match_status:"matched",matched_record_id:match.id,matched_at:new Date().toISOString()})
   }
-  // patch each
   for(const u of updates){
     const{id,...data}=u;
     await fetch(SB_URL+"/rest/v1/bid_predictions?id=eq."+id,{method:"PATCH",headers:{...hdrs,"Prefer":"return=minimal"},body:JSON.stringify(data)})
