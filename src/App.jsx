@@ -70,18 +70,42 @@ async function parseFile(file){const buf=await file.arrayBuffer();const wb=XLSX.
 function toRecord(r){const pn=clean(r[1]);if(!pn||pn.length<2)return null;const ag=clean(r[3]);const at=clsAg(ag);const ep=sn(r[4]);const ba=sn(r[5]);const av=pnv(r[6]);const od=pDt(clean(r[19]));const era=isNewEra(at,od)?"new":"old";const dk=pn+"|"+ag+"|"+(od||"")+"|"+(ba||"");if(dk.length<5)return null;return{dedup_key:md5(dk),pn,pn_no:clean(r[2]),ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:clean(r[7]),xp:sn(r[8]),floor_price:sn(r[9]),ar1:sn(r[10]),ar0:sn(r[11]),co:clean(r[12]),co_no:clean(r[13]),bp:sn(r[14]),br1:sn(r[15]),br0:sn(r[16]),base_ratio:sn(r[17]),pc:Math.round(pnv(r[18]))||0,od:od||null,input_date:pDt(clean(r[20]))||null,cat:clean(r[21]),g2b:clean(r[22]),reg:clean(r[23]),era,has_a:av>0,fr:eraFR(at,ep,od)}}
 function toRecords(rows){return rows.map(toRecord).filter(Boolean)}
 
-// 입찰서류함 파싱 (헤더가 2행, 데이터 3행부터)
+// 입찰서류함 파싱 (헤더 동적 매핑)
 function parseBidDoc(rows){
-  // 헤더 찾기: "공고명" 컬럼이 있는 행
-  let hdrIdx=0;
-  for(let i=0;i<Math.min(5,rows.length);i++){if(rows[i].some(v=>String(v).includes("공고명"))){hdrIdx=i;break}}
+  // 헤더 행 찾기
+  let hdrIdx=-1;
+  for(let i=0;i<Math.min(5,rows.length);i++){
+    const h=rows[i].map(v=>String(v).trim());
+    if(h.some(v=>v.includes("공고명"))){hdrIdx=i;break}}
+  if(hdrIdx<0)return[];
+  // 헤더 컬럼 매핑 (유연하게)
+  const hdr=rows[hdrIdx].map(v=>String(v).trim());
+  const col={};
+  hdr.forEach((h,i)=>{
+    if(h.includes("공고명")&&!col.pn)col.pn=i;
+    if(h.includes("공고번호")&&!col.pn_no)col.pn_no=i;
+    if((h.includes("발주기관")||h.includes("발주처")||h.includes("수요기관"))&&!col.ag)col.ag=i;
+    if((h.includes("추정가격")||h==="추정가")&&!col.ep)col.ep=i;
+    if((h.includes("기초금액")||h.includes("기초가격"))&&!col.ba)col.ba=i;
+    if(h.includes("A값")||h==="A가")col.av=i;
+    if(h.includes("설계금액")||h.includes("원가"))col.raw=i;
+    if(h.includes("개찰")||h.includes("입찰일"))col.od=i;
+    if(h.includes("업종")||h.includes("종목"))col.cat=i;
+  });
+  if(col.pn==null)return[];
   const result=[];
   for(let i=hdrIdx+1;i<rows.length;i++){
-    const r=rows[i];const pn=clean(r[2]);if(!pn||pn.length<2)continue;
-    const ag=clean(r[4]);const at=clsAg(ag);const ep=sn(r[5]);const ba=sn(r[6]);const av=pnv(r[7]);
-    const rawCost=sn(r[8]);const odRaw=clean(r[9]);const od=pDt(odRaw);const cat=clean(r[14]);
-    const pn_no=clean(r[3]);
-    result.push({pn,pn_no,ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:rawCost,cat,open_date:od,
+    const r=rows[i];const pn=clean(r[col.pn]);if(!pn||pn.length<2)continue;
+    const ag=col.ag!=null?clean(r[col.ag]):"";const at=clsAg(ag);
+    const ep=col.ep!=null?sn(r[col.ep]):null;
+    const ba=col.ba!=null?sn(r[col.ba]):null;
+    const av=col.av!=null?pnv(r[col.av]):0;
+    const rawCost=col.raw!=null?sn(r[col.raw]):null;
+    const odRaw=col.od!=null?clean(r[col.od]):"";const od=pDt(odRaw);
+    const cat=col.cat!=null?clean(r[col.cat]):"";
+    const pn_no=col.pn_no!=null?clean(r[col.pn_no]):"";
+    if(!ba&&!ep)continue; // 금액 정보 없으면 스킵
+    result.push({pn,pn_no,ag,at,ep:ep||null,ba:ba||ep||null,av:av||0,raw_cost:rawCost,cat,open_date:od,
       dedup_key:md5("pred|"+(pn_no||pn)+"|"+(od||""))})
   }
   return result}
@@ -116,8 +140,13 @@ function calcStats(recs,filter){const src=filter?recs.filter(filter):recs;const 
 // ─── 예측 v4 (v3 + bid_details 복수예가 패턴 보정) ──────────
 function predictV4({at,agName,ba,ep,av},ts,as,details){
   if(!ba)return null;
-  const agSt=as[agName];const tSt=ts[at]||ts["조달청"];
-  let ref=tSt||{avg:0,q1:-0.5,med:0,q3:0.5,std:0.7,bidAvg:87.745,bidMed:87.745,bidQ1:87.5,bidQ3:88.0,bidStd:0.7};
+  // ts가 비어있으면 예측 불가
+  const tKeys=Object.keys(ts||{});
+  if(!tKeys.length)return null;
+  const agSt=as[agName];const tSt=ts[at]||ts[tKeys[0]];
+  // tSt가 없으면 전체 통계에서 아무거나 사용
+  if(!tSt)return null;
+  let ref=tSt;
   let src=at;
   if(agSt&&agSt.n>=5){ref=agSt;src=`${agName}(${agSt.n}건)`}
   else if(agSt&&agSt.n>=2){
@@ -369,19 +398,36 @@ export default function App(){
     setDbLoading(false)
   })()},[refreshStats]);
 
-  // 파일 업로드 (3종 자동 판별)
+  // 파일 업로드 (3종 자동 판별: SUCVIEW / 입찰서류함 / 낙찰정보리스트)
   const loadFiles=useCallback(async(fileList)=>{
     const files=Array.from(fileList).filter(Boolean);if(!files.length)return;setBusy(true);setMsg({type:"",text:""});setUploadLog([]);const logs=[];
     for(const file of files){
       try{
         const{rows:raw,format}=await parseFile(file);if(!raw.length)throw new Error("빈 파일");
+        // 1) SUCVIEW 상세 파일
         if(isSucviewFile(raw)){
           const detail=parseSucview(raw,file.name);if(!detail.pn_no)throw new Error("공고번호 없음");
           await sbSaveDetail(detail);const sim=simDraws(detail.pre_rates);setSimResult(sim);
           logs.push({name:file.name,type:"ok",text:`[상세] ${detail.ag} | 예가15개 + 참여${detail.participant_count}건`});
           setUploadLog([...logs]);continue}
-        const hdr=raw[0]||[];const isPn=hdr.some(v=>String(v).includes("공고명"));
-        if(!isPn)throw new Error("지원하지 않는 파일 형식");
+        // 2) 입찰서류함 (기초금액/추정가격 컬럼이 있는 경우) → 예측으로 처리
+        const hdr0=(raw[0]||[]).map(v=>String(v).trim());const hdr1=(raw[1]||[]).map(v=>String(v).trim());
+        const allHdr=[...hdr0,...hdr1].join("|");
+        const isBidDoc=allHdr.includes("기초금액")&&allHdr.includes("공고명")&&(allHdr.includes("추정가격")||allHdr.includes("A값"));
+        const isNakList=hdr0.some(v=>v.includes("공고명"))&&(hdr0.some(v=>v.includes("낙찰"))||hdr0.some(v=>v.includes("1순위"))||hdr0.length>=15);
+        if(isBidDoc&&!isNakList){
+          // 입찰서류함 → 예측 처리
+          if(!Object.keys(allS.ts||{}).length){throw new Error("낙찰 통계가 로드되지 않았습니다. 낙찰정보리스트를 먼저 업로드해주세요.")}
+          const items=parseBidDoc(raw);if(!items.length)throw new Error("입찰서류함: 예측 대상 0건");
+          const results=items.map(item=>{const p=predictV4({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);return{...item,pred:p}}).filter(r=>r.pred);
+          if(!results.length)throw new Error("예측 결과 0건");
+          setPredResults(results);
+          const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,source:"file_upload",match_status:"pending"}));
+          await sbSavePredictions(dbRows);
+          logs.push({name:file.name,type:"ok",text:`[예측] ${results.length}건 예측 완료`});
+          setUploadLog([...logs]);continue}
+        // 3) 낙찰정보리스트
+        if(!hdr0.some(v=>v.includes("공고명")))throw new Error("지원하지 않는 파일 형식");
         const nr=toRecords(raw.slice(1));await sbUpsert(nr);
         const nc=nr.filter(r=>r.era==="new").length,oc=nr.filter(r=>r.era==="old").length;
         logs.push({name:file.name,type:"ok",text:`[${format}] ${nr.length}건 | 신${nc}·구${oc}`});setUploadLog([...logs])
@@ -392,22 +438,27 @@ export default function App(){
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭`})}
       else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:"업로드 완료"})}
     }catch(e){setMsg({type:"err",text:"DB 재로드 실패"})}
-    setSel({});setBusy(false)},[refreshStats]);
+    setSel({});setBusy(false)},[refreshStats,allS,bidDetails]);
 
   // 입찰서류함 예측
   const loadPredFile=useCallback(async(file)=>{
-    if(!file)return;setBusy(true);setMsg({type:"",text:""});
+    if(!file)return;
+    if(!Object.keys(allS.ts||{}).length){setMsg({type:"err",text:"낙찰 데이터를 먼저 로드해주세요 (통계 없음)"});return}
+    setBusy(true);setMsg({type:"",text:""});
     try{const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length)throw new Error("예측 대상 0건");
       const results=items.map(item=>{const p=predictV4({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);return{...item,pred:p}}).filter(r=>r.pred);
+      if(!results.length)throw new Error("예측 결과 0건 (기관/기초금액 확인)");
       setPredResults(results);
       const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,source:"file_upload",match_status:"pending"}));
       await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds);
       setMsg({type:"ok",text:`${results.length}건 예측 완료 · DB 저장`})
-    }catch(e){setMsg({type:"err",text:"예측 실패: "+e.message})}setBusy(false)},[allS]);
+    }catch(e){setMsg({type:"err",text:"예측 실패: "+e.message})}setBusy(false)},[allS,bidDetails]);
 
   // 수동 예측
   const doManualPred=useCallback(async()=>{
+    if(!Object.keys(allS.ts||{}).length){setMsg({type:"err",text:"낙찰 데이터가 없습니다. 먼저 데이터를 업로드해주세요."});return}
     const p=predictV4({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,bidDetails);
+    if(!p){setMsg({type:"err",text:"예측 실패: 기관 또는 금액 정보를 확인해주세요."});return}
     setPred(p);
     if(p){const dk=md5("pred|manual|"+inp.agency+"|"+inp.baseAmount+"|"+Date.now());
       const row={dedup_key:dk,pn:"수동입력: "+inp.agency,pn_no:null,ag:inp.agency.trim(),at:clsAg(inp.agency),ep:tn(inp.estimatedPrice)||null,ba:tn(inp.baseAmount),av:tn(inp.aValue),raw_cost:null,cat:null,open_date:null,pred_adj_rate:p.adj,pred_expected_price:p.xp,pred_floor_rate:p.fr,pred_bid_amount:p.bid,pred_source:p.src,pred_base_adj:p.baseAdj,source:"manual",match_status:"pending"};
