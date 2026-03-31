@@ -244,7 +244,7 @@ async function sbDeleteAll(){await fetch(SB_URL+"/rest/v1/bid_records?id=gt.0",{
 async function sbSavePredictions(preds){const BATCH=50;for(let i=0;i<preds.length;i+=BATCH){const batch=preds.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}const body=sanitizeJson(JSON.stringify(unique));await fetch(SB_URL+"/rest/v1/bid_predictions?on_conflict=dedup_key",{method:"POST",headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},body})}}
 async function sbFetchPredictions(){try{const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_predictions?select=*&order=created_at.desc&offset="+offset+"&limit="+PAGE,{headers:hdrsSel});if(!res.ok)return[];const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}catch(e){return[]}}
 
-// 자동 매칭: bid_predictions.pn_no → bid_records.pn_no (날짜 검증 포함)
+// 자동 매칭: bid_predictions.pn_no → bid_records.pn_no (날짜 검증 필수)
 async function sbMatchPredictions(predictions,records){
   // pn_no 기준으로 모든 후보를 배열로 저장 (동일 pn_no 복수 존재 가능)
   const recMap={};for(const r of records){if(r.pn_no&&r.pn_no.length>5){if(!recMap[r.pn_no])recMap[r.pn_no]=[];recMap[r.pn_no].push(r)}}
@@ -254,10 +254,8 @@ async function sbMatchPredictions(predictions,records){
     if(!p.pn_no)continue;
     const candidates=recMap[p.pn_no];
     if(!candidates||!candidates.length)continue;
-    // 후보가 1개면 바로 매칭, 복수면 날짜 가장 근접한 건 선택
     let match=null;
-    if(candidates.length===1){match=candidates[0]}
-    else if(p.open_date){
+    if(p.open_date){
       // 예측 개찰일과 가장 가까운 낙찰 건 선택
       const pOd=p.open_date;
       let bestDist=Infinity;
@@ -266,11 +264,11 @@ async function sbMatchPredictions(predictions,records){
         const dist=Math.abs(new Date(pOd)-new Date(c.od));
         if(dist<bestDist){bestDist=dist;match=c}
       }
-      // 30일 이상 차이나면 오매칭으로 판단하여 스킵
+      // ★ 후보가 1건이든 복수든, 30일 초과 차이면 오매칭 → 스킵
       if(bestDist>30*24*60*60*1000)match=null;
     }else{
-      // 개찰일 없으면 가장 최근 건
-      match=candidates.sort((a,b)=>(b.od>a.od?1:b.od<a.od?-1:0))[0];
+      // 개찰일 없는 예측은 매칭하지 않음 (안전)
+      match=null;
     }
     if(!match)continue;
     const actualAdj=match.br1!=null?Math.round((match.br1-100)*10000)/10000:null;
@@ -408,6 +406,10 @@ export default function App(){
 
   const refreshStats=useCallback(rows=>{setAllS(calcStats(rows));setNewS(calcStats(rows,r=>r.era==="new"));setOldS(calcStats(rows,r=>r.era==="old"))},[]);
 
+  // 예측 리스트 새로고침 (수동 + 탭 전환 시)
+  const refreshPredictions=useCallback(async()=>{
+    try{const preds=await sbFetchPredictions();setPredictions(preds||[]);return preds}catch(e){return predictions}},[predictions]);
+
   // DB 로드
   useEffect(()=>{(async()=>{
     try{const rows=await sbFetchAll();setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));if(rows.length>0)setTab("dash")}catch(e){setMsg({type:"err",text:"DB 로드 실패: "+e.message})}
@@ -415,6 +417,9 @@ export default function App(){
     try{const dets=await sbFetchDetails();setBidDetails(dets||[])}catch(e){setBidDetails([])}
     setDbLoading(false)
   })()},[refreshStats]);
+
+  // 예측 탭 진입 시 자동 새로고침
+  useEffect(()=>{if(tab==="predict"&&!dbLoading){refreshPredictions()}},[tab,dbLoading]);
 
   // 파일 업로드 (3종 자동 판별: SUCVIEW / 입찰서류함 / 낙찰정보리스트)
   const loadFiles=useCallback(async(fileList)=>{
@@ -783,7 +788,13 @@ export default function App(){
 
       {/* 예측 내역 + 비교 통합 */}
       <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16}}>
-        <div style={{fontSize:13,fontWeight:600,color:C.gold,marginBottom:10}}>예측 내역 + 정확도 비교</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontSize:13,fontWeight:600,color:C.gold}}>예측 내역 + 정확도 비교</div>
+          <button onClick={async()=>{setBusy(true);await refreshPredictions();setBusy(false);setMsg({type:"ok",text:"예측 내역 새로고침 완료"})}} disabled={busy}
+            style={{padding:"5px 12px",fontSize:11,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,cursor:busy?"default":"pointer"}}>
+            {busy?"갱신중...":"새로고침"}
+          </button>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
           {[{l:"총 예측",v:compStats.total,c:C.txt},{l:"매칭 완료",v:compStats.matched,c:"#5dca96"},{l:"평균 오차",v:compStats.matched>0?compStats.avgErr.toFixed(4)+"%":"—",c:"#d4a834"},{l:"대기 중",v:compStats.pending,c:"#e24b4a"}].map((c,i)=>
             <div key={i} style={{background:C.bg3,borderRadius:6,padding:"8px",textAlign:"center"}}>
