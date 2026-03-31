@@ -403,6 +403,9 @@ export default function App(){
   const[bidDetails,setBidDetails]=useState([]);
   const[simResult,setSimResult]=useState(null);
   const[expandedDetail,setExpandedDetail]=useState(null);
+  // 정렬 상태
+  const[dataSort,setDataSort]=useState({key:"od",dir:"desc"}); // 분석 탭 데이터
+  const[predSort,setPredSort]=useState({key:"open_date",dir:"desc"}); // 예측 탭 내역
 
   const refreshStats=useCallback(rows=>{setAllS(calcStats(rows));setNewS(calcStats(rows,r=>r.era==="new"));setOldS(calcStats(rows,r=>r.era==="old"))},[]);
 
@@ -496,10 +499,18 @@ export default function App(){
 
   // 파생 데이터
   const curSt=eF==="new"?newS:eF==="old"?oldS:allS;
+  // 범용 정렬 함수
+  const sortFn=(a,b,key,dir)=>{
+    let va=a[key],vb=b[key];
+    if(va==null)va="";if(vb==null)vb="";
+    if(typeof va==="string"&&typeof vb==="string"){const cmp=va.localeCompare(vb,"ko");return dir==="asc"?cmp:-cmp}
+    if(typeof va==="number"&&typeof vb==="number")return dir==="asc"?va-vb:vb-va;
+    const sa=String(va),sb=String(vb);const cmp=sa.localeCompare(sb,"ko");return dir==="asc"?cmp:-cmp};
   const filteredRecs=useMemo(()=>{const t=search.toLowerCase();let src=recs;
     if(eF==="new")src=recs.filter(r=>r.era==="new");else if(eF==="old")src=recs.filter(r=>r.era==="old");
     if(atF!=="all")src=src.filter(r=>r.at===atF);
-    return t?src.filter(r=>((r.pn||"")+(r.ag||"")+(r.co||"")).toLowerCase().includes(t)):src},[recs,search,eF,atF]);
+    if(t)src=src.filter(r=>((r.pn||"")+(r.ag||"")+(r.co||"")).toLowerCase().includes(t));
+    return[...src].sort((a,b)=>sortFn(a,b,dataSort.key,dataSort.dir))},[recs,search,eF,atF,dataSort]);
   const pagedRecs=useMemo(()=>filteredRecs.slice(dataPage*PAGE,(dataPage+1)*PAGE),[filteredRecs,dataPage]);
   const totalPages=Math.max(1,Math.ceil(filteredRecs.length/PAGE));
   const fAg=useMemo(()=>{const t=agSch.toLowerCase();return Object.entries(curSt.as||{}).filter(([k])=>!t||mSch(k,t)).sort((a,b)=>b[1].n-a[1].n)},[curSt.as,agSch]);
@@ -514,11 +525,18 @@ export default function App(){
     const byType={};matched.forEach(p=>{const t=p.at||"기타";if(!byType[t])byType[t]={n:0,errSum:0};byType[t].n++;if(p.adj_rate_error!=null)byType[t].errSum+=Math.abs(p.adj_rate_error)});
     Object.values(byType).forEach(v=>{v.avgErr=v.n?Math.round(v.errSum/v.n*10000)/10000:0});
     return{total:preds.length,matched:matched.length,pending:pending.length,avgErr,byType}},[predictions]);
-  const compList=useMemo(()=>{const p=predictions||[];if(compFilter==="matched")return p.filter(x=>x.match_status==="matched");if(compFilter==="pending")return p.filter(x=>x.match_status==="pending");return p},[predictions,compFilter]);
+  const compList=useMemo(()=>{const p=predictions||[];let list;if(compFilter==="matched")list=p.filter(x=>x.match_status==="matched");else if(compFilter==="pending")list=p.filter(x=>x.match_status==="pending");else list=p;
+    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,predSort]);
 
   // 스타일
   const btnS=(act,c)=>({padding:"4px 12px",fontSize:11,fontWeight:act?600:400,background:act?c+"22":"#1a1a30",color:act?c:"#888",border:"1px solid "+(act?c+"44":"#252540"),borderRadius:5,cursor:"pointer"});
   const Tb=({id,ch,badge})=>(<button onClick={()=>{setTab(id);setDataPage(0)}} style={{padding:"10px 20px",fontSize:12,fontWeight:tab===id?600:400,background:tab===id?C.bg3:"transparent",color:tab===id?C.gold:C.txm,border:"none",borderBottom:tab===id?`2px solid ${C.gold}`:"2px solid transparent",cursor:"pointer",position:"relative"}}>{ch}{badge>0&&<span style={{position:"absolute",top:4,right:4,background:"#e24b4a",color:"#fff",fontSize:8,padding:"1px 5px",borderRadius:8,minWidth:14,textAlign:"center"}}>{badge}</span>}</button>);
+  // 정렬 가능 헤더
+  const SortTh=({label,sortKey,current,setCurrent,align,style:sx})=>{
+    const active=current.key===sortKey;
+    const arrow=active?(current.dir==="asc"?" ▲":" ▼"):"";
+    return<th style={{padding:"8px 4px",textAlign:align||"left",color:active?C.gold:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11,cursor:"pointer",userSelect:"none",...sx}}
+      onClick={()=>{setCurrent(prev=>prev.key===sortKey?{key:sortKey,dir:prev.dir==="asc"?"desc":"asc"}:{key:sortKey,dir:"desc"});setDataPage(0)}}>{label}{arrow}</th>};
 
   // 시뮬레이션 인라인 뷰 컴포넌트
   const SimView=({sim})=>{
@@ -697,7 +715,15 @@ export default function App(){
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
           <colgroup><col style={{width:30}}/><col style={{width:"22%"}}/><col style={{width:"12%"}}/><col style={{width:"6%"}}/><col style={{width:"12%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"5%"}}/></colgroup>
           <thead><tr style={{background:C.bg3}}><th style={{padding:6}}><input type="checkbox" checked={allSel} onChange={()=>{const n={};if(!allSel)pagedRecs.forEach(r=>{n[r.id]=true});setSel(n)}}/></th>
-            {["공고명","발주기관","유형","기초금액","사정율(100%)","1순위","개찰일","시대"].map((h,i)=><th key={i} style={{padding:"8px 4px",textAlign:i>=3?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>{h}</th>)}</tr></thead>
+            <SortTh label="공고명" sortKey="pn" current={dataSort} setCurrent={setDataSort}/>
+            <SortTh label="발주기관" sortKey="ag" current={dataSort} setCurrent={setDataSort}/>
+            <SortTh label="유형" sortKey="at" current={dataSort} setCurrent={setDataSort}/>
+            <SortTh label="기초금액" sortKey="ba" current={dataSort} setCurrent={setDataSort} align="right"/>
+            <SortTh label="사정율(100%)" sortKey="ar1" current={dataSort} setCurrent={setDataSort} align="right"/>
+            <SortTh label="1순위" sortKey="br1" current={dataSort} setCurrent={setDataSort} align="right"/>
+            <SortTh label="개찰일" sortKey="od" current={dataSort} setCurrent={setDataSort} align="right"/>
+            <SortTh label="시대" sortKey="era" current={dataSort} setCurrent={setDataSort} align="center"/>
+          </tr></thead>
           <tbody>{pagedRecs.map(r=>{
             const isYuchal=r.co==="유찰";const rowBg=isYuchal?"rgba(226,75,74,0.03)":"transparent";
             return<tr key={r.id} style={{borderBottom:"1px solid "+C.bdr,background:rowBg}}>
@@ -810,8 +836,17 @@ export default function App(){
         {compList.length>0?<div style={{overflow:"auto",maxHeight:500}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
             <colgroup><col style={{width:"22%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"12%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/></colgroup>
-            <thead><tr style={{background:C.bg3}}>{["공고명","발주기관","예측(100%)","실제(100%)","오차","추천금액","실제금액","개찰일","상태"].map((h,i)=>
-              <th key={i} style={{padding:"7px 6px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>{h}</th>)}</tr></thead>
+            <thead><tr style={{background:C.bg3}}>
+              <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
+              <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
+              <SortTh label="예측(100%)" sortKey="pred_adj_rate" current={predSort} setCurrent={setPredSort} align="right"/>
+              <SortTh label="실제(100%)" sortKey="actual_adj_rate" current={predSort} setCurrent={setPredSort} align="right"/>
+              <SortTh label="오차" sortKey="adj_rate_error" current={predSort} setCurrent={setPredSort} align="right"/>
+              <th style={{padding:"7px 6px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천금액</th>
+              <th style={{padding:"7px 6px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제금액</th>
+              <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
+              <SortTh label="상태" sortKey="match_status" current={predSort} setCurrent={setPredSort} align="center"/>
+            </tr></thead>
             <tbody>{compList.slice(0,100).map(p=>{
               const errColor=p.adj_rate_error!=null?(Math.abs(p.adj_rate_error)<0.3?"#5dca96":Math.abs(p.adj_rate_error)<1?"#d4a834":"#e24b4a"):C.txd;
               return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr}}>
