@@ -534,11 +534,13 @@ export default function App(){
 
   const compStats=useMemo(()=>{
     const preds=predictions||[];const matched=preds.filter(p=>p.match_status==="matched");const pending=preds.filter(p=>p.match_status==="pending");
-    const errors=matched.filter(p=>p.adj_rate_error!=null).map(p=>Math.abs(p.adj_rate_error));
-    const avgErr=errors.length?Math.round(errors.reduce((a,b)=>a+b,0)/errors.length*10000)/10000:0;
+    const errors=matched.filter(p=>p.adj_rate_error!=null).map(p=>Number(p.adj_rate_error));
+    const absErrors=errors.map(e=>Math.abs(e));
+    const avgErr=absErrors.length?Math.round(absErrors.reduce((a,b)=>a+b,0)/absErrors.length*10000)/10000:0;
+    const bias=errors.length?Math.round(errors.reduce((a,b)=>a+b,0)/errors.length*10000)/10000:0;
     const byType={};matched.forEach(p=>{const t=p.at||"기타";if(!byType[t])byType[t]={n:0,errSum:0};byType[t].n++;if(p.adj_rate_error!=null)byType[t].errSum+=Math.abs(p.adj_rate_error)});
     Object.values(byType).forEach(v=>{v.avgErr=v.n?Math.round(v.errSum/v.n*10000)/10000:0});
-    return{total:preds.length,matched:matched.length,pending:pending.length,avgErr,byType}},[predictions]);
+    return{total:preds.length,matched:matched.length,pending:pending.length,avgErr,bias,byType}},[predictions]);
   const compList=useMemo(()=>{const p=predictions||[];let list;if(compFilter==="matched")list=p.filter(x=>x.match_status==="matched");else if(compFilter==="pending")list=p.filter(x=>x.match_status==="pending");else list=p;
     return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,predSort]);
 
@@ -848,11 +850,11 @@ export default function App(){
             {busy?"갱신중...":"새로고침"}
           </button>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
-          {[{l:"총 예측",v:compStats.total,c:C.txt},{l:"매칭 완료",v:compStats.matched,c:"#5dca96"},{l:"평균 오차",v:compStats.matched>0?compStats.avgErr.toFixed(4)+"%":"—",c:"#d4a834"},{l:"대기 중",v:compStats.pending,c:"#e24b4a"}].map((c,i)=>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:12}}>
+          {[{l:"총 예측",v:compStats.total,c:C.txt},{l:"매칭 완료",v:compStats.matched,c:"#5dca96"},{l:"MAE",v:compStats.matched>0?compStats.avgErr.toFixed(4)+"%":"—",c:"#d4a834"},{l:"Bias",v:compStats.matched>0?(compStats.bias>=0?"+":"")+compStats.bias.toFixed(4)+"%":"—",c:compStats.bias<0?"#e24b4a":"#5dca96"},{l:"대기 중",v:compStats.pending,c:"#e24b4a"}].map((c,i)=>
             <div key={i} style={{background:C.bg3,borderRadius:6,padding:"8px",textAlign:"center"}}>
               <div style={{fontSize:10,color:C.txd}}>{c.l}</div>
-              <div style={{fontSize:18,fontWeight:600,color:c.c}}>{c.v}</div>
+              <div style={{fontSize:16,fontWeight:600,color:c.c}}>{c.v}</div>
             </div>)}
         </div>
         <div style={{display:"flex",gap:4,marginBottom:10}}>
@@ -862,7 +864,7 @@ export default function App(){
         </div>
         {compList.length>0?<div style={{overflow:"auto",maxHeight:500}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"22%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"12%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/></colgroup>
+            <colgroup><col style={{width:"20%"}}/><col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/><col style={{width:"11%"}}/><col style={{width:"9%"}}/><col style={{width:"8%"}}/><col style={{width:"12%"}}/><col style={{width:"6%"}}/></colgroup>
             <thead><tr style={{background:C.bg3}}>
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
@@ -872,6 +874,7 @@ export default function App(){
               <th style={{padding:"7px 6px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천금액</th>
               <th style={{padding:"7px 6px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제금액</th>
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
+              <th style={{padding:"7px 6px",textAlign:"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>근거</th>
               <SortTh label="상태" sortKey="match_status" current={predSort} setCurrent={setPredSort} align="center"/>
             </tr></thead>
             <tbody>{compList.slice(0,100).map(p=>{
@@ -885,6 +888,7 @@ export default function App(){
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace"}}>{p.pred_bid_amount?tc(p.pred_bid_amount):""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace"}}>{p.actual_bid_amount?tc(p.actual_bid_amount):""}</td>
                 <td style={{padding:"6px",textAlign:"right"}}>{p.open_date||""}</td>
+                <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:10,color:C.txd}} title={p.pred_source||""}>{p.pred_source||""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span></td>
               </tr>})}</tbody>
           </table>
