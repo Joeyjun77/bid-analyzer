@@ -152,14 +152,13 @@ function calcStats(recs,filter){const src=filter?recs.filter(filter):recs;const 
     v.recentAvg=rAvg;v.recentN=rLen;v.prevAvg=pAvg;v.prevN=pLen}};
   fin(ts);fin(as);return{ts,as}}
 
-// ─── 예측 v4 (v3 + bid_details 복수예가 패턴 보정) ──────────
+// ─── 예측 v4.1 (drift 보정 + 신뢰구간) ──────────────────────
+const rnd4=v=>Math.round((v||0)*10000)/10000;
 function predictV4({at,agName,ba,ep,av},ts,as,details){
   if(!ba)return null;
-  // ts가 비어있으면 예측 불가
   const tKeys=Object.keys(ts||{});
   if(!tKeys.length)return null;
   const agSt=as[agName];const tSt=ts[at]||ts[tKeys[0]];
-  // tSt가 없으면 전체 통계에서 아무거나 사용
   if(!tSt)return null;
   let ref=tSt;
   let src=at;
@@ -172,58 +171,55 @@ function predictV4({at,agName,ba,ep,av},ts,as,details){
       bidQ1:agSt.bidQ1*w+tSt.bidQ1*(1-w),bidQ3:agSt.bidQ3*w+tSt.bidQ3*(1-w),bidStd:Math.max(agSt.bidStd,tSt.bidStd)};
     src=`${agName}(${agSt.n}건)+${at}`}
 
-  // ★ bid_details 복수예가 패턴 보정
+  // ★ Phase 1 편향 보정: drift + bid_details
+  let biasAdj=0;
+  // (1) drift 보정: 기관 우선, 없으면 유형
+  const agDrift=(agSt&&agSt.n>=5)?(agSt.recentDrift||0):0;
+  const typeDrift=tSt.recentDrift||0;
+  const drift=agDrift!==0?agDrift:typeDrift;
+  biasAdj+=drift*0.4; // drift의 40% 반영 (과적합 방지)
+
+  // (2) bid_details 복수예가 패턴 보정
   let detailInsight=null;
   const dets=(details||[]).filter(d=>d.pre_rates&&Array.isArray(d.pre_rates)&&d.pre_rates.length===15);
-  // 같은 기관 → 같은 기관유형 순으로 찾기
   const agDets=dets.filter(d=>d.ag===agName);
   const atDets=agDets.length>=1?agDets:dets.filter(d=>d.at===at);
   if(atDets.length>=1){
-    // 15개 평균의 평균 (편향 지표)
     const preAvgs=atDets.map(d=>d.pre_avg||0);
-    const avgBias=preAvgs.reduce((a,b)=>a+b,0)/preAvgs.length;
-    // 음수 비율 분석
-    const allRates=atDets.flatMap(d=>d.pre_rates);
-    const negRatio=allRates.filter(v=>v<0).length/allRates.length;
-    // 실제 추첨 결과(adj_rate)와 15개 평균(pre_avg) 차이 → 추첨 편향
+    const avgPreBias=preAvgs.reduce((a,b)=>a+b,0)/preAvgs.length;
     const drawBiases=atDets.filter(d=>d.adj_rate!=null&&d.pre_avg!=null).map(d=>d.adj_rate-d.pre_avg);
     const avgDrawBias=drawBiases.length?drawBiases.reduce((a,b)=>a+b,0)/drawBiases.length:0;
-    // 최근 건의 C(15,4) 시뮬레이션
     const latestSim=simDraws(atDets[0].pre_rates);
-    // 보정 적용: 기존 중앙값에 편향 보정
-    const biasAdj=avgBias*0.3+avgDrawBias*0.2; // 15개 평균 편향의 30% + 추첨편향의 20% 반영
-    const correctedMed=ref.med+biasAdj;
-    const correctedQ1=ref.q1+biasAdj;
-    const correctedQ3=ref.q3+biasAdj;
-    // 음수 비율이 높으면 표준편차도 보정
-    const correctedStd=negRatio>0.6?ref.std*1.1:ref.std;
+    const detailBias=avgPreBias*0.3+avgDrawBias*0.2;
+    biasAdj+=detailBias;
     detailInsight={
-      count:atDets.length,
-      source:agDets.length>=1?agName:at,
-      avgBias:Math.round(avgBias*10000)/10000,
-      negRatio:Math.round(negRatio*1000)/10,
-      avgDrawBias:Math.round(avgDrawBias*10000)/10000,
-      biasAdj:Math.round(biasAdj*10000)/10000,
-      latestSim,
-      corrected:true};
-    // 보정된 ref 적용
-    ref={...ref,med:correctedMed,q1:correctedQ1,q3:correctedQ3,std:correctedStd,avg:ref.avg+biasAdj};
+      count:atDets.length,source:agDets.length>=1?agName:at,
+      avgBias:rnd4(avgPreBias),negRatio:Math.round(atDets.flatMap(d=>d.pre_rates).filter(v=>v<0).length/atDets.flatMap(d=>d.pre_rates).length*1000)/10,
+      avgDrawBias:rnd4(avgDrawBias),biasAdj:rnd4(detailBias),latestSim,corrected:true};
     src+=` + 상세${atDets.length}건 보정`}
+
+  // 보정 적용 (clamp ±0.5%)
+  biasAdj=Math.max(-0.5,Math.min(0.5,biasAdj));
+  ref={...ref,med:ref.med+biasAdj,q1:ref.q1+biasAdj,q3:ref.q3+biasAdj,avg:ref.avg+biasAdj};
 
   const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
   const calcBid=(adjRate)=>{const xp=ba*(1+adjRate/100);return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100))};
   const calcXp=(adjRate)=>Math.round(ba*(1+adjRate/100));
   const scenarios=[
-    {name:"보수적 (Q1)",adj:Math.round(ref.q1*10000)/10000,xp:calcXp(ref.q1),bid:calcBid(ref.q1)},
-    {name:"중앙값",adj:Math.round(ref.med*10000)/10000,xp:calcXp(ref.med),bid:calcBid(ref.med)},
-    {name:"공격적 (Q3)",adj:Math.round(ref.q3*10000)/10000,xp:calcXp(ref.q3),bid:calcBid(ref.q3)}];
-  const bidRateRec={avg:Math.round(ref.bidAvg*10000)/10000,med:Math.round(ref.bidMed*10000)/10000,
-    q1:Math.round(ref.bidQ1*10000)/10000,q3:Math.round(ref.bidQ3*10000)/10000,std:Math.round(ref.bidStd*10000)/10000};
+    {name:"보수적 (Q1)",adj:rnd4(ref.q1),xp:calcXp(ref.q1),bid:calcBid(ref.q1)},
+    {name:"중앙값",adj:rnd4(ref.med),xp:calcXp(ref.med),bid:calcBid(ref.med)},
+    {name:"공격적 (Q3)",adj:rnd4(ref.q3),xp:calcXp(ref.q3),bid:calcBid(ref.q3)}];
+  const bidRateRec={avg:rnd4(ref.bidAvg),med:rnd4(ref.bidMed),
+    q1:rnd4(ref.bidQ1),q3:rnd4(ref.bidQ3),std:rnd4(ref.bidStd)};
   const bidByRate=Math.ceil(ba*ref.bidMed/100);
+  // ★ 신뢰구간
+  const std=ref.std||0.7;
+  const ci70={low:rnd4(ref.med-std*0.52),high:rnd4(ref.med+std*0.52)};
+  const ci90={low:rnd4(ref.med-std*1.28),high:rnd4(ref.med+std*1.28)};
   return{scenarios,fr,src,bidRateRec,bidByRate,
-    adjAvg:Math.round(ref.avg*10000)/10000,adjStd:Math.round(ref.std*10000)/10000,
-    adj:Math.round(ref.med*10000)/10000,xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:Math.round(ref.avg*10000)/10000,
-    detailInsight}}
+    adjAvg:rnd4(ref.avg),adjStd:rnd4(ref.std),
+    adj:rnd4(ref.med),xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:rnd4(ref.avg),
+    detailInsight,biasAdj:rnd4(biasAdj),driftUsed:rnd4(drift),ci70,ci90}}
 
 // ─── 데이터 현황 (최근 업로드 + 실제 최신 개찰일 분리) ────
 function calcDataStatus(rows){
@@ -814,6 +810,19 @@ export default function App(){
           <div style={{fontSize:13}}>추천금액: <span style={{fontWeight:700,color:C.gold,fontSize:15}}>{tc(pred.bidByRate)}원</span></div>
         </div>
         <div style={{fontSize:11,color:C.txd}}>낙찰하한율: {pred.fr}%</div>
+        {/* ★ 신뢰구간 + 보정 정보 */}
+        {pred.ci70&&<div style={{marginTop:10,padding:"10px 12px",background:"rgba(93,202,165,0.04)",border:"1px solid rgba(93,202,165,0.12)",borderRadius:6}}>
+          <div style={{fontWeight:600,color:"#5dca96",marginBottom:6,fontSize:12}}>신뢰구간</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12,marginBottom:6}}>
+            <div><span style={{color:C.txd}}>70% 확률:</span> <span style={{color:C.txt}}>{pred.ci70.low>=0?"+":""}{pred.ci70.low}% ~ {pred.ci70.high>=0?"+":""}{pred.ci70.high}%</span></div>
+            <div><span style={{color:C.txd}}>90% 확률:</span> <span style={{color:C.txt}}>{pred.ci90.low>=0?"+":""}{pred.ci90.low}% ~ {pred.ci90.high>=0?"+":""}{pred.ci90.high}%</span></div>
+          </div>
+          {pred.biasAdj!==0&&<div style={{fontSize:11,marginBottom:4}}>
+            <span style={{color:C.txd}}>편향 보정:</span> <span style={{color:"#a8b4ff",fontWeight:500}}>{pred.biasAdj>=0?"+":""}{pred.biasAdj}%</span>
+            {pred.driftUsed!==0&&<span style={{color:C.txd,marginLeft:8}}>(drift {pred.driftUsed>=0?"+":""}{pred.driftUsed}%)</span>}
+          </div>}
+          <div style={{fontSize:10,color:C.txd,fontStyle:"italic"}}>복수예가 추첨 특성상 실제 사정율은 70% 확률로 위 범위 내에 있습니다.</div>
+        </div>}
         {/* 복수예가 보정 정보 */}
         {pred.detailInsight&&<div style={{marginTop:10,padding:"10px 12px",background:"rgba(168,180,255,0.06)",border:"1px solid rgba(168,180,255,0.15)",borderRadius:6}}>
           <div style={{fontWeight:600,color:"#a8b4ff",marginBottom:6,fontSize:12}}>복수예가 패턴 보정 적용</div>
