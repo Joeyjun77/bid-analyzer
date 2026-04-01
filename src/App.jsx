@@ -259,6 +259,8 @@ async function sbFetchPredictions(){try{const PAGE=1000;let all=[],offset=0;whil
 async function sbMatchPredictions(predictions,records){
   // pn_no 기준으로 모든 후보를 배열로 저장 (동일 pn_no 복수 존재 가능)
   const recMap={};for(const r of records){if(r.pn_no&&r.pn_no.length>5){if(!recMap[r.pn_no])recMap[r.pn_no]=[];recMap[r.pn_no].push(r)}}
+  // ★ 이미 매칭된 record_id 수집 (중복 매칭 방지)
+  const usedRecIds=new Set(predictions.filter(p=>p.match_status==="matched"&&p.matched_record_id).map(p=>p.matched_record_id));
   const updates=[];
   for(const p of predictions){
     if(p.match_status==="matched")continue;
@@ -267,21 +269,22 @@ async function sbMatchPredictions(predictions,records){
     if(!candidates||!candidates.length)continue;
     let match=null;
     if(p.open_date){
-      // 예측 개찰일과 가장 가까운 낙찰 건 선택
+      // 예측 개찰일과 가장 가까운 낙찰 건 선택 (이미 사용된 record 제외)
       const pOd=p.open_date;
       let bestDist=Infinity;
       for(const c of candidates){
         if(!c.od)continue;
+        if(usedRecIds.has(c.id))continue; // ★ 중복 방지
         const dist=Math.abs(new Date(pOd)-new Date(c.od));
         if(dist<bestDist){bestDist=dist;match=c}
       }
-      // ★ 후보가 1건이든 복수든, 30일 초과 차이면 오매칭 → 스킵
+      // 30일 초과 차이면 오매칭 → 스킵
       if(bestDist>30*24*60*60*1000)match=null;
     }else{
-      // 개찰일 없는 예측은 매칭하지 않음 (안전)
       match=null;
     }
     if(!match)continue;
+    usedRecIds.add(match.id); // ★ 사용된 record 등록
     const actualAdj=match.br1!=null?Math.round((match.br1-100)*10000)/10000:null;
     const adjErr=p.pred_adj_rate!=null&&actualAdj!=null?Math.round((p.pred_adj_rate-actualAdj)*10000)/10000:null;
     const bidErr=p.pred_bid_amount!=null&&match.bp!=null?Math.round(p.pred_bid_amount-match.bp):null;
