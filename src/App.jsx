@@ -110,19 +110,28 @@ function parseBidDoc(rows){
   }
   return result}
 
-// ─── 통계 (사정율 분포 + 투찰율 통계) ──────────────────────
+// ─── 통계 (사정율 분포 + 투찰율 통계 + drift) ──────────────
 function calcStats(recs,filter){const src=filter?recs.filter(filter):recs;const ts={},as={};
+  // drift 계산용 날짜 기준 (문자열 비교로 충분)
+  const now=new Date();
+  const d90=new Date(now-90*24*60*60*1000).toISOString().slice(0,10);
+  const d180=new Date(now-180*24*60*60*1000).toISOString().slice(0,10);
   for(const r of src){if(r.br1==null)continue;
     const adj=r.br1-100;if(adj<-5||adj>5)continue;
     const bidRate=(r.bp&&r.xp&&r.xp>0)?r.bp/r.xp*100:null;
     const t=r.at||"기타";
-    if(!ts[t])ts[t]={n:0,sum:0,vals:[],bidRates:[]};
+    if(!ts[t])ts[t]={n:0,sum:0,vals:[],bidRates:[],recentVals:[],prevVals:[]};
     ts[t].n++;ts[t].sum+=adj;ts[t].vals.push(adj);
     if(bidRate&&bidRate>80&&bidRate<95)ts[t].bidRates.push(bidRate);
+    // drift용 시간대별 분류
+    if(r.od&&r.od>=d90){ts[t].recentVals.push(adj)}
+    else if(r.od&&r.od>=d180){ts[t].prevVals.push(adj)}
     const a=r.ag;if(a){
-      if(!as[a])as[a]={n:0,sum:0,vals:[],bidRates:[],type:t};
+      if(!as[a])as[a]={n:0,sum:0,vals:[],bidRates:[],type:t,recentVals:[],prevVals:[]};
       as[a].n++;as[a].sum+=adj;as[a].vals.push(adj);
-      if(bidRate&&bidRate>80&&bidRate<95)as[a].bidRates.push(bidRate)}}
+      if(bidRate&&bidRate>80&&bidRate<95)as[a].bidRates.push(bidRate);
+      if(r.od&&r.od>=d90){as[a].recentVals.push(adj)}
+      else if(r.od&&r.od>=d180){as[a].prevVals.push(adj)}}}
   const fin=o=>{for(const k of Object.keys(o)){const v=o[k];v.avg=v.n?v.sum/v.n:0;v.vals.sort((a,b)=>a-b);
     const len=v.vals.length;v.med=len?v.vals[Math.floor(len/2)]:0;
     v.q1=len>=4?v.vals[Math.floor(len*0.25)]:v.avg;
@@ -134,7 +143,13 @@ function calcStats(recs,filter){const src=filter?recs.filter(filter):recs;const 
     v.bidMed=bl?v.bidRates[Math.floor(bl/2)]:0;
     v.bidQ1=bl>=4?v.bidRates[Math.floor(bl*0.25)]:v.bidAvg;
     v.bidQ3=bl>=4?v.bidRates[Math.floor(bl*0.75)]:v.bidAvg;
-    v.bidStd=bl>=2?Math.sqrt(v.bidRates.reduce((s,x)=>s+(x-v.bidAvg)**2,0)/(bl-1)):0}};
+    v.bidStd=bl>=2?Math.sqrt(v.bidRates.reduce((s,x)=>s+(x-v.bidAvg)**2,0)/(bl-1)):0;
+    // ★ drift: 최근 90일 평균 - 이전 90일 평균 (clamp ±0.5)
+    const rLen=v.recentVals.length,pLen=v.prevVals.length;
+    const rAvg=rLen>=3?v.recentVals.reduce((s,x)=>s+x,0)/rLen:null;
+    const pAvg=pLen>=3?v.prevVals.reduce((s,x)=>s+x,0)/pLen:null;
+    v.recentDrift=(rAvg!==null&&pAvg!==null)?Math.max(-0.5,Math.min(0.5,rAvg-pAvg)):0;
+    v.recentAvg=rAvg;v.recentN=rLen;v.prevAvg=pAvg;v.prevN=pLen}};
   fin(ts);fin(as);return{ts,as}}
 
 // ─── 예측 v4 (v3 + bid_details 복수예가 패턴 보정) ──────────
