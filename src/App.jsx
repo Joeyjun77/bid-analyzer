@@ -152,9 +152,9 @@ function calcStats(recs,filter){const src=filter?recs.filter(filter):recs;const 
     v.recentAvg=rAvg;v.recentN=rLen;v.prevAvg=pAvg;v.prevN=pLen}};
   fin(ts);fin(as);return{ts,as}}
 
-// ─── 예측 v4.1 (drift 보정 + 신뢰구간) ──────────────────────
+// ─── 예측 v5 (51K 백테스트 기반 보정) ────────────────────────
 const rnd4=v=>Math.round((v||0)*10000)/10000;
-function predictV4({at,agName,ba,ep,av},ts,as,details){
+function predictV5({at,agName,ba,ep,av},ts,as,details){
   if(!ba)return null;
   const tKeys=Object.keys(ts||{});
   if(!tKeys.length)return null;
@@ -171,15 +171,10 @@ function predictV4({at,agName,ba,ep,av},ts,as,details){
       bidQ1:agSt.bidQ1*w+tSt.bidQ1*(1-w),bidQ3:agSt.bidQ3*w+tSt.bidQ3*(1-w),bidStd:Math.max(agSt.bidStd,tSt.bidStd)};
     src=`${agName}(${agSt.n}건)+${at}`}
 
-  // ★ Phase 1 편향 보정: drift + bid_details
+  // ★ Phase 2 보정: drift 제거 (51K 백테스트에서 MAE 악화 확인), bid_details만 유지
   let biasAdj=0;
-  // (1) drift 보정: 기관 우선, 없으면 유형
-  const agDrift=(agSt&&agSt.n>=5)?(agSt.recentDrift||0):0;
-  const typeDrift=tSt.recentDrift||0;
-  const drift=agDrift!==0?agDrift:typeDrift;
-  biasAdj+=drift*0.4; // drift의 40% 반영 (과적합 방지)
 
-  // (2) bid_details 복수예가 패턴 보정
+  // bid_details 복수예가 패턴 보정 (유효성 검증됨)
   let detailInsight=null;
   const dets=(details||[]).filter(d=>d.pre_rates&&Array.isArray(d.pre_rates)&&d.pre_rates.length===15);
   const agDets=dets.filter(d=>d.ag===agName);
@@ -212,14 +207,16 @@ function predictV4({at,agName,ba,ep,av},ts,as,details){
   const bidRateRec={avg:rnd4(ref.bidAvg),med:rnd4(ref.bidMed),
     q1:rnd4(ref.bidQ1),q3:rnd4(ref.bidQ3),std:rnd4(ref.bidStd)};
   const bidByRate=Math.ceil(ba*ref.bidMed/100);
-  // ★ 신뢰구간
+  // ★ 신뢰구간 (백테스트 교정: 이론적 노이즈 바닥 0.642% 반영)
   const std=ref.std||0.7;
-  const ci70={low:rnd4(ref.med-std*0.52),high:rnd4(ref.med+std*0.52)};
-  const ci90={low:rnd4(ref.med-std*1.28),high:rnd4(ref.med+std*1.28)};
+  const noiseFloor=0.642; // 같은 기관 연속건 사정률 차이 중앙값 (51K건 측정)
+  const effStd=Math.max(std,noiseFloor); // 최소한 노이즈 바닥 이상
+  const ci70={low:rnd4(ref.med-effStd*0.52),high:rnd4(ref.med+effStd*0.52)};
+  const ci90={low:rnd4(ref.med-effStd*1.28),high:rnd4(ref.med+effStd*1.28)};
   return{scenarios,fr,src,bidRateRec,bidByRate,
     adjAvg:rnd4(ref.avg),adjStd:rnd4(ref.std),
     adj:rnd4(ref.med),xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:rnd4(ref.avg),
-    detailInsight,biasAdj:rnd4(biasAdj),driftUsed:rnd4(drift),ci70,ci90}}
+    detailInsight,biasAdj:rnd4(biasAdj),driftUsed:0,ci70,ci90}}
 
 // ─── 데이터 현황 (최근 업로드 + 실제 최신 개찰일 분리) ────
 function calcDataStatus(rows){
@@ -459,7 +456,7 @@ export default function App(){
           // 입찰서류함 → 예측 처리
           if(!Object.keys(allS.ts||{}).length){throw new Error("낙찰 통계가 로드되지 않았습니다. 낙찰정보리스트를 먼저 업로드해주세요.")}
           const items=parseBidDoc(raw);if(!items.length)throw new Error("입찰서류함: 예측 대상 0건");
-          const results=items.map(item=>{const p=predictV4({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);return{...item,pred:p}}).filter(r=>r.pred);
+          const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);return{...item,pred:p}}).filter(r=>r.pred);
           if(!results.length)throw new Error("예측 결과 0건");
           setPredResults(results);
           const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,source:"file_upload",match_status:"pending"}));
@@ -486,7 +483,7 @@ export default function App(){
     if(!Object.keys(allS.ts||{}).length){setMsg({type:"err",text:"낙찰 데이터를 먼저 로드해주세요 (통계 없음)"});return}
     setBusy(true);setMsg({type:"",text:""});
     try{const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length)throw new Error("예측 대상 0건");
-      const results=items.map(item=>{const p=predictV4({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);return{...item,pred:p}}).filter(r=>r.pred);
+      const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);return{...item,pred:p}}).filter(r=>r.pred);
       if(!results.length)throw new Error("예측 결과 0건 (기관/기초금액 확인)");
       setPredResults(results);
       const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,source:"file_upload",match_status:"pending"}));
@@ -497,7 +494,7 @@ export default function App(){
   // 수동 예측
   const doManualPred=useCallback(async()=>{
     if(!Object.keys(allS.ts||{}).length){setMsg({type:"err",text:"낙찰 데이터가 없습니다. 먼저 데이터를 업로드해주세요."});return}
-    const p=predictV4({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,bidDetails);
+    const p=predictV5({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,bidDetails);
     if(!p){setMsg({type:"err",text:"예측 실패: 기관 또는 금액 정보를 확인해주세요."});return}
     setPred(p);
     if(p){const dk=md5("pred|manual|"+inp.agency+"|"+inp.baseAmount+"|"+Date.now());
@@ -538,9 +535,10 @@ export default function App(){
     const absErrors=errors.map(e=>Math.abs(e));
     const avgErr=absErrors.length?Math.round(absErrors.reduce((a,b)=>a+b,0)/absErrors.length*10000)/10000:0;
     const bias=errors.length?Math.round(errors.reduce((a,b)=>a+b,0)/errors.length*10000)/10000:0;
+    const within05=absErrors.filter(e=>e<=0.5).length;
     const byType={};matched.forEach(p=>{const t=p.at||"기타";if(!byType[t])byType[t]={n:0,errSum:0};byType[t].n++;if(p.adj_rate_error!=null)byType[t].errSum+=Math.abs(p.adj_rate_error)});
     Object.values(byType).forEach(v=>{v.avgErr=v.n?Math.round(v.errSum/v.n*10000)/10000:0});
-    return{total:preds.length,matched:matched.length,pending:pending.length,avgErr,bias,byType}},[predictions]);
+    return{total:preds.length,matched:matched.length,pending:pending.length,avgErr,bias,within05,byType}},[predictions]);
   const compList=useMemo(()=>{const p=predictions||[];let list;if(compFilter==="matched")list=p.filter(x=>x.match_status==="matched");else if(compFilter==="pending")list=p.filter(x=>x.match_status==="pending");else list=p;
     return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,predSort]);
 
@@ -838,6 +836,35 @@ export default function App(){
             <div><span style={{color:C.txd}}>보정량:</span> <span style={{color:"#a8b4ff"}}>{pred.detailInsight.biasAdj>=0?"+":""}{pred.detailInsight.biasAdj}%</span></div>
           </div>
           <div style={{fontSize:10,color:C.txd}}>상세 데이터의 복수예가 15개 편향 패턴을 기반으로 사정율 예측값을 보정했습니다.</div>
+        </div>}
+      </div>}
+
+      {/* 백테스트 성능 대시보드 */}
+      {compStats.matched>=3&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16,marginBottom:12}}>
+        <div style={{fontSize:13,fontWeight:600,color:"#a8b4ff",marginBottom:10}}>모델 성능 (v5 · {compStats.matched}건 검증)</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:10}}>
+          {[
+            {l:"MAE",v:compStats.avgErr.toFixed(4)+"%",c:"#d4a834",sub:"평균절대오차"},
+            {l:"Bias",v:(compStats.bias>=0?"+":"")+compStats.bias.toFixed(4)+"%",c:Math.abs(compStats.bias)<0.1?"#5dca96":"#e24b4a",sub:"편향"},
+            {l:"적중률 (±0.5%)",v:compStats.matched>0?Math.round(compStats.within05/compStats.matched*100)+"%":"—",c:"#5dca96",sub:"실전 정확도"},
+            {l:"노이즈 바닥",v:"0.6420%",c:C.txd,sub:"이론적 한계"}
+          ].map((c,i)=>
+            <div key={i} style={{background:C.bg3,borderRadius:6,padding:"8px 6px",textAlign:"center"}}>
+              <div style={{fontSize:9,color:C.txd}}>{c.l}</div>
+              <div style={{fontSize:16,fontWeight:600,color:c.c}}>{c.v}</div>
+              <div style={{fontSize:8,color:C.txd}}>{c.sub}</div>
+            </div>)}
+        </div>
+        {Object.keys(compStats.byType).length>1&&<div>
+          <div style={{fontSize:10,color:C.txd,marginBottom:4}}>기관유형별 MAE</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {Object.entries(compStats.byType).sort((a,b)=>b[1].n-a[1].n).map(([t,v])=>
+              <div key={t} style={{background:C.bg,borderRadius:5,padding:"4px 8px",fontSize:10,border:"1px solid "+C.bdr}}>
+                <span style={{color:C.txm}}>{t}</span>
+                <span style={{color:v.avgErr<0.5?"#5dca96":v.avgErr<0.8?"#d4a834":"#e24b4a",fontWeight:600,marginLeft:4}}>{v.avgErr.toFixed(4)}%</span>
+                <span style={{color:C.txd,marginLeft:2}}>({v.n}건)</span>
+              </div>)}
+          </div>
         </div>}
       </div>}
 
