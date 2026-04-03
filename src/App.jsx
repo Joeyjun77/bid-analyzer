@@ -901,6 +901,7 @@ export default function App(){
               "예정가격(예측)":r.pred?r.pred.xp:"",
               "투찰금액(추천)":r.pred?r.pred.bid:"",
               "낙찰하한율":r.pred?r.pred.fr:"",
+              "예상투찰율":r.pred&&r.pred.xp>0?(r.pred.bid/r.pred.xp*100).toFixed(3):"",
               "근거":r.pred?r.pred.src:"",
               "개찰일":r.open_date||""
             }));
@@ -913,9 +914,9 @@ export default function App(){
         </div>
         <div style={{overflow:"auto",maxHeight:300}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"25%"}}/><col style={{width:"15%"}}/><col style={{width:"12%"}}/><col style={{width:"12%"}}/><col style={{width:"12%"}}/><col style={{width:"12%"}}/><col style={{width:"12%"}}/></colgroup>
+            <colgroup><col style={{width:"23%"}}/><col style={{width:"13%"}}/><col style={{width:"11%"}}/><col style={{width:"11%"}}/><col style={{width:"11%"}}/><col style={{width:"9%"}}/><col style={{width:"10%"}}/><col style={{width:"12%"}}/></colgroup>
             <thead><tr style={{background:C.bg3}}>
-              {["공고명","발주기관","사정률(100%)","예정가격","투찰금액","낙찰하한율","개찰일"].map((h,i)=>
+              {["공고명","발주기관","사정률(100%)","예정가격","투찰금액","투찰율","하한율","개찰일"].map((h,i)=>
                 <th key={i} style={{padding:"6px 4px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:10}}>{h}</th>)}
             </tr></thead>
             <tbody>{predResults.slice(0,50).map((r,i)=>
@@ -925,6 +926,7 @@ export default function App(){
                 <td style={{padding:"5px 4px",textAlign:"right",color:"#5dca96",fontWeight:500}}>{r.pred?(100+r.pred.adj).toFixed(4)+"%":""}</td>
                 <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{r.pred?tc(r.pred.xp):""}</td>
                 <td style={{padding:"5px 4px",textAlign:"right",fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{r.pred?tc(r.pred.bid):""}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#85b7eb",fontFamily:"monospace"}}>{r.pred&&r.pred.xp>0?(r.pred.bid/r.pred.xp*100).toFixed(3)+"%":""}</td>
                 <td style={{padding:"5px 4px",textAlign:"right",fontSize:10}}>{r.pred?r.pred.fr+"%":""}</td>
                 <td style={{padding:"5px 4px",textAlign:"right",fontSize:10}}>{r.open_date||""}</td>
               </tr>)}
@@ -1244,13 +1246,15 @@ export default function App(){
         </div>
         {compList.length>0?<div style={{overflow:"auto",maxHeight:500}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"20%"}}/><col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/><col style={{width:"11%"}}/><col style={{width:"9%"}}/><col style={{width:"8%"}}/><col style={{width:"12%"}}/><col style={{width:"6%"}}/></colgroup>
+            <colgroup><col style={{width:"18%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"7%"}}/><col style={{width:"5%"}}/></colgroup>
             <thead><tr style={{background:C.bg3}}>
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
-              <SortTh label="예측(100%)" sortKey="pred_adj_rate" current={predSort} setCurrent={setPredSort} align="right"/>
-              <SortTh label="실제(100%)" sortKey="actual_adj_rate" current={predSort} setCurrent={setPredSort} align="right"/>
+              <SortTh label="예측사정률" sortKey="pred_adj_rate" current={predSort} setCurrent={setPredSort} align="right"/>
+              <SortTh label="실제사정률" sortKey="actual_adj_rate" current={predSort} setCurrent={setPredSort} align="right"/>
               <SortTh label="오차" sortKey="adj_rate_error" current={predSort} setCurrent={setPredSort} align="right"/>
+              <th style={{padding:"7px 6px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>예상투찰율</th>
+              <th style={{padding:"7px 6px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제투찰율</th>
               <th style={{padding:"7px 6px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천금액</th>
               <th style={{padding:"7px 6px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제금액</th>
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
@@ -1259,12 +1263,16 @@ export default function App(){
             </tr></thead>
             <tbody>{compList.slice(0,100).map(p=>{
               const errColor=p.adj_rate_error!=null?(Math.abs(p.adj_rate_error)<0.3?"#5dca96":Math.abs(p.adj_rate_error)<1?"#d4a834":"#e24b4a"):C.txd;
+              const predBidRate=(p.pred_bid_amount&&p.pred_expected_price&&p.pred_expected_price>0)?Number(p.pred_bid_amount)/Number(p.pred_expected_price)*100:null;
+              const actBidRate=(p.actual_bid_amount&&p.actual_expected_price&&p.actual_expected_price>0)?Number(p.actual_bid_amount)/Number(p.actual_expected_price)*100:null;
               return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr}}>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"6px",textAlign:"right",color:"#5dca96"}}>{p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:C.gold}}>{p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600}}>{p.adj_rate_error!=null?Number(p.adj_rate_error).toFixed(4):""}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",color:"#85b7eb"}}>{predBidRate!=null?predBidRate.toFixed(3)+"%":""}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",color:actBidRate!=null?"#d4a834":C.txd}}>{actBidRate!=null?actBidRate.toFixed(3)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace"}}>{p.pred_bid_amount?tc(p.pred_bid_amount):""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace"}}>{p.actual_bid_amount?tc(p.actual_bid_amount):""}</td>
                 <td style={{padding:"6px",textAlign:"right"}}>{p.open_date||""}</td>
