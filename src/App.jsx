@@ -564,45 +564,80 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     {/* ═══ 예측 탭 (개편: 시뮬레이션 분리 + 통합 리스트 + 상세 모달) ═══ */}
     {tab==="predict"&&<div>
 
-      {/* ★ 상세 모달 */}
-      {detailModal&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.6)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>{setDetailModal(null);setDetailAi("");setDetailAiLoading(false)}}>
-        <div onClick={e=>e.stopPropagation()} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:12,padding:"20px 24px",maxWidth:560,width:"100%",maxHeight:"85vh",overflowY:"auto"}}>
+      {/* ★ 상세 모달 (보강) */}
+      {detailModal&&(()=>{
+        const d=detailModal;const pa=d.pred_adj_rate!=null?Number(d.pred_adj_rate):null;
+        const aa=d.actual_adj_rate!=null?Number(d.actual_adj_rate):null;
+        const pb=d.pred_bid_amount?Number(d.pred_bid_amount):null;const ab=d.actual_bid_amount?Number(d.actual_bid_amount):null;
+        const pxp=d.pred_expected_price?Number(d.pred_expected_price):null;const axp=d.actual_expected_price?Number(d.actual_expected_price):null;
+        const pBR=pb&&pxp&&pxp>0?pb/pxp*100:null;const aBR=ab&&axp&&axp>0?ab/axp*100:null;
+        const err=d.adj_rate_error!=null?Number(d.adj_rate_error):null;
+        const errAbs=err!=null?Math.abs(err):null;
+        const ba=d.ba?Number(d.ba):null;const ep=d.ep?Number(d.ep):null;const av=d.av?Number(d.av):0;
+        return<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.6)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{setDetailModal(null);setDetailAi("");setDetailAiLoading(false)}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:12,padding:"20px 24px",maxWidth:620,width:"100%",maxHeight:"85vh",overflowY:"auto"}}>
+          {/* 헤더 */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
-            <div>
-              <div style={{fontSize:15,fontWeight:600,color:C.txt}} title={detailModal.pn}>{(detailModal.pn||"").length>45?(detailModal.pn||"").slice(0,45)+"…":detailModal.pn}</div>
-              <div style={{fontSize:12,color:C.txm,marginTop:3}}>{detailModal.ag} ({detailModal.at}) · {detailModal.open_date||"개찰일 미정"}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:15,fontWeight:600,color:C.txt,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={d.pn}>{d.pn}</div>
+              <div style={{fontSize:12,color:C.txm,marginTop:3}}>{d.ag} ({d.at}) · {d.open_date||"개찰일 미정"} · <span style={{padding:"2px 6px",borderRadius:4,fontSize:10,background:d.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:d.match_status==="matched"?"#5dca96":"#e24b4a"}}>{d.match_status==="matched"?"매칭":"대기"}</span></div>
             </div>
-            <div style={{fontSize:20,color:C.txd,cursor:"pointer",lineHeight:1,padding:"0 4px"}} onClick={()=>{setDetailModal(null);setDetailAi("")}}>×</div>
+            <div style={{fontSize:20,color:C.txd,cursor:"pointer",lineHeight:1,padding:"0 4px",flexShrink:0}} onClick={()=>{setDetailModal(null);setDetailAi("")}}>×</div>
           </div>
-          {/* 핵심 지표 4개 */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:14}}>
-            {[{l:"예측 사정률",v:detailModal.pred_adj_rate!=null?(100+Number(detailModal.pred_adj_rate)).toFixed(4)+"%":"—",c:"#5dca96"},
-              {l:"실제 사정률",v:detailModal.actual_adj_rate!=null?(100+Number(detailModal.actual_adj_rate)).toFixed(4)+"%":"대기",c:detailModal.actual_adj_rate!=null?C.gold:C.txd},
-              {l:"추천 투찰금액",v:detailModal.pred_bid_amount?tc(Number(detailModal.pred_bid_amount)):"-",c:C.gold},
-              {l:"예상 투찰율",v:detailModal.pred_bid_amount&&detailModal.pred_expected_price&&Number(detailModal.pred_expected_price)>0?(Number(detailModal.pred_bid_amount)/Number(detailModal.pred_expected_price)*100).toFixed(3)+"%":"—",c:"#85b7eb"}
-            ].map((c,i)=><div key={i} style={{background:C.bg3,borderRadius:6,padding:"8px 6px",textAlign:"center"}}>
-              <div style={{fontSize:10,color:C.txd}}>{c.l}</div>
-              <div style={{fontSize:14,fontWeight:600,color:c.c,fontFamily:i>=2?"monospace":"inherit"}}>{c.v}</div>
-            </div>)}
+
+          {/* 예측 vs 실제 비교 테이블 */}
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
+            <thead><tr style={{background:C.bg3}}>
+              {["항목","예측","실제","차이"].map((h,i)=><th key={i} style={{padding:"7px 8px",textAlign:i>=1?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              <tr style={{borderBottom:"1px solid "+C.bdr}}>
+                <td style={{padding:"6px 8px",color:C.txm}}>사정률 (100%)</td>
+                <td style={{padding:"6px 8px",textAlign:"right",color:"#5dca96",fontWeight:500}}>{pa!=null?(100+pa).toFixed(4)+"%":"—"}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",color:C.gold,fontWeight:500}}>{aa!=null?(100+aa).toFixed(4)+"%":"—"}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",color:errAbs!=null?(errAbs<0.3?"#5dca96":errAbs<1?"#d4a834":"#e24b4a"):C.txd,fontWeight:600}}>{err!=null?err.toFixed(4)+"%":"—"}</td>
+              </tr>
+              <tr style={{borderBottom:"1px solid "+C.bdr}}>
+                <td style={{padding:"6px 8px",color:C.txm}}>예정가격</td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{pxp?tc(pxp):"—"}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{axp?tc(axp):"—"}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace",fontSize:11}}>{pxp&&axp?tc(Math.round(pxp-axp)):""}</td>
+              </tr>
+              <tr style={{borderBottom:"1px solid "+C.bdr}}>
+                <td style={{padding:"6px 8px",color:C.txm}}>투찰금액 (1순위)</td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace",color:C.gold,fontWeight:600}}>{pb?tc(pb):"—"}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{ab?tc(ab):"—"}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace",fontSize:11}}>{pb&&ab?tc(Math.round(pb-ab)):""}</td>
+              </tr>
+              <tr style={{borderBottom:"1px solid "+C.bdr}}>
+                <td style={{padding:"6px 8px",color:C.txm}}>투찰율</td>
+                <td style={{padding:"6px 8px",textAlign:"right",color:"#85b7eb"}}>{pBR!=null?pBR.toFixed(4)+"%":"—"}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",color:"#85b7eb"}}>{aBR!=null?aBR.toFixed(4)+"%":"—"}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontSize:11}}>{pBR!=null&&aBR!=null?(pBR-aBR).toFixed(4)+"%":""}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* 입찰 기본 정보 */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,fontSize:12,color:C.txm,marginBottom:14,padding:"10px",background:C.bg3,borderRadius:6}}>
+            <div>기초금액: <span style={{color:C.txt,fontFamily:"monospace"}}>{ba?tc(ba):"-"}</span></div>
+            <div>추정가격: <span style={{color:C.txt,fontFamily:"monospace"}}>{ep?tc(ep):"-"}</span></div>
+            <div>A값: <span style={{color:C.txt,fontFamily:"monospace"}}>{av?tc(av):"없음"}</span></div>
+            <div>낙찰하한율: <span style={{color:C.txt}}>{d.pred_floor_rate||"—"}%</span></div>
+            <div>공고번호: <span style={{color:C.txt}}>{d.pn_no||"—"}</span></div>
+            {d.actual_participant_count&&<div>참여업체: <span style={{color:C.txt}}>{d.actual_participant_count}개사</span></div>}
+            <div style={{gridColumn:"1/4"}}>근거: <span style={{color:C.txt}}>{d.pred_source||"—"}</span></div>
+            {d.actual_winner&&<div style={{gridColumn:"1/4"}}>1순위: <span style={{color:"#5dca96",fontWeight:500}}>{d.actual_winner}</span></div>}
           </div>
-          {/* 상세 정보 */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:12,color:C.txm,marginBottom:14}}>
-            <div>낙찰하한율: <span style={{color:C.txt}}>{detailModal.pred_floor_rate||"—"}%</span></div>
-            <div>오차: <span style={{color:detailModal.adj_rate_error!=null?(Math.abs(detailModal.adj_rate_error)<0.3?"#5dca96":"#e24b4a"):C.txd,fontWeight:600}}>{detailModal.adj_rate_error!=null?Number(detailModal.adj_rate_error).toFixed(4)+"%":"—"}</span></div>
-            <div>기초금액: <span style={{color:C.txt}}>{detailModal.ba?tc(Number(detailModal.ba)):"—"}</span></div>
-            <div>실제 투찰금액: <span style={{color:C.txt}}>{detailModal.actual_bid_amount?tc(Number(detailModal.actual_bid_amount)):"-"}</span></div>
-            <div style={{gridColumn:"1/3"}}>근거: <span style={{color:C.txt}}>{detailModal.pred_source||"—"}</span></div>
-            <div>상태: <span style={{padding:"2px 8px",borderRadius:4,fontSize:11,background:detailModal.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:detailModal.match_status==="matched"?"#5dca96":"#e24b4a"}}>{detailModal.match_status==="matched"?"매칭 완료":"대기 중"}</span></div>
-            {detailModal.actual_winner&&<div>1순위: <span style={{color:C.txt}}>{detailModal.actual_winner}</span></div>}
-          </div>
+
           {/* AI 전략 어드바이저 */}
           <div style={{borderTop:"1px solid "+C.bdr,paddingTop:12}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
               <div style={{fontSize:13,fontWeight:500,color:"#a8b4ff"}}>AI 전략 어드바이저</div>
               {!detailAi&&<button disabled={detailAiLoading} onClick={async()=>{
                 setDetailAiLoading(true);setDetailAi("");
-                try{const prompt=buildAiPrompt({pn:detailModal.pn,ag:detailModal.ag,at:detailModal.at,ba:Number(detailModal.ba),ep:Number(detailModal.ep),av:Number(detailModal.av||0),
-                  pred:{adj:Number(detailModal.pred_adj_rate),xp:Number(detailModal.pred_expected_price),fr:Number(detailModal.pred_floor_rate),bid:Number(detailModal.pred_bid_amount),src:detailModal.pred_source||"",ci70:null,ci90:null}});
+                try{const prompt=buildAiPrompt({pn:d.pn,ag:d.ag,at:d.at,ba:ba,ep:ep,av:av,
+                  pred:{adj:pa,xp:pxp,fr:Number(d.pred_floor_rate),bid:pb,src:d.pred_source||"",ci70:null,ci90:null}});
                   if(!prompt)throw new Error("데이터 없음");
                   const text=await callAi(prompt);setDetailAi(text)}
                 catch(e){setDetailAi("⚠ "+e.message)}finally{setDetailAiLoading(false)}
@@ -614,7 +649,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
               :<div style={{fontSize:11,color:C.txd}}>전략 분석 요청 버튼을 클릭하면 AI가 이 입찰건의 맞춤 전략을 제안합니다</div>}
           </div>
         </div>
-      </div>}
+      </div>})()}
 
       {/* 상단: 파일 업로드 + 수동 시뮬레이션 토글 */}
       <div style={{display:"grid",gridTemplateColumns:showSim?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
@@ -687,18 +722,6 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <div style={{fontSize:13,fontWeight:600,color:C.gold}}>예측 내역 ({compStats.total}건)</div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            {Object.values(predSel).some(v=>v)&&<button onClick={async()=>{
-              const ids=Object.keys(predSel).filter(k=>predSel[k]).map(Number);if(!ids.length)return;
-              if(!confirm(`선택한 ${ids.length}건을 삭제하시겠습니까?`))return;setBusy(true);
-              try{await sbDeletePredictions(ids);const preds=await sbFetchPredictions();setPredictions(preds||[]);
-                const fp=(preds||[]).filter(p=>p.source==="file_upload"&&p.pred_adj_rate!=null);
-                setPredResults(fp.map(p=>({pn:p.pn,pn_no:p.pn_no,ag:p.ag,at:p.at,ba:p.ba?Number(p.ba):null,ep:p.ep?Number(p.ep):null,av:p.av?Number(p.av):0,raw_cost:p.raw_cost,cat:p.cat,open_date:p.open_date,dedup_key:p.dedup_key,
-                  pred:{adj:Number(p.pred_adj_rate),xp:Number(p.pred_expected_price),fr:Number(p.pred_floor_rate),bid:Number(p.pred_bid_amount),src:p.pred_source||""}})));
-                setPredSel({});setMsg({type:"ok",text:`${ids.length}건 삭제 완료`})}
-              catch(e){setMsg({type:"err",text:"삭제 실패"})}finally{setBusy(false)}
-            }} style={{padding:"4px 10px",fontSize:10,background:"rgba(226,75,74,0.1)",border:"1px solid rgba(226,75,74,0.3)",borderRadius:5,color:"#e24b4a",cursor:"pointer",fontWeight:500}}>
-              삭제 ({Object.values(predSel).filter(v=>v).length})
-            </button>}
             <button onClick={()=>{
               const wb=XLSX.utils.book_new();const data=compList.map(p=>({"공고명":p.pn,"발주기관":p.ag,"기관유형":p.at,"예측사정률":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4):"","실제사정률":p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4):"","오차":p.adj_rate_error!=null?Number(p.adj_rate_error).toFixed(4):"","투찰금액":p.pred_bid_amount||"","투찰율":p.pred_expected_price>0?(Number(p.pred_bid_amount)/Number(p.pred_expected_price)*100).toFixed(3):"","개찰일":p.open_date||"","상태":p.match_status}));
               XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data),"예측내역");XLSX.writeFile(wb,"예측내역_"+new Date().toISOString().slice(0,10)+".xlsx")
@@ -714,9 +737,8 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
         </div>
         {compList.length>0?<div style={{overflow:"auto",maxHeight:600}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"3%"}}/><col style={{width:"22%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"7%"}}/><col style={{width:"9%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"6%"}}/><col style={{width:"6%"}}/></colgroup>
+            <colgroup><col style={{width:"23%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"7%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"10%"}}/><col style={{width:"6%"}}/><col style={{width:"6%"}}/></colgroup>
             <thead><tr style={{background:C.bg3}}>
-              <th style={{padding:"4px"}}><input type="checkbox" checked={compList.length>0&&compList.every(p=>predSel[p.id])} onChange={e=>{const v=e.target.checked;const s={};compList.forEach(p=>{s[p.id]=v});setPredSel(s)}}/></th>
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="예측사정률" sortKey="pred_adj_rate" current={predSort} setCurrent={setPredSort} align="right"/>
@@ -731,8 +753,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
             <tbody>{compList.slice(0,100).map(p=>{
               const errColor=p.adj_rate_error!=null?(Math.abs(p.adj_rate_error)<0.3?"#5dca96":Math.abs(p.adj_rate_error)<1?"#d4a834":"#e24b4a"):C.txd;
               const predBR=(p.pred_bid_amount&&p.pred_expected_price&&Number(p.pred_expected_price)>0)?Number(p.pred_bid_amount)/Number(p.pred_expected_price)*100:null;
-              return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr,background:predSel[p.id]?"rgba(226,75,74,0.04)":"transparent"}}>
-                <td style={{padding:"4px",textAlign:"center"}}><input type="checkbox" checked={!!predSel[p.id]} onChange={e=>setPredSel(s=>({...s,[p.id]:e.target.checked}))}/></td>
+              return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr}}>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"6px",textAlign:"right",color:"#5dca96"}}>{p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
