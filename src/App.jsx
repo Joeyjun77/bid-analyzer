@@ -53,6 +53,7 @@ export default function App(){
   const[simResult,setSimResult]=useState(null);
   const[expandedDetail,setExpandedDetail]=useState(null);
   const[simSlider,setSimSlider]=useState(0); // Phase 3: 투찰 시뮬레이터 사정률 슬라이더
+  const[aiAdvice,setAiAdvice]=useState("");const[aiLoading,setAiLoading]=useState(false); // Phase 4-A: AI 어드바이저
   // 정렬 상태
   const[dataSort,setDataSort]=useState({key:"od",dir:"desc"}); // 분석 탭 데이터
   const[predSort,setPredSort]=useState({key:"open_date",dir:"desc"}); // 예측 탭 내역
@@ -821,7 +822,69 @@ export default function App(){
           </div>})()}
       </div>}
 
-      {/* 백테스트 성능 대시보드 */}
+      {/* ★ Phase 4-A: AI 전략 어드바이저 */}
+      {pred&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16,marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontWeight:600,color:"#a8b4ff",fontSize:13}}>AI 전략 어드바이저</div>
+          <button disabled={aiLoading} onClick={async()=>{
+            setAiLoading(true);setAiAdvice("");
+            const agType=clsAg(inp.agency);const agName=inp.agency.trim();
+            const ba=tn(inp.baseAmount);const ep=tn(inp.estimatedPrice);
+            const curStat=allS.as?.[agName];const typeStat=allS.ts?.[agType];
+            const agDets=bidDetails.filter(d=>d.ag===agName);
+            const prompt=`당신은 한국 공공조달 입찰 전문가 AI입니다. 다음 입찰건에 대해 맞춤형 투찰 전략을 200자 이내로 간결하게 조언해주세요.
+
+■ 입찰 정보
+- 발주기관: ${agName} (${agType})
+- 기초금액: ${ba?ba.toLocaleString():"미입력"}원
+- 추정가격: ${ep?ep.toLocaleString():"미입력"}원
+- A값: ${tn(inp.aValue)?tn(inp.aValue).toLocaleString()+"원":"없음"}
+- 적용 낙찰하한율: ${pred.fr}%
+
+■ 예측 결과
+- 예측 사정율: ${pred.adj>=0?"+":""}${pred.adj}% (중앙값)
+- 신뢰구간 70%: ${pred.ci70?pred.ci70.low+"% ~ "+pred.ci70.high+"%":"N/A"}
+- 추천 투찰금액: ${pred.bid?pred.bid.toLocaleString()+"원":"N/A"}
+- 예상 투찰율: ${pred.xp>0?(pred.bid/pred.xp*100).toFixed(3)+"%":"N/A"}
+- 근거: ${pred.src}
+
+■ 기관 통계 (${agType})
+- 평균 사정률: ${typeStat?typeStat.avg.toFixed(4)+"%":"N/A"} (${typeStat?typeStat.n+"건":"N/A"})
+- 표준편차: ${typeStat?typeStat.std.toFixed(4)+"%":"N/A"}
+${curStat?`- 발주기관 개별: 평균 ${curStat.avg.toFixed(4)}%, ${curStat.n}건`:"- 발주기관 개별 데이터: 없음"}
+${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유 (15개 편향: ${agDets[0].pre_avg?agDets[0].pre_avg.toFixed(4)+"%":"N/A"})`:""}
+
+■ 핵심 제약
+- 복수예비가격 C(15,4) 추첨의 노이즈 바닥 = 0.642% (어떤 모델도 이 이하 불가)
+- 1순위 업체의 낙찰하한율 대비 마진: 중앙값 0.004% (거의 정확히 하한율에 투찰)
+
+위 정보를 바탕으로:
+1. 이 입찰건의 특성과 리스크를 한 줄로 요약
+2. 추천 투찰 전략 (보수/균형/공격 중)과 그 이유
+3. 투찰 시 유의사항 한 가지`;
+            try{
+              const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":localStorage.getItem("claude_api_key")||""},
+                body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:500,messages:[{role:"user",content:prompt}]})});
+              if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||`API ${res.status}`)}
+              const data=await res.json();
+              const text=data.content?.map(c=>c.text||"").join("")||"응답 없음";
+              setAiAdvice(text)
+            }catch(e){setAiAdvice("⚠ "+e.message)}finally{setAiLoading(false)}
+          }} style={{padding:"5px 14px",fontSize:11,background:aiLoading?"rgba(168,180,255,0.05)":"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.3)",borderRadius:5,color:"#a8b4ff",cursor:aiLoading?"default":"pointer",fontWeight:500}}>
+            {aiLoading?"분석 중...":"전략 분석 요청"}
+          </button>
+        </div>
+        {!localStorage.getItem("claude_api_key")&&!aiAdvice&&<div style={{padding:"10px 12px",background:"rgba(226,75,74,0.06)",border:"1px solid rgba(226,75,74,0.15)",borderRadius:6,marginBottom:8}}>
+          <div style={{fontSize:11,color:"#e24b4a",marginBottom:6}}>Claude API 키가 설정되지 않았습니다</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <input type="password" placeholder="sk-ant-api03-..." onChange={e=>{if(e.target.value.startsWith("sk-ant-")){localStorage.setItem("claude_api_key",e.target.value)}}}
+              style={{...inpS,flex:1,fontSize:11}} defaultValue={localStorage.getItem("claude_api_key")||""}/>
+            <span style={{fontSize:10,color:C.txd,whiteSpace:"nowrap"}}>브라우저에 저장됨</span>
+          </div>
+        </div>}
+        {aiAdvice&&<div style={{padding:"12px 14px",background:"rgba(168,180,255,0.04)",border:"1px solid rgba(168,180,255,0.12)",borderRadius:6,fontSize:13,lineHeight:1.8,color:C.txt,whiteSpace:"pre-wrap"}}>{aiAdvice}</div>}
+        {!aiAdvice&&!aiLoading&&localStorage.getItem("claude_api_key")&&<div style={{fontSize:11,color:C.txd,textAlign:"center",padding:12}}>예측 결과를 기반으로 AI가 맞춤형 투찰 전략을 분석합니다</div>}
+      </div>}
       {compStats.matched>=3&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16,marginBottom:12}}>
         <div style={{fontSize:13,fontWeight:600,color:"#a8b4ff",marginBottom:10}}>모델 성능 (v5 · {compStats.matched}건 검증)</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:10}}>
