@@ -631,24 +631,31 @@ export default function App(){
       </div>
       {uploadLog.length>0&&<div style={{marginBottom:12}}>{uploadLog.map((l,i)=><div key={i} style={{padding:"6px 12px",fontSize:12,color:l.type==="ok"?"#5ca":"#e55",borderBottom:"1px solid "+C.bdr}}>{l.type==="ok"?"✓":"✕"} {l.name} — {l.text}</div>)}</div>}
 
-      {/* 요약 카드 4개 */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+      {/* 요약 카드 5개 */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:16}}>
         {[
-          {l:"낙찰 데이터",v:recs.length.toLocaleString(),s:dataStatus?.latestDate?"최신 "+dataStatus.latestDate+(abnormalStats.total>0?" · 비정상 "+abnormalStats.total:""):"",c:C.txt},
-          {l:"상세 데이터",v:String(bidDetails.length),s:"복수예가 15개",c:"#a8b4ff"},
-          {l:"예측 대기",v:String(compStats.pending),s:"미매칭",c:compStats.pending>0?"#e24b4a":"#5dca96"},
-          {l:"평균 오차",v:compStats.matched>0?compStats.avgErr.toFixed(2)+"%":"—",s:compStats.matched+"건 매칭",c:"#d4a834"}
-        ].map((c,i)=><div key={i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"12px",textAlign:"center",cursor:"pointer"}} onClick={()=>{if(i===0)setTab("analysis");if(i===2||i===3)setTab("predict")}}>
-          <div style={{fontSize:11,color:C.txd,marginBottom:4}}>{c.l}</div>
-          <div style={{fontSize:22,fontWeight:600,color:c.c}}>{c.v}</div>
-          <div style={{fontSize:10,color:C.txd,marginTop:2}}>{c.s}</div>
+          {l:"낙찰 데이터",v:recs.length.toLocaleString(),s:dataStatus?.latestDate?"최신 "+dataStatus.latestDate:"",c:C.txt},
+          {l:"상세 데이터",v:String(bidDetails.length),s:bidDetails.length+"건 · "+new Set(bidDetails.map(d=>d.at)).size+"유형",c:"#a8b4ff"},
+          {l:"모델 MAE",v:compStats.matched>0?compStats.avgErr.toFixed(2)+"%":"—",s:compStats.matched+"건 매칭 · 적중 "+compStats.within05,c:"#d4a834"},
+          {l:"예측 대기",v:String(compStats.pending),s:compStats.pending>0?"낙찰리스트 필요":"완료",c:compStats.pending>0?"#e24b4a":"#5dca96"},
+          {l:"비정상",v:String(abnormalStats.total),s:"유찰"+abnormalStats.yuchal+" 내역"+abnormalStats.broken+" 이상"+abnormalStats.outlier,c:abnormalStats.total>0?"#666680":"#5dca96"}
+        ].map((c,i)=><div key={i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 8px",textAlign:"center",cursor:"pointer"}} onClick={()=>{if(i<=1)setTab("analysis");if(i>=2&&i<=3)setTab("predict")}}>
+          <div style={{fontSize:10,color:C.txd,marginBottom:3}}>{c.l}</div>
+          <div style={{fontSize:18,fontWeight:600,color:c.c}}>{c.v}</div>
+          <div style={{fontSize:9,color:C.txd,marginTop:2}}>{c.s}</div>
         </div>)}
       </div>
 
-      {/* 복수예가 상세 데이터 리스트 */}
+      {/* 복수예가 상세 데이터 */}
       {bidDetails.length>0&&<div style={{marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:600,color:C.gold,marginBottom:8}}>복수예가 상세 데이터 ({bidDetails.length}건)</div>
-        {bidDetails.slice(0,10).map((d,i)=><div key={d.id||i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,marginBottom:6,overflow:"hidden"}}>
+        {/* 기관유형별 요약 */}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+          {Object.entries(bidDetails.reduce((m,d)=>{m[d.at]=(m[d.at]||0)+1;return m},{})).sort((a,b)=>b[1]-a[1]).map(([t,n])=>
+            <span key={t} style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(168,180,255,0.1)",color:"#a8b4ff",border:"1px solid rgba(168,180,255,0.15)"}}>{t} {n}건</span>)}
+        </div>
+        {/* 최근 5건만 표시 */}
+        {bidDetails.slice(0,5).map((d,i)=><div key={d.id||i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,marginBottom:6,overflow:"hidden"}}>
           <div style={{padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
             onClick={()=>setExpandedDetail(expandedDetail===d.pn_no?null:d.pn_no)}>
             <div style={{display:"flex",gap:8,alignItems:"center",flex:1,minWidth:0}}>
