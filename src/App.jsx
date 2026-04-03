@@ -171,19 +171,26 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     }catch(e){setMsg({type:"err",text:"DB 재로드 실패"})}
     setSel({});setBusy(false)},[refreshStats,allS,bidDetails]);
 
-  // 입찰서류함 예측
-  const loadPredFile=useCallback(async(file)=>{
-    if(!file)return;
+  // 입찰서류함 예측 (복수 파일 지원)
+  const loadPredFiles=useCallback(async(fileList)=>{
+    if(!fileList||!fileList.length)return;
     if(!Object.keys(allS.ts||{}).length){setMsg({type:"err",text:"낙찰 데이터를 먼저 로드해주세요 (통계 없음)"});return}
     setBusy(true);setMsg({type:"",text:""});
-    try{const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length)throw new Error("예측 대상 0건");
-      const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);return{...item,pred:p}}).filter(r=>r.pred);
-      if(!results.length)throw new Error("예측 결과 0건 (기관/기초금액 확인)");
-      setPredResults(prev=>{const dkSet=new Set(results.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...results]}); // ★ 누적 (중복 제거)
-      const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,source:"file_upload",match_status:"pending"}));
-      await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds);
-      setMsg({type:"ok",text:`${results.length}건 예측 완료 · DB 저장`})
-    }catch(e){setMsg({type:"err",text:"예측 실패: "+e.message})}setBusy(false)},[allS,bidDetails]);
+    let totalResults=[];let successCount=0;let failCount=0;const logs=[];
+    for(const file of Array.from(fileList)){
+      try{const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length){logs.push({name:file.name,ok:false,msg:"예측 대상 0건"});failCount++;continue}
+        const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);return{...item,pred:p}}).filter(r=>r.pred);
+        if(!results.length){logs.push({name:file.name,ok:false,msg:"예측 결과 0건"});failCount++;continue}
+        totalResults=totalResults.concat(results);
+        logs.push({name:file.name,ok:true,msg:`${results.length}건 예측`});successCount++;
+      }catch(e){logs.push({name:file.name,ok:false,msg:e.message});failCount++}}
+    if(totalResults.length>0){
+      setPredResults(prev=>{const dkSet=new Set(totalResults.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...totalResults]});
+      const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,source:"file_upload",match_status:"pending"}));
+      await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds)}
+    const summary=fileList.length===1?logs[0]?.ok?`${totalResults.length}건 예측 완료 · DB 저장`:logs[0]?.msg
+      :`${fileList.length}개 파일 처리: 성공 ${successCount} · 실패 ${failCount} · 총 ${totalResults.length}건 예측`;
+    setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails]);
 
   // 수동 예측
   const doManualPred=useCallback(async()=>{
@@ -545,14 +552,14 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
         {/* 파일 업로드 (드래그앤드롭 수정) */}
         <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,overflow:"hidden"}}>
           <div style={{border:`2px dashed ${dragPred?C.gold:C.bdr}`,borderRadius:10,padding:"30px 16px",textAlign:"center",cursor:busy?"default":"pointer",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:dragPred?"rgba(212,168,52,0.04)":"transparent"}}
-            onDrop={e=>{e.preventDefault();setDragPred(false);if(!busy&&e.dataTransfer.files?.[0])loadPredFile(e.dataTransfer.files[0])}}
+            onDrop={e=>{e.preventDefault();setDragPred(false);if(!busy&&e.dataTransfer.files?.length)loadPredFiles(e.dataTransfer.files)}}
             onDragOver={e=>{e.preventDefault();if(!busy)setDragPred(true)}} onDragLeave={()=>setDragPred(false)}
             onClick={()=>{if(!busy)document.getElementById("pfi").click()}}>
-            <input id="pfi" type="file" accept=".xls,.xlsx" style={{display:"none"}} onChange={e=>{if(e.target.files?.[0]){loadPredFile(e.target.files[0]);e.target.value=""}}}/>
+            <input id="pfi" type="file" accept=".xls,.xlsx" multiple style={{display:"none"}} onChange={e=>{if(e.target.files?.length){loadPredFiles(e.target.files);e.target.value=""}}}/>
             {busy?<div style={{color:C.gold,fontSize:14}}>예측 처리 중...</div>:<>
               <div style={{fontSize:28,opacity:0.3,marginBottom:6}}>↑</div>
               <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>입찰서류함 드래그 또는 클릭</div>
-              <div style={{fontSize:11,color:C.txd}}>XLS 파일 각 건에 대해 일괄 예측 + DB 저장</div>
+              <div style={{fontSize:11,color:C.txd}}>복수 XLS 파일 드래그 가능 · 각 건에 대해 일괄 예측 + DB 저장</div>
             </>}
           </div>
         </div>
