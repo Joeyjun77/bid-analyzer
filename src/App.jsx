@@ -408,6 +408,7 @@ export default function App(){
   const[inp,setInp]=useState({agency:"",baseAmount:"0",estimatedPrice:"0",aValue:"0"});const[pred,setPred]=useState(null);
   const[search,setSearch]=useState("");const[agSch,setAgSch]=useState("");const[eF,setEF]=useState("all");const[atF,setAtF]=useState("all");
   const[sel,setSel]=useState({});const[dlgType,setDlgType]=useState("");const[dataPage,setDataPage]=useState(0);const[dbLoading,setDbLoading]=useState(true);
+  const[hideAbnormal,setHideAbnormal]=useState(false); // D-1: 비정상 데이터 필터
   const[predResults,setPredResults]=useState([]);
   const[predictions,setPredictions]=useState([]);
   const[compFilter,setCompFilter]=useState("all");
@@ -520,10 +521,12 @@ export default function App(){
   const filteredRecs=useMemo(()=>{const t=search.toLowerCase();let src=recs;
     if(eF==="new")src=recs.filter(r=>r.era==="new");else if(eF==="old")src=recs.filter(r=>r.era==="old");
     if(atF!=="all")src=src.filter(r=>r.at===atF);
+    if(hideAbnormal)src=src.filter(r=>{const y=r.co==="유찰"||r.co==="유찰(무)";const b=!y&&(r.br1==null&&(r.ba==null||r.ba===0));const o=!y&&!b&&r.br1!=null&&(r.br1<95||r.br1>105);return!y&&!b&&!o});
     if(t)src=src.filter(r=>((r.pn||"")+(r.ag||"")+(r.co||"")).toLowerCase().includes(t));
-    return[...src].sort((a,b)=>sortFn(a,b,dataSort.key,dataSort.dir))},[recs,search,eF,atF,dataSort]);
+    return[...src].sort((a,b)=>sortFn(a,b,dataSort.key,dataSort.dir))},[recs,search,eF,atF,dataSort,hideAbnormal]);
   const pagedRecs=useMemo(()=>filteredRecs.slice(dataPage*PAGE,(dataPage+1)*PAGE),[filteredRecs,dataPage]);
   const totalPages=Math.max(1,Math.ceil(filteredRecs.length/PAGE));
+  const abnormalStats=useMemo(()=>{const y=recs.filter(r=>r.co==="유찰"||r.co==="유찰(무)").length;const b=recs.filter(r=>r.co!=="유찰"&&r.co!=="유찰(무)"&&r.br1==null&&(r.ba==null||r.ba===0)).length;const o=recs.filter(r=>r.br1!=null&&(r.br1<95||r.br1>105)).length;return{yuchal:y,broken:b,outlier:o,total:y+b+o}},[recs]);
   const fAg=useMemo(()=>{const t=agSch.toLowerCase();return Object.entries(curSt.as||{}).filter(([k])=>!t||mSch(k,t)).sort((a,b)=>b[1].n-a[1].n)},[curSt.as,agSch]);
   const agencyList=useMemo(()=>Object.keys(allS.as||{}).sort(),[allS.as]);
   const nC=recs.filter(r=>r.era==="new").length,oC=recs.filter(r=>r.era==="old").length;
@@ -620,7 +623,7 @@ export default function App(){
       {/* 요약 카드 4개 */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
         {[
-          {l:"낙찰 데이터",v:recs.length.toLocaleString(),s:dataStatus?.latestDate?"최신 "+dataStatus.latestDate:"",c:C.txt},
+          {l:"낙찰 데이터",v:recs.length.toLocaleString(),s:dataStatus?.latestDate?"최신 "+dataStatus.latestDate+(abnormalStats.total>0?" · 비정상 "+abnormalStats.total:""):"",c:C.txt},
           {l:"상세 데이터",v:String(bidDetails.length),s:"복수예가 15개",c:"#a8b4ff"},
           {l:"예측 대기",v:String(compStats.pending),s:"미매칭",c:compStats.pending>0?"#e24b4a":"#5dca96"},
           {l:"평균 오차",v:compStats.matched>0?compStats.avgErr.toFixed(2)+"%":"—",s:compStats.matched+"건 매칭",c:"#d4a834"}
@@ -687,6 +690,10 @@ export default function App(){
         {["all","new","old"].map(id=><button key={id} onClick={()=>{setEF(id);setDataPage(0)}} style={btnS(eF===id,id==="new"?"#5dca96":id==="old"?"#e24b4a":C.gold)}>{id==="all"?"전체":id==="new"?"신기준":"구기준"}</button>)}
         <div style={{width:1,height:20,background:C.bdr,margin:"0 4px"}}/>
         {["all","지자체","교육청","군시설","한전","조달청","LH","수자원공사"].map(id=><button key={id} onClick={()=>{setAtF(id);setDataPage(0)}} style={btnS(atF===id,"#a8b4ff")}>{id==="all"?"전체 기관":id}</button>)}
+        <div style={{width:1,height:20,background:C.bdr,margin:"0 4px"}}/>
+        <button onClick={()=>{setHideAbnormal(!hideAbnormal);setDataPage(0)}} style={{...btnS(hideAbnormal,"#e24b4a"),fontSize:10}}>
+          {hideAbnormal?"비정상 숨김":"비정상 "+abnormalStats.total+"건"}
+        </button>
         <div style={{flex:1,minWidth:180}}>
           <AgencyInput value={search} onChange={v=>{setSearch(v);setDataPage(0)}} agencies={agencyList} stats={allS.as} placeholder="발주기관 또는 공고명 검색 (초성 가능)"/>
         </div>
@@ -739,10 +746,16 @@ export default function App(){
             <SortTh label="시대" sortKey="era" current={dataSort} setCurrent={setDataSort} align="center"/>
           </tr></thead>
           <tbody>{pagedRecs.map(r=>{
-            const isYuchal=r.co==="유찰";const rowBg=isYuchal?"rgba(226,75,74,0.03)":"transparent";
+            const isYuchal=r.co==="유찰"||r.co==="유찰(무)";const isBroken=!isYuchal&&(r.br1==null&&(r.ba==null||r.ba===0));const isOutlier=!isYuchal&&!isBroken&&r.br1!=null&&(r.br1<95||r.br1>105);
+            const isAbnormal=isYuchal||isBroken||isOutlier;const rowBg=isYuchal?"rgba(226,75,74,0.04)":isBroken?"rgba(168,180,255,0.04)":isOutlier?"rgba(212,168,52,0.04)":"transparent";
             return<tr key={r.id} style={{borderBottom:"1px solid "+C.bdr,background:rowBg}}>
               <td style={{padding:4,textAlign:"center"}}><input type="checkbox" checked={!!sel[r.id]} onChange={()=>setSel(p=>({...p,[r.id]:!p[r.id]}))}/></td>
-              <td style={{padding:"6px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:isYuchal?.5:1}} title={r.pn}>{r.pn||"(없음)"}</td>
+              <td style={{padding:"6px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:isAbnormal?.5:1}} title={r.pn}>
+                {isYuchal&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:3,background:"rgba(226,75,74,0.15)",color:"#e24b4a",marginRight:4}}>유찰</span>}
+                {isBroken&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:3,background:"rgba(168,180,255,0.15)",color:"#a8b4ff",marginRight:4}}>내역</span>}
+                {isOutlier&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:3,background:"rgba(212,168,52,0.15)",color:"#d4a834",marginRight:4}}>이상</span>}
+                {r.pn||"(없음)"}
+              </td>
               <td style={{padding:"6px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.ag}>{r.ag||""}</td>
               <td style={{padding:"6px 4px",color:C.txd,fontSize:10}}>{r.at}</td>
               <td style={{padding:"6px 4px",textAlign:"right",fontFamily:"monospace"}}>{r.ba?tc(r.ba):""}</td>
