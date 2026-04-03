@@ -176,7 +176,7 @@ function predictV5({at,agName,ba,ep,av},ts,as,details){
 
   // bid_details 복수예가 패턴 보정 (유효성 검증됨)
   let detailInsight=null;
-  const dets=(details||[]).filter(d=>d.pre_rates&&Array.isArray(d.pre_rates)&&d.pre_rates.length===15);
+  const dets=(details||[]).filter(d=>d.pre_rates&&Array.isArray(d.pre_rates)&&d.pre_rates.length>=14);
   const agDets=dets.filter(d=>d.ag===agName);
   const atDets=agDets.length>=1?agDets:dets.filter(d=>d.at===at);
   if(atDets.length>=1){
@@ -320,9 +320,19 @@ function parseSucview(rows,fileName){
   // 사정율 파싱: "98.8358% (-1.1641%)"
   const arRaw=g(5,8);const arM=arRaw.match(/\(([-\d.]+)%?\)/);
   const adj_rate=arM?parseFloat(arM[1]):0;
-  // 복수예비가격 15개 사정율
+  // 복수예비가격 15개 사정율 (군시설 SUCVIEW는 열 위치가 다를 수 있으므로 동적 스캔)
   const pre_rates=[];
-  for(let i=8;i<=12;i++){[3,7,11].forEach(j=>{const v=parseFloat(String(rows[i]?.[j]||""));if(!isNaN(v))pre_rates.push(Math.round(v*10000)/10000)})}
+  for(let i=8;i<=12;i++){
+    if(!rows[i])continue;
+    // 먼저 고정 위치(3,7,11) 시도
+    const fixed=[];
+    [3,7,11].forEach(j=>{const v=parseFloat(String(rows[i]?.[j]||""));if(!isNaN(v)&&v>=-5&&v<=5)fixed.push(Math.round(v*10000)/10000)});
+    if(fixed.length===3){pre_rates.push(...fixed);continue}
+    // 고정 위치에서 3개 미만이면 행 전체 스캔 (군시설 등 레이아웃 차이 대응)
+    const scanned=[];
+    for(let j=0;j<(rows[i]?.length||0);j++){const s=String(rows[i][j]||"").trim();if(!s)continue;const v=parseFloat(s);if(!isNaN(v)&&v>=-5&&v<=5&&s.includes("."))scanned.push(Math.round(v*10000)/10000)}
+    if(scanned.length>=1&&scanned.length<=3)pre_rates.push(...scanned);
+    else if(fixed.length>0)pre_rates.push(...fixed)}
   // 선택번호 파싱: "복 수 예 가  [ 선택번호:  ② ④ ⑦ ⑪ ]"
   const selRaw=g(7,0);const circled={"①":1,"②":2,"③":3,"④":4,"⑤":5,"⑥":6,"⑦":7,"⑧":8,"⑨":9,"⑩":10,"⑪":11,"⑫":12,"⑬":13,"⑭":14,"⑮":15};
   const selNums=[];for(const[ch,n]of Object.entries(circled)){if(selRaw.includes(ch))selNums.push(n)}
@@ -350,20 +360,20 @@ function parseSucview(rows,fileName){
   bidRates.forEach(r=>{if(r<89)bid_dist["<89"]++;else if(r<89.5)bid_dist["89-89.5"]++;else if(r<90)bid_dist["89.5-90"]++;else if(r<90.5)bid_dist["90-90.5"]++;else if(r<91)bid_dist["90.5-91"]++;else if(r<91.5)bid_dist["91-91.5"]++;else if(r<92)bid_dist["91.5-92"]++;else bid_dist[">92"]++});
   return{pn_no,pn,ag,at,od,ba,ep,xp,av,floor_rate,adj_rate,pre_rates,selected_nums,pre_avg,pre_min,pre_max,participant_count,bid_dist,bid_median,bid_q1,bid_q3,my_rank,my_bid_rate,my_adj_rate,win_bid_rate,win_adj_rate,source_file:fileName}}
 
-// ─── 추첨 시뮬레이션 (C(15,4)=1365) ─────────────────────
+// ─── 추첨 시뮬레이션 (C(n,4): 15개=1365, 14개=1001) ─────
 function simDraws(preRates){
-  if(!preRates||preRates.length!==15)return null;
-  const avgs=[];
-  for(let a=0;a<12;a++)for(let b=a+1;b<13;b++)for(let c=b+1;c<14;c++)for(let d=c+1;d<15;d++){
+  if(!preRates||preRates.length<14)return null;
+  const n=preRates.length;const avgs=[];
+  for(let a=0;a<n-3;a++)for(let b=a+1;b<n-2;b++)for(let c=b+1;c<n-1;c++)for(let d=c+1;d<n;d++){
     avgs.push(Math.round((preRates[a]+preRates[b]+preRates[c]+preRates[d])/4*10000)/10000)}
-  avgs.sort((a,b)=>a-b);const n=avgs.length;
+  avgs.sort((a,b)=>a-b);const len=avgs.length;
   const negCount=avgs.filter(v=>v<0).length;
   const hist={};avgs.forEach(v=>{const b=(Math.floor(v*2)/2).toFixed(1);hist[b]=(hist[b]||0)+1});
-  return{total:n,avgs,min:avgs[0],max:avgs[n-1],
-    p10:avgs[Math.floor(n*0.1)],p25:avgs[Math.floor(n*0.25)],p50:avgs[Math.floor(n*0.5)],p75:avgs[Math.floor(n*0.75)],p90:avgs[Math.floor(n*0.9)],
-    negPct:Math.round(negCount/n*1000)/10,hist,
-    belowMinus05:Math.round(avgs.filter(v=>v<-0.5).length/n*1000)/10,
-    belowMinus10:Math.round(avgs.filter(v=>v<-1.0).length/n*1000)/10}}
+  return{total:len,avgs,min:avgs[0],max:avgs[len-1],
+    p10:avgs[Math.floor(len*0.1)],p25:avgs[Math.floor(len*0.25)],p50:avgs[Math.floor(len*0.5)],p75:avgs[Math.floor(len*0.75)],p90:avgs[Math.floor(len*0.9)],
+    negPct:Math.round(negCount/len*1000)/10,hist,
+    belowMinus05:Math.round(avgs.filter(v=>v<-0.5).length/len*1000)/10,
+    belowMinus10:Math.round(avgs.filter(v=>v<-1.0).length/len*1000)/10}}
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 const inpS={width:"100%",padding:"8px 10px",background:"#0c0c1a",border:"1px solid #252540",borderRadius:6,color:"#e8e8f0",fontSize:13,outline:"none"};
@@ -850,6 +860,37 @@ export default function App(){
           </div>
           <div style={{fontSize:10,color:C.txd}}>상세 데이터의 복수예가 15개 편향 패턴을 기반으로 사정율 예측값을 보정했습니다.</div>
         </div>}
+        {/* ★ Level 2: 밴드 전략 + 최적 투찰 */}
+        {(()=>{
+          const ba=tn(inp.baseAmount);const av=tn(inp.aValue);if(!ba||!pred)return null;
+          const fr=pred.fr;const med=pred.adj;const std=pred.adjStd||0.7;
+          // 사정률별 예정가격 이하 확률 (정규분포 근사)
+          const normCdf=(x)=>{const t=1/(1+0.2316419*Math.abs(x));const d=0.3989422804*Math.exp(-x*x/2);const p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));return x>0?1-p:p};
+          const probBelow=(adjRate)=>normCdf((med-adjRate)/Math.max(std,0.642))*100;
+          // 투찰금액 계산
+          const calcBid=(adjRate)=>{const xp=ba*(1+adjRate/100);return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100))};
+          const calcXp=(adjRate)=>Math.round(ba*(1+adjRate/100));
+          // 전략 밴드
+          const strategies=[
+            {name:"안전",adj:Math.round((med-std*0.52)*10000)/10000,color:"#5dca96",desc:"예정가 이하 70%"},
+            {name:"균형",adj:Math.round(med*10000)/10000,color:"#d4a834",desc:"예정가 이하 50%"},
+            {name:"공격",adj:Math.round((med+std*0.52)*10000)/10000,color:"#e24b4a",desc:"예정가 이하 30%"}];
+          return<div style={{marginTop:10,padding:"12px 14px",background:"rgba(212,168,52,0.06)",border:"1px solid rgba(212,168,52,0.2)",borderRadius:8}}>
+            <div style={{fontWeight:600,color:C.gold,marginBottom:8,fontSize:13}}>투찰 전략 (Level 2)</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:10}}>
+              <thead><tr style={{background:C.bg3}}>{["전략","사정률","예정가격 이하","예정가격","투찰금액"].map((h,i)=><th key={i} style={{padding:"6px 8px",textAlign:i>=3?"right":i===2?"center":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>{h}</th>)}</tr></thead>
+              <tbody>{strategies.map((s,i)=>{const prob=probBelow(s.adj);return<tr key={i} style={{borderBottom:"1px solid "+C.bdr,background:i===0?"rgba(93,202,165,0.04)":"transparent"}}>
+                <td style={{padding:"6px 8px"}}><span style={{color:s.color,fontWeight:600}}>{s.name}</span> <span style={{fontSize:10,color:C.txd}}>{s.desc}</span></td>
+                <td style={{padding:"6px 8px",color:s.color,fontWeight:500}}>{(100+s.adj).toFixed(4)}%</td>
+                <td style={{padding:"6px 8px",textAlign:"center"}}><span style={{fontSize:11,padding:"2px 8px",borderRadius:4,background:prob>=60?"rgba(93,202,165,0.15)":prob>=40?"rgba(212,168,52,0.15)":"rgba(226,75,74,0.15)",color:prob>=60?"#5dca96":prob>=40?"#d4a834":"#e24b4a"}}>{Math.round(prob)}%</span></td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace",fontSize:11}}>{tc(calcXp(s.adj))}</td>
+                <td style={{padding:"6px 8px",textAlign:"right",fontWeight:600,fontFamily:"monospace",color:i===0?C.gold:C.txt}}>{tc(calcBid(s.adj))}</td>
+              </tr>})}</tbody>
+            </table>
+            <div style={{fontSize:10,color:C.txd,lineHeight:1.6}}>
+              낙찰하한율 {fr}% 적용. 1순위 낙찰자는 낙찰하한율 대비 0.001% 이내에서 투찰합니다 (162건 분석 결과). 안전 전략은 예정가격 이하 진입 확률을 높이고, 공격 전략은 낙찰 금액을 극대화합니다.
+            </div>
+          </div>})()}
       </div>}
 
       {/* 백테스트 성능 대시보드 */}
