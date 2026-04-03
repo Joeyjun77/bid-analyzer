@@ -425,6 +425,7 @@ export default function App(){
   const[bidDetails,setBidDetails]=useState([]);
   const[simResult,setSimResult]=useState(null);
   const[expandedDetail,setExpandedDetail]=useState(null);
+  const[simSlider,setSimSlider]=useState(0); // Phase 3: 투찰 시뮬레이터 사정률 슬라이더
   // 정렬 상태
   const[dataSort,setDataSort]=useState({key:"od",dir:"desc"}); // 분석 탭 데이터
   const[predSort,setPredSort]=useState({key:"open_date",dir:"desc"}); // 예측 탭 내역
@@ -507,7 +508,7 @@ export default function App(){
     if(!Object.keys(allS.ts||{}).length){setMsg({type:"err",text:"낙찰 데이터가 없습니다. 먼저 데이터를 업로드해주세요."});return}
     const p=predictV5({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,bidDetails);
     if(!p){setMsg({type:"err",text:"예측 실패: 기관 또는 금액 정보를 확인해주세요."});return}
-    setPred(p);
+    setPred(p);if(p)setSimSlider(Math.round(p.adj*100));
     if(p){const dk=md5("pred|manual|"+inp.agency+"|"+inp.baseAmount+"|"+Date.now());
       const row={dedup_key:dk,pn:"수동입력: "+inp.agency,pn_no:null,ag:inp.agency.trim(),at:clsAg(inp.agency),ep:tn(inp.estimatedPrice)||null,ba:tn(inp.baseAmount),av:tn(inp.aValue),raw_cost:null,cat:null,open_date:null,pred_adj_rate:p.adj,pred_expected_price:p.xp,pred_floor_rate:p.fr,pred_bid_amount:p.bid,pred_source:p.src,pred_base_adj:p.baseAdj,source:"manual",match_status:"pending"};
       try{await sbSavePredictions([row]);const preds=await sbFetchPredictions();setPredictions(preds)}catch(e){/* silent */}}},[inp,allS]);
@@ -947,6 +948,84 @@ export default function App(){
             <div style={{fontSize:10,color:C.txd,lineHeight:1.6}}>
               낙찰하한율 {fr}% 적용. 1순위 낙찰자는 낙찰하한율 대비 0.001% 이내에서 투찰합니다 (162건 분석 결과). 안전 전략은 예정가격 이하 진입 확률을 높이고, 공격 전략은 낙찰 금액을 극대화합니다.
             </div>
+          </div>})()}
+        {/* ★ Phase 3: 투찰 시뮬레이터 */}
+        {(()=>{
+          const ba=tn(inp.baseAmount);const av=tn(inp.aValue);if(!ba||!pred)return null;
+          const fr=pred.fr;const med=pred.adj;const std=Math.max(pred.adjStd||0.7,0.642);
+          const normCdf=(x)=>{const t=1/(1+0.2316419*Math.abs(x));const d=0.3989422804*Math.exp(-x*x/2);const p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));return x>0?1-p:p};
+          const adjVal=simSlider/100; // 슬라이더는 -150~150 → -1.5~+1.5
+          const prob=normCdf((med-adjVal)/std)*100;
+          const xp=Math.round(ba*(1+adjVal/100));
+          const bid=av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100));
+          const bidRate=xp>0?Math.round(bid/xp*10000000)/100000:0;
+          // 참여자 투찰 분포 (bid_details에서 현재 기관유형 필터)
+          const agType=clsAg(inp.agency);
+          const typeDets=bidDetails.filter(d=>d.at===agType&&d.bid_dist);
+          const distBuckets=["<89","89-89.5","89.5-90","90-90.5","90.5-91","91-91.5","91.5-92",">92"];
+          const distSums={};distBuckets.forEach(k=>{distSums[k]=0});
+          typeDets.forEach(d=>{if(d.bid_dist){distBuckets.forEach(k=>{distSums[k]+=(d.bid_dist[k]||0)})}});
+          const distTotal=Object.values(distSums).reduce((a,b)=>a+b,0);
+          const distMax=Math.max(...Object.values(distSums),1);
+          // 마진 분석
+          const marginFromFloor=bidRate-fr;
+          const marginColor=marginFromFloor<0?"#e24b4a":marginFromFloor<0.01?"#5dca96":marginFromFloor<0.1?"#d4a834":"#a8b4ff";
+          return<div style={{marginTop:12,padding:"14px",background:"rgba(93,202,165,0.04)",border:"1px solid rgba(93,202,165,0.15)",borderRadius:8}}>
+            <div style={{fontWeight:600,color:"#5dca96",marginBottom:10,fontSize:13}}>투찰 시뮬레이터 (Phase 3)</div>
+            {/* 슬라이더 */}
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+              <span style={{fontSize:11,color:C.txd,minWidth:50}}>사정률</span>
+              <input type="range" min={-150} max={150} step={1} value={simSlider}
+                onChange={e=>setSimSlider(Number(e.target.value))}
+                style={{flex:1,accentColor:"#5dca96"}}/>
+              <span style={{fontSize:14,fontWeight:600,color:adjVal>=0?"#5dca96":"#e24b4a",minWidth:70,textAlign:"right"}}>
+                {adjVal>=0?"+":""}{adjVal.toFixed(2)}%
+              </span>
+            </div>
+            {/* 실시간 계산 결과 */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:12}}>
+              {[
+                {l:"사정률(100%)",v:(100+adjVal).toFixed(4)+"%",c:adjVal>=0?"#5dca96":"#e24b4a"},
+                {l:"예정가격 이하",v:Math.round(prob)+"%",c:prob>=60?"#5dca96":prob>=40?"#d4a834":"#e24b4a"},
+                {l:"예정가격",v:tc(xp),c:C.txt},
+                {l:"투찰금액",v:tc(bid),c:C.gold},
+                {l:"투찰률",v:bidRate.toFixed(4)+"%",c:marginColor}
+              ].map((c,i)=><div key={i} style={{background:C.bg3,borderRadius:6,padding:"6px",textAlign:"center"}}>
+                <div style={{fontSize:9,color:C.txd}}>{c.l}</div>
+                <div style={{fontSize:i===3?14:12,fontWeight:i===3?600:500,color:c.c,fontFamily:i>=2?"monospace":"inherit"}}>{c.v}</div>
+              </div>)}
+            </div>
+            {/* 낙찰하한율 마진 경고 */}
+            <div style={{padding:"6px 10px",borderRadius:5,fontSize:11,marginBottom:10,
+              background:marginFromFloor<0?"rgba(226,75,74,0.1)":marginFromFloor<0.01?"rgba(93,202,165,0.1)":"rgba(212,168,52,0.06)",
+              color:marginFromFloor<0?"#e24b4a":marginFromFloor<0.01?"#5dca96":"#d4a834"}}>
+              {marginFromFloor<0
+                ?"투찰률이 낙찰하한율("+fr+"%) 미만입니다. 적격심사 탈락 위험."
+                :marginFromFloor<0.005
+                ?"낙찰하한율 대비 +"+marginFromFloor.toFixed(4)+"% — 1순위 경쟁 구간 (598건 중 52%가 이 범위)"
+                :marginFromFloor<0.01
+                ?"낙찰하한율 대비 +"+marginFromFloor.toFixed(4)+"% — 상위 경쟁 구간"
+                :"낙찰하한율 대비 +"+marginFromFloor.toFixed(3)+"% — 여유 있는 마진"}
+            </div>
+            {/* 참여자 투찰 분포 히트맵 */}
+            {distTotal>0&&<div>
+              <div style={{fontSize:11,color:C.txd,marginBottom:6}}>참여자 투찰 분포 ({agType}, {typeDets.length}건 합산)</div>
+              <div style={{display:"flex",gap:2,height:40,alignItems:"flex-end",marginBottom:4}}>
+                {distBuckets.map(k=>{const pct=distSums[k]/distTotal;const h=Math.max(2,pct*40/0.5);
+                  const isActive=k==="<89"?bidRate<89:k===">92"?bidRate>=92:bidRate>=parseFloat(k)&&bidRate<parseFloat(k)+0.5;
+                  return<div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:40}}>
+                    <div style={{width:"100%",height:h,borderRadius:"2px 2px 0 0",
+                      background:isActive?"rgba(212,168,52,0.7)":"rgba(168,180,255,0.3)",
+                      border:isActive?"1px solid #d4a834":"none"}}/>
+                  </div>})}
+              </div>
+              <div style={{display:"flex",gap:2}}>
+                {distBuckets.map(k=><div key={k} style={{flex:1,textAlign:"center",fontSize:8,color:C.txd}}>{k}</div>)}
+              </div>
+              <div style={{display:"flex",gap:2,marginTop:2}}>
+                {distBuckets.map(k=><div key={k} style={{flex:1,textAlign:"center",fontSize:8,color:C.txd}}>{distTotal>0?Math.round(distSums[k]/distTotal*100)+"%":""}</div>)}
+              </div>
+            </div>}
           </div>})()}
       </div>}
 
