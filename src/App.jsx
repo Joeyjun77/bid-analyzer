@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS } from "./lib/constants.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson } from "./lib/utils.js";
@@ -54,6 +54,49 @@ export default function App(){
   const[expandedDetail,setExpandedDetail]=useState(null);
   const[simSlider,setSimSlider]=useState(0); // Phase 3: 투찰 시뮬레이터 사정률 슬라이더
   const[aiAdvice,setAiAdvice]=useState("");const[aiLoading,setAiLoading]=useState(false); // Phase 4-A: AI 어드바이저
+  const[batchAi,setBatchAi]=useState({});const[batchAiLoading,setBatchAiLoading]=useState(null);const[expandedBatch,setExpandedBatch]=useState(null); // 일괄 AI
+  // AI 프롬프트 생성 (공통)
+  const buildAiPrompt=(r)=>{
+    const p=r.pred;if(!p)return null;
+    const agType=r.at||clsAg(r.ag);const agName=r.ag||"";
+    const curStat=allS.as?.[agName];const typeStat=allS.ts?.[agType];
+    const agDets=bidDetails.filter(d=>d.ag===agName);
+    return`당신은 한국 공공조달 입찰 전문가 AI입니다. 다음 입찰건에 대해 맞춤형 투찰 전략을 200자 이내로 간결하게 조언해주세요.
+
+■ 입찰 정보
+- 공고명: ${(r.pn||"").slice(0,50)}
+- 발주기관: ${agName} (${agType})
+- 기초금액: ${r.ba?Number(r.ba).toLocaleString():"미입력"}원
+- 추정가격: ${r.ep?Number(r.ep).toLocaleString():"미입력"}원
+- A값: ${r.av?Number(r.av).toLocaleString()+"원":"없음"}
+- 적용 낙찰하한율: ${p.fr}%
+
+■ 예측 결과
+- 예측 사정율: ${p.adj>=0?"+":""}${p.adj}% (중앙값)
+- 신뢰구간 70%: ${p.ci70?p.ci70.low+"% ~ "+p.ci70.high+"%":"N/A"}
+- 추천 투찰금액: ${p.bid?p.bid.toLocaleString()+"원":"N/A"}
+- 예상 투찰율: ${p.xp>0?(p.bid/p.xp*100).toFixed(3)+"%":"N/A"}
+- 근거: ${p.src}
+
+■ 기관 통계 (${agType})
+- 평균 사정률: ${typeStat?typeStat.avg.toFixed(4)+"%":"N/A"} (${typeStat?typeStat.n+"건":"N/A"})
+- 표준편차: ${typeStat?typeStat.std.toFixed(4)+"%":"N/A"}
+${curStat?`- 발주기관 개별: 평균 ${curStat.avg.toFixed(4)}%, ${curStat.n}건`:"- 발주기관 개별 데이터: 없음"}
+${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
+
+■ 핵심 제약
+- 복수예비가격 C(15,4) 추첨의 노이즈 바닥 = 0.642%
+- 1순위 업체의 낙찰하한율 대비 마진: 중앙값 0.004%
+
+위 정보를 바탕으로:
+1. 이 입찰건의 특성과 리스크를 한 줄로 요약
+2. 추천 투찰 전략 (보수/균형/공격 중)과 그 이유
+3. 투찰 시 유의사항 한 가지`};
+  const callAi=async(prompt)=>{
+    const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":localStorage.getItem("claude_api_key")||""},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:500,messages:[{role:"user",content:prompt}]})});
+    if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||`API ${res.status}`)}
+    const data=await res.json();return data.content?.map(c=>c.text||"").join("")||"응답 없음"};
   // 정렬 상태
   const[dataSort,setDataSort]=useState({key:"od",dir:"desc"}); // 분석 탭 데이터
   const[predSort,setPredSort]=useState({key:"open_date",dir:"desc"}); // 예측 탭 내역
@@ -540,15 +583,20 @@ export default function App(){
             엑셀 다운로드
           </button>
         </div>
-        <div style={{overflow:"auto",maxHeight:300}}>
+        <div style={{overflow:"auto",maxHeight:500}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"23%"}}/><col style={{width:"13%"}}/><col style={{width:"11%"}}/><col style={{width:"11%"}}/><col style={{width:"11%"}}/><col style={{width:"9%"}}/><col style={{width:"10%"}}/><col style={{width:"12%"}}/></colgroup>
+            <colgroup><col style={{width:"21%"}}/><col style={{width:"12%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/></colgroup>
             <thead><tr style={{background:C.bg3}}>
-              {["공고명","발주기관","사정률(100%)","예정가격","투찰금액","투찰율","하한율","개찰일"].map((h,i)=>
-                <th key={i} style={{padding:"6px 4px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:10}}>{h}</th>)}
+              {["공고명","발주기관","사정률(100%)","예정가격","투찰금액","투찰율","하한율","개찰일","AI"].map((h,i)=>
+                <th key={i} style={{padding:"6px 4px",textAlign:i>=2?"right":i===8?"center":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:10}}>{h}</th>)}
             </tr></thead>
-            <tbody>{predResults.slice(0,50).map((r,i)=>
-              <tr key={i} style={{borderBottom:"1px solid "+C.bdr}}>
+            <tbody>{predResults.slice(0,50).map((r,i)=>{
+              const isExpanded=expandedBatch===i;
+              const hasAi=!!batchAi[i];
+              const isLoading=batchAiLoading===i;
+              return<React.Fragment key={i}>
+              <tr style={{borderBottom:isExpanded?"none":"1px solid "+C.bdr,cursor:"pointer",background:isExpanded?"rgba(168,180,255,0.04)":"transparent"}}
+                onClick={()=>setExpandedBatch(isExpanded?null:i)}>
                 <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.pn}>{r.pn}</td>
                 <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ag}</td>
                 <td style={{padding:"5px 4px",textAlign:"right",color:"#5dca96",fontWeight:500}}>{r.pred?(100+r.pred.adj).toFixed(4)+"%":""}</td>
@@ -557,8 +605,42 @@ export default function App(){
                 <td style={{padding:"5px 4px",textAlign:"right",color:"#85b7eb",fontFamily:"monospace"}}>{r.pred&&r.pred.xp>0?(r.pred.bid/r.pred.xp*100).toFixed(3)+"%":""}</td>
                 <td style={{padding:"5px 4px",textAlign:"right",fontSize:10}}>{r.pred?r.pred.fr+"%":""}</td>
                 <td style={{padding:"5px 4px",textAlign:"right",fontSize:10}}>{r.open_date||""}</td>
-              </tr>)}
-            </tbody>
+                <td style={{padding:"5px 4px",textAlign:"center"}}>{hasAi?<span style={{fontSize:9,color:"#5dca96"}}>완료</span>:isLoading?<span style={{fontSize:9,color:"#a8b4ff"}}>...</span>:<span style={{fontSize:9,color:C.txd}}>클릭</span>}</td>
+              </tr>
+              {isExpanded&&<tr><td colSpan={9} style={{padding:"10px 8px",background:"rgba(168,180,255,0.03)",borderBottom:"1px solid "+C.bdr}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                  <div>
+                    <div style={{fontSize:11,color:C.txd,marginBottom:6}}>예측 상세</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:11}}>
+                      <div><span style={{color:C.txd}}>예측사정률:</span> <span style={{color:"#5dca96"}}>{r.pred?(100+r.pred.adj).toFixed(4)+"%":""}</span></div>
+                      <div><span style={{color:C.txd}}>낙찰하한율:</span> {r.pred?r.pred.fr+"%":""}</div>
+                      <div><span style={{color:C.txd}}>추천투찰금액:</span> <span style={{color:C.gold,fontWeight:600}}>{r.pred?tc(r.pred.bid)+"원":""}</span></div>
+                      <div><span style={{color:C.txd}}>예상투찰율:</span> <span style={{color:"#85b7eb"}}>{r.pred&&r.pred.xp>0?(r.pred.bid/r.pred.xp*100).toFixed(3)+"%":""}</span></div>
+                      {r.pred?.ci70&&<div style={{gridColumn:"1/3"}}><span style={{color:C.txd}}>CI 70%:</span> {r.pred.ci70.low}% ~ {r.pred.ci70.high}%</div>}
+                      <div style={{gridColumn:"1/3"}}><span style={{color:C.txd}}>근거:</span> {r.pred?.src||""}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <div style={{fontSize:11,color:"#a8b4ff",fontWeight:500}}>AI 전략 코멘트</div>
+                      {!hasAi&&<button disabled={isLoading||!localStorage.getItem("claude_api_key")} onClick={async(e)=>{
+                        e.stopPropagation();
+                        if(!localStorage.getItem("claude_api_key")){setBatchAi(p=>({...p,[i]:"⚠ API 키를 먼저 설정하세요 (수동 예측 → AI 전략 어드바이저에서 입력)"}));return}
+                        setBatchAiLoading(i);
+                        try{const prompt=buildAiPrompt(r);if(!prompt){setBatchAi(p=>({...p,[i]:"예측 데이터 없음"}));return}
+                          const text=await callAi(prompt);setBatchAi(p=>({...p,[i]:text}))}
+                        catch(e){setBatchAi(p=>({...p,[i]:"⚠ "+e.message}))}
+                        finally{setBatchAiLoading(null)}
+                      }} style={{padding:"3px 10px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.3)",borderRadius:4,color:"#a8b4ff",cursor:isLoading?"default":"pointer"}}>
+                        {isLoading?"분석 중...":"분석 요청"}
+                      </button>}
+                    </div>
+                    {hasAi?<div style={{fontSize:12,lineHeight:1.7,color:C.txt,whiteSpace:"pre-wrap"}}>{batchAi[i]}</div>
+                      :<div style={{fontSize:11,color:C.txd}}>분석 요청 버튼을 클릭하면 AI가 이 입찰건의 맞춤 전략을 제안합니다</div>}
+                  </div>
+                </div>
+              </td></tr>}
+              </React.Fragment>})}</tbody>
           </table>
         </div>
         {predResults.length>50&&<div style={{textAlign:"center",fontSize:10,color:C.txd,marginTop:6}}>상위 50건 표시 중 (전체 {predResults.length}건은 엑셀 다운로드)</div>}
@@ -828,48 +910,10 @@ export default function App(){
           <div style={{fontWeight:600,color:"#a8b4ff",fontSize:13}}>AI 전략 어드바이저</div>
           <button disabled={aiLoading} onClick={async()=>{
             setAiLoading(true);setAiAdvice("");
-            const agType=clsAg(inp.agency);const agName=inp.agency.trim();
-            const ba=tn(inp.baseAmount);const ep=tn(inp.estimatedPrice);
-            const curStat=allS.as?.[agName];const typeStat=allS.ts?.[agType];
-            const agDets=bidDetails.filter(d=>d.ag===agName);
-            const prompt=`당신은 한국 공공조달 입찰 전문가 AI입니다. 다음 입찰건에 대해 맞춤형 투찰 전략을 200자 이내로 간결하게 조언해주세요.
-
-■ 입찰 정보
-- 발주기관: ${agName} (${agType})
-- 기초금액: ${ba?ba.toLocaleString():"미입력"}원
-- 추정가격: ${ep?ep.toLocaleString():"미입력"}원
-- A값: ${tn(inp.aValue)?tn(inp.aValue).toLocaleString()+"원":"없음"}
-- 적용 낙찰하한율: ${pred.fr}%
-
-■ 예측 결과
-- 예측 사정율: ${pred.adj>=0?"+":""}${pred.adj}% (중앙값)
-- 신뢰구간 70%: ${pred.ci70?pred.ci70.low+"% ~ "+pred.ci70.high+"%":"N/A"}
-- 추천 투찰금액: ${pred.bid?pred.bid.toLocaleString()+"원":"N/A"}
-- 예상 투찰율: ${pred.xp>0?(pred.bid/pred.xp*100).toFixed(3)+"%":"N/A"}
-- 근거: ${pred.src}
-
-■ 기관 통계 (${agType})
-- 평균 사정률: ${typeStat?typeStat.avg.toFixed(4)+"%":"N/A"} (${typeStat?typeStat.n+"건":"N/A"})
-- 표준편차: ${typeStat?typeStat.std.toFixed(4)+"%":"N/A"}
-${curStat?`- 발주기관 개별: 평균 ${curStat.avg.toFixed(4)}%, ${curStat.n}건`:"- 발주기관 개별 데이터: 없음"}
-${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유 (15개 편향: ${agDets[0].pre_avg?agDets[0].pre_avg.toFixed(4)+"%":"N/A"})`:""}
-
-■ 핵심 제약
-- 복수예비가격 C(15,4) 추첨의 노이즈 바닥 = 0.642% (어떤 모델도 이 이하 불가)
-- 1순위 업체의 낙찰하한율 대비 마진: 중앙값 0.004% (거의 정확히 하한율에 투찰)
-
-위 정보를 바탕으로:
-1. 이 입찰건의 특성과 리스크를 한 줄로 요약
-2. 추천 투찰 전략 (보수/균형/공격 중)과 그 이유
-3. 투찰 시 유의사항 한 가지`;
-            try{
-              const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":localStorage.getItem("claude_api_key")||""},
-                body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:500,messages:[{role:"user",content:prompt}]})});
-              if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||`API ${res.status}`)}
-              const data=await res.json();
-              const text=data.content?.map(c=>c.text||"").join("")||"응답 없음";
-              setAiAdvice(text)
-            }catch(e){setAiAdvice("⚠ "+e.message)}finally{setAiLoading(false)}
+            try{const prompt=buildAiPrompt({pn:"수동입력: "+inp.agency,ag:inp.agency.trim(),at:clsAg(inp.agency),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue),pred});
+              if(!prompt)throw new Error("예측 데이터 없음");
+              const text=await callAi(prompt);setAiAdvice(text)}
+            catch(e){setAiAdvice("⚠ "+e.message)}finally{setAiLoading(false)}
           }} style={{padding:"5px 14px",fontSize:11,background:aiLoading?"rgba(168,180,255,0.05)":"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.3)",borderRadius:5,color:"#a8b4ff",cursor:aiLoading?"default":"pointer",fontWeight:500}}>
             {aiLoading?"분석 중...":"전략 분석 요청"}
           </button>
