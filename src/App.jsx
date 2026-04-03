@@ -869,6 +869,53 @@ export default function App(){
         </div>
       </div>
 
+      {/* 일괄 예측 결과 + 엑셀 다운로드 */}
+      {predResults.length>0&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16,marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontWeight:600,color:"#a8b4ff",fontSize:13}}>일괄 예측 결과 ({predResults.length}건)</div>
+          <button onClick={()=>{
+            const wb=XLSX.utils.book_new();
+            const data=predResults.map(r=>({
+              "공고명":r.pn,"공고번호":r.pn_no,"발주기관":r.ag,"기관유형":r.at,
+              "기초금액":r.ba,"추정가격":r.ep,"A값":r.av,
+              "예측사정률(100%)":r.pred?(100+r.pred.adj).toFixed(4):"",
+              "예측사정률":r.pred?r.pred.adj.toFixed(4):"",
+              "예정가격(예측)":r.pred?r.pred.xp:"",
+              "투찰금액(추천)":r.pred?r.pred.bid:"",
+              "낙찰하한율":r.pred?r.pred.fr:"",
+              "근거":r.pred?r.pred.src:"",
+              "개찰일":r.open_date||""
+            }));
+            const ws=XLSX.utils.json_to_sheet(data);
+            XLSX.utils.book_append_sheet(wb,ws,"예측결과");
+            XLSX.writeFile(wb,"예측결과_"+new Date().toISOString().slice(0,10)+".xlsx");
+          }} style={{padding:"5px 14px",fontSize:11,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.3)",borderRadius:5,color:"#a8b4ff",cursor:"pointer",fontWeight:500}}>
+            엑셀 다운로드
+          </button>
+        </div>
+        <div style={{overflow:"auto",maxHeight:300}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,tableLayout:"fixed"}}>
+            <colgroup><col style={{width:"25%"}}/><col style={{width:"15%"}}/><col style={{width:"12%"}}/><col style={{width:"12%"}}/><col style={{width:"12%"}}/><col style={{width:"12%"}}/><col style={{width:"12%"}}/></colgroup>
+            <thead><tr style={{background:C.bg3}}>
+              {["공고명","발주기관","사정률(100%)","예정가격","투찰금액","낙찰하한율","개찰일"].map((h,i)=>
+                <th key={i} style={{padding:"6px 4px",textAlign:i>=2?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:10}}>{h}</th>)}
+            </tr></thead>
+            <tbody>{predResults.slice(0,50).map((r,i)=>
+              <tr key={i} style={{borderBottom:"1px solid "+C.bdr}}>
+                <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.pn}>{r.pn}</td>
+                <td style={{padding:"5px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ag}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",color:"#5dca96",fontWeight:500}}>{r.pred?(100+r.pred.adj).toFixed(4)+"%":""}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",fontFamily:"monospace"}}>{r.pred?tc(r.pred.xp):""}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{r.pred?tc(r.pred.bid):""}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",fontSize:10}}>{r.pred?r.pred.fr+"%":""}</td>
+                <td style={{padding:"5px 4px",textAlign:"right",fontSize:10}}>{r.open_date||""}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+        {predResults.length>50&&<div style={{textAlign:"center",fontSize:10,color:C.txd,marginTop:6}}>상위 50건 표시 중 (전체 {predResults.length}건은 엑셀 다운로드)</div>}
+      </div>}
+
       {/* 수동 예측 결과 */}
       {pred&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16,marginBottom:16}}>
         <div style={{fontWeight:600,color:C.gold,marginBottom:8,fontSize:14}}>예측 결과</div>
@@ -894,6 +941,53 @@ export default function App(){
           <div style={{fontSize:13}}>추천금액: <span style={{fontWeight:700,color:C.gold,fontSize:15}}>{tc(pred.bidByRate)}원</span></div>
         </div>
         <div style={{fontSize:11,color:C.txd}}>낙찰하한율: {pred.fr}%</div>
+        {/* ★ 3-A-2: 기관별 최적 투찰 포인트 */}
+        {(()=>{
+          const agType=clsAg(inp.agency);const agName=inp.agency.trim();
+          const ba=tn(inp.baseAmount);const av=tn(inp.aValue);const fr=pred.fr;
+          if(!ba||!fr)return null;
+          // 해당 기관의 bid_details에서 1순위 마진 분석
+          const agDets=bidDetails.filter(d=>d.ag===agName&&d.win_bid_rate&&d.floor_rate>0);
+          const typeDets=bidDetails.filter(d=>d.at===agType&&d.win_bid_rate&&d.floor_rate>0);
+          const dets=agDets.length>=3?agDets:typeDets;
+          if(dets.length<5)return null;
+          const margins=dets.map(d=>Math.round((d.win_bid_rate-d.floor_rate)*10000)/10000).sort((a,b)=>a-b);
+          const mLen=margins.length;
+          const p10=margins[Math.floor(mLen*0.1)];
+          const p25=margins[Math.floor(mLen*0.25)];
+          const p50=margins[Math.floor(mLen*0.5)];
+          const optRate=Math.round((fr+p10)*10000)/10000; // P10 마진 = 상위 10% 진입 목표
+          const safeRate=Math.round((fr+p25)*10000)/10000;
+          // 최적 투찰금액 역산
+          const calcOptBid=(rate)=>{
+            // 투찰률 = 투찰금액/예정가격 → 투찰금액 = 예정가격 × 투찰률
+            // 사정률에서 예정가격 = ba × (1+adj/100)
+            // 투찰률 = rate → adj를 모르므로, 전 시나리오에서 예정가격 범위를 사용
+            // 간단 산식: 투찰금액 ≈ ba × rate/100 (A값 무시 시)
+            return av>0?Math.ceil(av+(ba*(1+pred.adj/100)-av)*(rate/100)):Math.ceil(ba*(1+pred.adj/100)*(rate/100))};
+          const optBid=calcOptBid(optRate);
+          const safeBid=calcOptBid(safeRate);
+          const srcLabel=agDets.length>=3?agName+" ("+agDets.length+"건)":agType+" ("+typeDets.length+"건)";
+          return<div style={{marginTop:10,padding:"10px 12px",background:"rgba(212,168,52,0.06)",border:"1px solid rgba(212,168,52,0.15)",borderRadius:6}}>
+            <div style={{fontWeight:600,color:C.gold,marginBottom:6,fontSize:12}}>최적 투찰 포인트 ({srcLabel})</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
+              <div style={{background:C.bg3,borderRadius:6,padding:"8px 10px"}}>
+                <div style={{fontSize:10,color:C.txd,marginBottom:2}}>1순위 목표 (상위 10%)</div>
+                <div style={{fontSize:15,fontWeight:600,color:"#5dca96"}}>{optRate.toFixed(4)}%</div>
+                <div style={{fontSize:12,color:C.gold,fontFamily:"monospace",marginTop:2}}>{tc(optBid)}원</div>
+                <div style={{fontSize:9,color:C.txd}}>마진 +{p10.toFixed(4)}% (낙찰하한율 대비)</div>
+              </div>
+              <div style={{background:C.bg3,borderRadius:6,padding:"8px 10px"}}>
+                <div style={{fontSize:10,color:C.txd,marginBottom:2}}>안전 진입 (상위 25%)</div>
+                <div style={{fontSize:15,fontWeight:600,color:"#d4a834"}}>{safeRate.toFixed(4)}%</div>
+                <div style={{fontSize:12,color:C.gold,fontFamily:"monospace",marginTop:2}}>{tc(safeBid)}원</div>
+                <div style={{fontSize:9,color:C.txd}}>마진 +{p25.toFixed(4)}% (낙찰하한율 대비)</div>
+              </div>
+            </div>
+            <div style={{fontSize:10,color:C.txd,lineHeight:1.5}}>
+              {srcLabel} 기준 1순위 마진 중앙값 {p50.toFixed(4)}%. 투찰 시뮬레이터에서 위 투찰률 근처로 슬라이더를 조정하세요.
+            </div>
+          </div>})()}
         {/* ★ 신뢰구간 + 보정 정보 */}
         {pred.ci70&&<div style={{marginTop:10,padding:"10px 12px",background:"rgba(93,202,165,0.04)",border:"1px solid rgba(93,202,165,0.12)",borderRadius:6}}>
           <div style={{fontWeight:600,color:"#5dca96",marginBottom:6,fontSize:12}}>신뢰구간</div>
