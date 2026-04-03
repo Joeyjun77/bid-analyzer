@@ -59,6 +59,9 @@ export default function App(){
   const[detailModal,setDetailModal]=useState(null); // 상세 모달 (prediction 객체)
   const[detailAi,setDetailAi]=useState("");const[detailAiLoading,setDetailAiLoading]=useState(false); // 모달 AI
   const[showSim,setShowSim]=useState(false); // 수동 시뮬레이션 토글
+  // ★ AI 챗봇
+  const[chatMsgs,setChatMsgs]=useState([]);const[chatInput,setChatInput]=useState("");const[chatLoading,setChatLoading]=useState(false);
+  const chatRef=useCallback(node=>{if(node)node.scrollTop=node.scrollHeight},[chatMsgs]);
   // AI 프롬프트 생성 (공통)
   const buildAiPrompt=(r)=>{
     const p=r.pred;if(!p)return null;
@@ -101,6 +104,58 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
       body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:500,messages:[{role:"user",content:prompt}]})});
     if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||err.error||`API ${res.status}`)}
     const data=await res.json();return data.content?.map(c=>c.text||"").join("")||"응답 없음"};
+
+  // ★ AI 챗봇 시스템 프롬프트 (현재 데이터 통계 동적 포함)
+  const buildChatSystem=()=>{
+    const ts=allS.ts||{};const typeStats=Object.entries(ts).map(([k,v])=>`${k}: 평균${v.avg?.toFixed(3)||0}%, std${v.std?.toFixed(3)||0}%, ${v.n||0}건`).join(" / ");
+    const matched=predictions.filter(p=>p.match_status==="matched");
+    const mae=matched.length?Math.round(matched.filter(p=>p.adj_rate_error!=null).map(p=>Math.abs(p.adj_rate_error)).reduce((a,b)=>a+b,0)/matched.length*10000)/10000:0;
+    return`당신은 한국 공공조달 입찰(전기/통신/소방) 전문 AI 어드바이저입니다.
+
+■ 시스템 현황
+- 낙찰 데이터: ${recs.length.toLocaleString()}건 (${Object.keys(ts).length}개 기관유형)
+- 복수예가 상세: ${bidDetails.length}건
+- 예측 성능: MAE ${mae}% / ${matched.length}건 매칭
+- 기관유형별: ${typeStats}
+- 이론적 노이즈 바닥: 0.642% (C(15,4) 추첨의 구조적 한계)
+
+■ 핵심 도메인 지식
+- 복수예비가격: 기초금액 기준 ±3%(또는 ±2%) 범위에서 15개 비공개 예비가격 생성, 참여업체가 2개씩 추첨, 다빈도 4개의 산술평균이 예정가격
+- 사정률 = (예정가격/기초금액 - 1) × 100. br1은 100 기준 (사정률 = br1 - 100)
+- 투찰금액 산출: A값 있을 때 = A값 + (예정가격-A값) × 낙찰하한율, A값 없을 때 = 예정가격 × 낙찰하한율
+- 낙찰하한율: 기관·금액구간별 상이 (조달청/지자체 89.745%, 3억 미만 기준, 2026 개정)
+- 1순위 업체는 낙찰하한율 대비 +0.001~0.005% 마진으로 투찰 (162건 분석)
+- 투찰율 = 입찰가격/예정가격 × 100. 이것은 사정률의 결과(종속변수)이므로 예측 변수로는 무용
+
+■ 적격심사 기준 (전기/통신/소방)
+- 종합평점 95점 이상이 낙찰자
+- 입찰가격평가 배점: 3억 미만 90점(하한85점, 낙찰율87.745%), 3억~50억 70점(하한65점, 낙찰율86.745%)
+- 산식: 90-20×|88/100-입찰가격/예정가격|×100 (3억 미만), 70-4×|88/100-입찰가격/예정가격|×100 (3억 이상)
+- 시공경험평가 + 경영상태평가로 나머지 점수 충당
+- 경영상태 부족 시 투찰율을 87.795%로 높여 입찰가격점수 86점을 받아 보완 가능
+
+■ 응답 규칙
+- 한국어로 답변
+- 입찰 전략과 관련된 질문에는 구체적 수치와 근거를 제시
+- 추정가격/기초금액/A값 등 용어는 정확하게 사용
+- 모르는 정보는 솔직히 모른다고 답변
+- 답변은 간결하게, 핵심 위주로`};
+
+  const sendChat=async()=>{
+    const text=chatInput.trim();if(!text||chatLoading)return;
+    const userMsg={role:"user",content:text};
+    const newMsgs=[...chatMsgs,userMsg];
+    setChatMsgs(newMsgs);setChatInput("");setChatLoading(true);
+    try{
+      const res=await fetch("/api/ai",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({model:"claude-opus-4-6",max_tokens:2000,system:buildChatSystem(),
+          messages:newMsgs.slice(-20)})});
+      if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||`API ${res.status}`)}
+      const data=await res.json();
+      const reply=data.content?.map(c=>c.text||"").join("")||"응답을 받지 못했습니다.";
+      setChatMsgs(prev=>[...prev,{role:"assistant",content:reply}])}
+    catch(e){setChatMsgs(prev=>[...prev,{role:"assistant",content:"⚠ 오류: "+e.message}])}
+    finally{setChatLoading(false)}};
   // 정렬 상태
   const[dataSort,setDataSort]=useState({key:"od",dir:"desc"}); // 분석 탭 데이터
   const[predSort,setPredSort]=useState({key:"open_date",dir:"desc"}); // 예측 탭 내역
@@ -327,7 +382,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
         <span style={{fontSize:16,fontWeight:700,color:C.gold}}>입찰 분석 시스템</span>
         <span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span>
       </div>
-      <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/></div>
+      <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="chat" ch="AI 상담"/></div>
     </div>
     {msg.text&&<div style={{margin:"0 auto",maxWidth:1000,padding:"8px 16px"}}><div style={{padding:"8px 14px",background:msg.type==="ok"?"rgba(93,202,165,0.08)":"rgba(220,50,50,0.08)",border:`1px solid ${msg.type==="ok"?"rgba(93,202,165,0.3)":"rgba(220,50,50,0.3)"}`,borderRadius:6,fontSize:12,color:msg.type==="ok"?"#5ca":"#e55"}}>{msg.type==="ok"?"✓ ":"✕ "}{msg.text}</div></div>}
 
@@ -767,6 +822,64 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
               </tr>})}</tbody>
           </table>
         </div>:<div style={{textAlign:"center",padding:30,color:C.txd,fontSize:12}}>예측 내역이 없습니다. 입찰서류함을 업로드해주세요.</div>}
+      </div>
+    </div>}
+
+    {/* ═══ AI 상담 탭 ═══ */}
+    {tab==="chat"&&<div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 60px)"}}>
+      {/* 대화 영역 */}
+      <div ref={chatRef} style={{flex:1,overflowY:"auto",padding:"16px 12px"}}>
+        {chatMsgs.length===0&&<div style={{textAlign:"center",padding:"60px 20px"}}>
+          <div style={{fontSize:28,opacity:0.2,marginBottom:12}}>AI</div>
+          <div style={{fontSize:15,fontWeight:600,color:C.gold,marginBottom:8}}>입찰 분석 AI 어드바이저</div>
+          <div style={{fontSize:12,color:C.txm,lineHeight:1.8,maxWidth:400,margin:"0 auto",marginBottom:20}}>
+            한국 공공조달 입찰(전기/통신/소방)에 대해 무엇이든 물어보세요.<br/>
+            {recs.length.toLocaleString()}건의 낙찰 데이터와 예측 모델 기반으로 답변합니다.
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
+            {["경기도 고양시 전기공사 3억 미만 투찰 전략은?",
+              "교육청과 지자체의 사정률 차이는?",
+              "낙찰하한율 89.745%에서 최적 마진은?",
+              "복수예비가격 메커니즘을 설명해줘",
+              "적격심사에서 입찰가격점수 85점 받으려면?",
+              "MAE 0.6%를 낮추려면 어떤 데이터가 더 필요해?"
+            ].map((q,i)=><button key={i} onClick={()=>{setChatInput(q);setTimeout(()=>{const el=document.getElementById("chat-send");if(el)el.click()},50)}}
+              style={{padding:"6px 12px",fontSize:11,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:6,color:C.txm,cursor:"pointer",textAlign:"left",maxWidth:280}}>
+              {q}
+            </button>)}
+          </div>
+        </div>}
+        {chatMsgs.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",marginBottom:12}}>
+          <div style={{maxWidth:"80%",padding:"10px 14px",borderRadius:m.role==="user"?"12px 12px 2px 12px":"12px 12px 12px 2px",
+            background:m.role==="user"?"rgba(212,168,52,0.12)":"rgba(168,180,255,0.08)",
+            border:"1px solid "+(m.role==="user"?"rgba(212,168,52,0.2)":"rgba(168,180,255,0.15)"),
+            fontSize:13,lineHeight:1.8,color:C.txt,whiteSpace:"pre-wrap"}}>
+            {m.content}
+          </div>
+        </div>)}
+        {chatLoading&&<div style={{display:"flex",justifyContent:"flex-start",marginBottom:12}}>
+          <div style={{padding:"10px 14px",borderRadius:"12px 12px 12px 2px",background:"rgba(168,180,255,0.08)",border:"1px solid rgba(168,180,255,0.15)",fontSize:13,color:C.txm}}>
+            분석 중...
+          </div>
+        </div>}
+      </div>
+      {/* 입력 영역 */}
+      <div style={{borderTop:"1px solid "+C.bdr,padding:"12px 16px",background:C.bg2}}>
+        <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+          <textarea value={chatInput} onChange={e=>setChatInput(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat()}}}
+            placeholder="입찰 전략, 사정률 분석, 적격심사 등 무엇이든 물어보세요..."
+            rows={chatInput.split("\n").length>3?3:Math.max(1,chatInput.split("\n").length)}
+            style={{flex:1,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 14px",color:C.txt,fontSize:13,resize:"none",outline:"none",fontFamily:"inherit",lineHeight:1.6}}/>
+          <button id="chat-send" onClick={sendChat} disabled={chatLoading||!chatInput.trim()}
+            style={{padding:"10px 18px",background:chatInput.trim()?C.gold:"#333",border:"none",borderRadius:8,color:chatInput.trim()?"#000":"#666",fontWeight:700,fontSize:13,cursor:chatInput.trim()?"pointer":"default",flexShrink:0}}>
+            {chatLoading?"...":"전송"}
+          </button>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
+          <span style={{fontSize:10,color:C.txd}}>Claude Opus 4.6 · Enter로 전송, Shift+Enter로 줄바꿈</span>
+          {chatMsgs.length>0&&<button onClick={()=>setChatMsgs([])} style={{fontSize:10,color:C.txd,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>대화 초기화</button>}
+        </div>
       </div>
     </div>}
 
