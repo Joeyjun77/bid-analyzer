@@ -435,6 +435,16 @@ export default function App(){
   // 예측 리스트 새로고침 (수동 + 탭 전환 시)
   const refreshPredictions=useCallback(async()=>{
     try{const preds=await sbFetchPredictions();setPredictions(preds||[]);return preds}catch(e){return predictions}},[predictions]);
+  // ★ 전체 데이터 새로고침 (새로고침 버튼용)
+  const refreshAll=useCallback(async()=>{
+    try{const[rows,preds,dets]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails()]);
+      setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));
+      setPredictions(preds||[]);setBidDetails(dets||[]);
+      // 자동 매칭 시도
+      const matched=await sbMatchPredictions(preds,rows);
+      if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds)}
+      return{records:rows.length,predictions:(preds||[]).length,details:(dets||[]).length,matched}
+    }catch(e){return null}},[refreshStats]);
 
   // DB 로드
   useEffect(()=>{(async()=>{
@@ -1215,7 +1225,7 @@ export default function App(){
       <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{fontSize:13,fontWeight:600,color:C.gold}}>예측 내역 + 정확도 비교</div>
-          <button onClick={async()=>{setBusy(true);await refreshPredictions();setBusy(false);setMsg({type:"ok",text:"예측 내역 새로고침 완료"})}} disabled={busy}
+          <button onClick={async()=>{setBusy(true);const r=await refreshAll();setBusy(false);setMsg({type:"ok",text:r?`전체 새로고침 완료 (낙찰 ${r.records.toLocaleString()} · 상세 ${r.details} · 예측 ${r.predictions}${r.matched>0?" · "+r.matched+"건 매칭":""})`:"새로고침 실패"})}} disabled={busy}
             style={{padding:"5px 12px",fontSize:11,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,cursor:busy?"default":"pointer"}}>
             {busy?"갱신중...":"새로고침"}
           </button>
