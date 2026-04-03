@@ -120,7 +120,20 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
   // DB 로드
   useEffect(()=>{(async()=>{
     try{const rows=await sbFetchAll();setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));if(rows.length>0)setTab("dash")}catch(e){setMsg({type:"err",text:"DB 로드 실패: "+e.message})}
-    try{const preds=await sbFetchPredictions();setPredictions(preds||[])}catch(e){setPredictions([])}
+    try{const preds=await sbFetchPredictions();setPredictions(preds||[]);
+      // ★ file_upload 예측을 predResults로 복원 (새로고침 시 유지)
+      const filePreds=(preds||[]).filter(p=>p.source==="file_upload"&&p.pred_adj_rate!=null);
+      if(filePreds.length>0){setPredResults(filePreds.map(p=>({
+        pn:p.pn,pn_no:p.pn_no,ag:p.ag,at:p.at,
+        ba:p.ba?Number(p.ba):null,ep:p.ep?Number(p.ep):null,av:p.av?Number(p.av):0,
+        raw_cost:p.raw_cost,cat:p.cat,open_date:p.open_date,dedup_key:p.dedup_key,
+        pred:{adj:Number(p.pred_adj_rate),xp:Number(p.pred_expected_price),
+          fr:Number(p.pred_floor_rate),bid:Number(p.pred_bid_amount),
+          src:p.pred_source||"",baseAdj:Number(p.pred_base_adj||0),
+          ci70:null,ci90:null,scenarios:[],bidRateRec:{avg:0,med:0,q1:0,q3:0,std:0},
+          bidByRate:0,adjAvg:0,adjStd:0,biasAdj:0,driftUsed:0,detailInsight:null}
+      })))}
+    }catch(e){setPredictions([])}
     try{const dets=await sbFetchDetails();setBidDetails(dets||[])}catch(e){setBidDetails([])}
     setDbLoading(false)
   })()},[refreshStats]);
