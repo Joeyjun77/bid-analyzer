@@ -93,9 +93,9 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
 2. 추천 투찰 전략 (보수/균형/공격 중)과 그 이유
 3. 투찰 시 유의사항 한 가지`};
   const callAi=async(prompt)=>{
-    const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":localStorage.getItem("claude_api_key")||""},
+    const res=await fetch("/api/ai",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:500,messages:[{role:"user",content:prompt}]})});
-    if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||`API ${res.status}`)}
+    if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||err.error||`API ${res.status}`)}
     const data=await res.json();return data.content?.map(c=>c.text||"").join("")||"응답 없음"};
   // 정렬 상태
   const[dataSort,setDataSort]=useState({key:"od",dir:"desc"}); // 분석 탭 데이터
@@ -283,6 +283,20 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     </div>};
 
   return(<div style={{fontFamily:"system-ui,sans-serif",background:C.bg,color:C.txt,minHeight:"100vh",fontSize:13}}>
+    {/* ★ 전체 로딩 오버레이 */}
+    {dbLoading&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:C.bg,zIndex:200,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
+      <div style={{fontSize:18,fontWeight:700,color:C.gold}}>입찰 분석 시스템</div>
+      <div style={{fontSize:13,color:C.txm}}>데이터 로딩 중...</div>
+      <div style={{width:120,height:3,background:C.bg3,borderRadius:2,overflow:"hidden",marginTop:4}}><div style={{width:"60%",height:"100%",background:C.gold,borderRadius:2,animation:"pulse 1.5s infinite"}}></div></div>
+      <style>{`@keyframes pulse{0%,100%{opacity:0.4;width:30%}50%{opacity:1;width:80%}}`}</style>
+    </div>}
+    {/* ★ 파일 처리 중 오버레이 */}
+    {busy&&!dbLoading&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(12,12,26,0.7)",zIndex:150,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:"24px 32px",textAlign:"center"}}>
+        <div style={{fontSize:14,color:C.gold,fontWeight:600,marginBottom:6}}>처리 중...</div>
+        <div style={{fontSize:11,color:C.txm}}>파일 파싱 및 예측 진행 중</div>
+      </div>
+    </div>}
     {/* 삭제 다이얼로그 */}
     {dlgType&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.6)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{setDlgType("");setDelConfirm("")}}><div onClick={e=>e.stopPropagation()} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:24,maxWidth:380,width:"90%"}}>
       <div style={{fontSize:14,fontWeight:600,color:"#e24b4a",marginBottom:8}}>{dlgType==="sel"?selCount+"건 삭제":"전체 삭제"}</div>
@@ -630,9 +644,8 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
                   <div>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                       <div style={{fontSize:11,color:"#a8b4ff",fontWeight:500}}>AI 전략 코멘트</div>
-                      {!hasAi&&<button disabled={isLoading||!localStorage.getItem("claude_api_key")} onClick={async(e)=>{
+                      {!hasAi&&<button disabled={isLoading} onClick={async(e)=>{
                         e.stopPropagation();
-                        if(!localStorage.getItem("claude_api_key")){setBatchAi(p=>({...p,[i]:"⚠ API 키를 먼저 설정하세요 (수동 예측 → AI 전략 어드바이저에서 입력)"}));return}
                         setBatchAiLoading(i);
                         try{const prompt=buildAiPrompt(r);if(!prompt){setBatchAi(p=>({...p,[i]:"예측 데이터 없음"}));return}
                           const text=await callAi(prompt);setBatchAi(p=>({...p,[i]:text}))}
@@ -925,16 +938,8 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
             {aiLoading?"분석 중...":"전략 분석 요청"}
           </button>
         </div>
-        {!localStorage.getItem("claude_api_key")&&!aiAdvice&&<div style={{padding:"10px 12px",background:"rgba(226,75,74,0.06)",border:"1px solid rgba(226,75,74,0.15)",borderRadius:6,marginBottom:8}}>
-          <div style={{fontSize:11,color:"#e24b4a",marginBottom:6}}>Claude API 키가 설정되지 않았습니다</div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <input type="password" placeholder="sk-ant-api03-..." onChange={e=>{if(e.target.value.startsWith("sk-ant-")){localStorage.setItem("claude_api_key",e.target.value)}}}
-              style={{...inpS,flex:1,fontSize:11}} defaultValue={localStorage.getItem("claude_api_key")||""}/>
-            <span style={{fontSize:10,color:C.txd,whiteSpace:"nowrap"}}>브라우저에 저장됨</span>
-          </div>
-        </div>}
         {aiAdvice&&<div style={{padding:"12px 14px",background:"rgba(168,180,255,0.04)",border:"1px solid rgba(168,180,255,0.12)",borderRadius:6,fontSize:13,lineHeight:1.8,color:C.txt,whiteSpace:"pre-wrap"}}>{aiAdvice}</div>}
-        {!aiAdvice&&!aiLoading&&localStorage.getItem("claude_api_key")&&<div style={{fontSize:11,color:C.txd,textAlign:"center",padding:12}}>예측 결과를 기반으로 AI가 맞춤형 투찰 전략을 분석합니다</div>}
+        {!aiAdvice&&!aiLoading&&<div style={{fontSize:11,color:C.txd,textAlign:"center",padding:12}}>예측 결과를 기반으로 AI가 맞춤형 투찰 전략을 분석합니다</div>}
       </div>}
       {compStats.matched>=3&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16,marginBottom:12}}>
         <div style={{fontSize:13,fontWeight:600,color:"#a8b4ff",marginBottom:10}}>모델 성능 (v5 · {compStats.matched}건 검증)</div>
