@@ -299,9 +299,9 @@ async function sbSaveDetail(detail){
   const res=await fetch(SB_URL+"/rest/v1/bid_details?on_conflict=pn_no",{method:"POST",headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},body});
   return res.ok}
 async function sbFetchDetails(){
-  try{const res=await fetch(SB_URL+"/rest/v1/bid_details?select=*&order=od.desc&limit=200",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}}
+  try{const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_details?select=*&order=od.desc&offset="+offset+"&limit="+PAGE,{headers:hdrsSel});if(!res.ok)return all;const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}catch(e){return[]}}
 async function sbFetchDetailsByAg(ag){
-  try{const res=await fetch(SB_URL+"/rest/v1/bid_details?ag=eq."+encodeURIComponent(ag)+"&select=*&order=od.desc&limit=50",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}}
+  try{const res=await fetch(SB_URL+"/rest/v1/bid_details?ag=eq."+encodeURIComponent(ag)+"&select=*&order=od.desc&limit=1000",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}}
 
 // ─── SUCVIEW XLS 파싱 ──────────────────────────────────────
 function isSucviewFile(rows){return rows.length>7&&String(rows[0]?.[0]||"").trim()==="공고명"&&String(rows[2]?.[0]||"").trim()==="공고번호"}
