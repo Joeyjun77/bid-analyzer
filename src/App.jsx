@@ -1026,6 +1026,57 @@ export default function App(){
                 {distBuckets.map(k=><div key={k} style={{flex:1,textAlign:"center",fontSize:8,color:C.txd}}>{distTotal>0?Math.round(distSums[k]/distTotal*100)+"%":""}</div>)}
               </div>
             </div>}
+            {/* ★ Phase 3-B: 1순위 밀집 분석 + 회피 전략 */}
+            {(()=>{
+              // 현재 기관유형의 bid_details에서 1순위 마진 분포 계산
+              const marginDets=typeDets.filter(d=>d.win_bid_rate&&d.floor_rate>0);
+              if(marginDets.length<5)return null;
+              const margins=marginDets.map(d=>Math.round((d.win_bid_rate-d.floor_rate)*10000)/10000);
+              margins.sort((a,b)=>a-b);
+              const mLen=margins.length;
+              const mMed=margins[Math.floor(mLen/2)];
+              const mP25=margins[Math.floor(mLen*0.25)];
+              const mP75=margins[Math.floor(mLen*0.75)];
+              const within001=margins.filter(m=>m<0.01).length;
+              const within005=margins.filter(m=>m<0.005).length;
+              // 현재 시뮬레이터 투찰률의 마진
+              const myMargin=Math.round((bidRate-fr)*10000)/10000;
+              // 마진 히스토그램 (0.001% 단위)
+              const mBins={};margins.forEach(m=>{const b=Math.min(Math.floor(m*1000)/1000,0.01).toFixed(3);mBins[b]=(mBins[b]||0)+1});
+              const mBinKeys=Object.keys(mBins).sort((a,b)=>parseFloat(a)-parseFloat(b));
+              const mBinMax=Math.max(...Object.values(mBins),1);
+              // 순위 추정: 현재 마진이면 몇 % 안에 드는가
+              const rankPct=myMargin>=0?Math.round(margins.filter(m=>m>=myMargin).length/mLen*100):0;
+              // 회피 전략: 밀집 구간 바로 위를 추천
+              const hotzone=fr+mMed;
+              const avoidTarget=Math.round((fr+mP25)*10000)/10000;
+              return<div style={{marginTop:10,padding:"10px 12px",background:"rgba(168,180,255,0.04)",border:"1px solid rgba(168,180,255,0.12)",borderRadius:6}}>
+                <div style={{fontWeight:600,color:"#a8b4ff",marginBottom:8,fontSize:12}}>1순위 경쟁 분석 ({agType}, {marginDets.length}건)</div>
+                {/* 마진 분포 바 */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:8}}>
+                  {[
+                    {l:"마진 중앙값",v:mMed.toFixed(4)+"%",c:"#5dca96"},
+                    {l:"0.005% 미만",v:Math.round(within005/mLen*100)+"%",c:"#d4a834"},
+                    {l:"0.01% 미만",v:Math.round(within001/mLen*100)+"%",c:"#a8b4ff"},
+                    {l:"내 마진 순위",v:myMargin>=0?rankPct+"%":"탈락",c:myMargin<0?"#e24b4a":rankPct<=30?"#5dca96":"#d4a834"}
+                  ].map((c,i)=><div key={i} style={{background:C.bg3,borderRadius:5,padding:"5px",textAlign:"center"}}>
+                    <div style={{fontSize:8,color:C.txd}}>{c.l}</div>
+                    <div style={{fontSize:13,fontWeight:500,color:c.c}}>{c.v}</div>
+                  </div>)}
+                </div>
+                {/* 전략 추천 */}
+                <div style={{padding:"6px 10px",borderRadius:5,fontSize:11,lineHeight:1.6,
+                  background:myMargin<0?"rgba(226,75,74,0.08)":rankPct<=20?"rgba(93,202,165,0.08)":"rgba(212,168,52,0.06)",
+                  color:myMargin<0?"#e24b4a":rankPct<=20?"#5dca96":"#d4a834"}}>
+                  {myMargin<0
+                    ?"낙찰하한율 미만입니다. 슬라이더를 낮춰 "+fr+"% 이상으로 조정하세요."
+                    :rankPct<=10
+                    ?"현재 투찰률은 상위 "+rankPct+"% — 1순위 경쟁권입니다. "+marginDets.length+"건 중 "+Math.round(mLen*rankPct/100)+"건만 이보다 밀착했습니다."
+                    :rankPct<=30
+                    ?"상위 "+rankPct+"% 구간입니다. 1순위에 근접하려면 투찰률을 "+avoidTarget.toFixed(4)+"% 근처로 낮추세요 (마진 "+mP25.toFixed(4)+"%)."
+                    :"마진이 넓습니다 ("+myMargin.toFixed(4)+"%). 1순위권 진입을 위해 낙찰하한율 +0.001~0.005% 구간("+fr+"~"+(fr+0.005).toFixed(3)+"%)을 목표로 슬라이더를 조정하세요."}
+                </div>
+              </div>})()}
           </div>})()}
       </div>}
 
