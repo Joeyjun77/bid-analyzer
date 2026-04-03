@@ -826,7 +826,35 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     </div>}
 
     {/* ═══ AI 상담 탭 ═══ */}
-    {tab==="chat"&&<div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 60px)"}}>
+    {tab==="chat"&&(()=>{
+      // 마크다운 → HTML 간이 변환
+      const md2html=(text)=>{if(!text)return"";
+        return text
+          .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+          .replace(/^### (.+)$/gm,'<div style="font-size:14px;font-weight:600;color:'+C.gold+';margin:12px 0 6px">$1</div>')
+          .replace(/^## (.+)$/gm,'<div style="font-size:15px;font-weight:600;color:'+C.gold+';margin:14px 0 8px">$1</div>')
+          .replace(/^# (.+)$/gm,'<div style="font-size:16px;font-weight:600;color:'+C.gold+';margin:16px 0 8px">$1</div>')
+          .replace(/\*\*(.+?)\*\*/g,'<span style="font-weight:600;color:'+C.txt+'">$1</span>')
+          .replace(/\*(.+?)\*/g,'<em>$1</em>')
+          .replace(/`(.+?)`/g,'<code style="background:'+C.bg3+';padding:1px 5px;border-radius:3px;font-size:12px;font-family:monospace">$1</code>')
+          .replace(/^- (.+)$/gm,'<div style="padding:2px 0 2px 12px;position:relative"><span style="position:absolute;left:0;color:'+C.txd+'">·</span>$1</div>')
+          .replace(/^(\d+)\. (.+)$/gm,'<div style="padding:2px 0 2px 18px;position:relative"><span style="position:absolute;left:0;color:'+C.gold+';font-weight:500">$1.</span>$2</div>')
+          .replace(/^■ (.+)$/gm,'<div style="font-weight:600;color:#a8b4ff;margin:10px 0 4px">■ $1</div>')
+          .replace(/^→ (.+)$/gm,'<div style="padding-left:12px;color:#5dca96">→ $1</div>')
+          .replace(/\n{2,}/g,'<div style="height:8px"></div>')
+          .replace(/\n/g,"<br/>")};
+      // 문서 다운로드
+      const downloadChat=()=>{
+        const now=new Date().toISOString().slice(0,16).replace("T"," ");
+        let md=`# 입찰 분석 AI 상담 기록\n> ${now}\n\n---\n\n`;
+        chatMsgs.forEach(m=>{
+          if(m.role==="user")md+=`## 질문\n${m.content}\n\n`;
+          else md+=`## AI 답변\n${m.content}\n\n---\n\n`});
+        md+=`\n---\n*입찰 분석 시스템 (Claude Opus 4.6) · ${recs.length.toLocaleString()}건 데이터 기반*\n`;
+        const blob=new Blob([md],{type:"text/markdown;charset=utf-8"});
+        const url=URL.createObjectURL(blob);const a=document.createElement("a");
+        a.href=url;a.download=`AI상담_${new Date().toISOString().slice(0,10)}.md`;a.click();URL.revokeObjectURL(url)};
+      return<div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 60px)"}}>
       {/* 대화 영역 */}
       <div ref={chatRef} style={{flex:1,overflowY:"auto",padding:"16px 12px"}}>
         {chatMsgs.length===0&&<div style={{textAlign:"center",padding:"60px 20px"}}>
@@ -849,17 +877,22 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
             </button>)}
           </div>
         </div>}
-        {chatMsgs.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",marginBottom:12}}>
-          <div style={{maxWidth:"80%",padding:"10px 14px",borderRadius:m.role==="user"?"12px 12px 2px 12px":"12px 12px 12px 2px",
-            background:m.role==="user"?"rgba(212,168,52,0.12)":"rgba(168,180,255,0.08)",
-            border:"1px solid "+(m.role==="user"?"rgba(212,168,52,0.2)":"rgba(168,180,255,0.15)"),
-            fontSize:13,lineHeight:1.8,color:C.txt,whiteSpace:"pre-wrap"}}>
-            {m.content}
+        {chatMsgs.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",marginBottom:14}}>
+          {m.role==="assistant"&&<div style={{width:28,height:28,borderRadius:14,background:"rgba(168,180,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#a8b4ff",fontWeight:600,flexShrink:0,marginRight:8,marginTop:2}}>AI</div>}
+          <div style={{maxWidth:"80%",padding:m.role==="user"?"10px 14px":"14px 16px",
+            borderRadius:m.role==="user"?"12px 12px 2px 12px":"2px 12px 12px 12px",
+            background:m.role==="user"?"rgba(212,168,52,0.12)":"rgba(168,180,255,0.06)",
+            border:"1px solid "+(m.role==="user"?"rgba(212,168,52,0.2)":"rgba(168,180,255,0.12)")}}>
+            {m.role==="user"?<div style={{fontSize:13,lineHeight:1.7,color:C.txt,whiteSpace:"pre-wrap"}}>{m.content}</div>
+              :<div style={{fontSize:13,lineHeight:1.8,color:C.txt}} dangerouslySetInnerHTML={{__html:md2html(m.content)}}/>}
           </div>
+          {m.role==="user"&&<div style={{width:28,height:28,borderRadius:14,background:"rgba(212,168,52,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.gold,fontWeight:600,flexShrink:0,marginLeft:8,marginTop:2}}>Q</div>}
         </div>)}
-        {chatLoading&&<div style={{display:"flex",justifyContent:"flex-start",marginBottom:12}}>
-          <div style={{padding:"10px 14px",borderRadius:"12px 12px 12px 2px",background:"rgba(168,180,255,0.08)",border:"1px solid rgba(168,180,255,0.15)",fontSize:13,color:C.txm}}>
-            분석 중...
+        {chatLoading&&<div style={{display:"flex",alignItems:"flex-start",marginBottom:14}}>
+          <div style={{width:28,height:28,borderRadius:14,background:"rgba(168,180,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#a8b4ff",fontWeight:600,flexShrink:0,marginRight:8}}>AI</div>
+          <div style={{padding:"14px 16px",borderRadius:"2px 12px 12px 12px",background:"rgba(168,180,255,0.06)",border:"1px solid rgba(168,180,255,0.12)",fontSize:13,color:C.txm}}>
+            <span style={{display:"inline-block",animation:"blink 1.2s infinite"}}>분석 중...</span>
+            <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
           </div>
         </div>}
       </div>
@@ -876,12 +909,15 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
             {chatLoading?"...":"전송"}
           </button>
         </div>
-        <div style={{display:"flex",justifyContent:"space-between",marginTop:6}}>
-          <span style={{fontSize:10,color:C.txd}}>Claude Opus 4.6 · Enter로 전송, Shift+Enter로 줄바꿈</span>
-          {chatMsgs.length>0&&<button onClick={()=>setChatMsgs([])} style={{fontSize:10,color:C.txd,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>대화 초기화</button>}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6}}>
+          <span style={{fontSize:10,color:C.txd}}>Claude Opus 4.6 · Enter 전송 · Shift+Enter 줄바꿈</span>
+          <div style={{display:"flex",gap:8}}>
+            {chatMsgs.length>0&&<button onClick={downloadChat} style={{fontSize:10,color:"#a8b4ff",background:"none",border:"none",cursor:"pointer"}}>문서 다운로드</button>}
+            {chatMsgs.length>0&&<button onClick={()=>setChatMsgs([])} style={{fontSize:10,color:C.txd,background:"none",border:"none",cursor:"pointer"}}>초기화</button>}
+          </div>
         </div>
       </div>
-    </div>}
+    </div>})()}
 
     </div>
   </div>)}
