@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS } from "./lib/constants.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg } from "./lib/supabase.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
@@ -55,6 +55,7 @@ export default function App(){
   const[simSlider,setSimSlider]=useState(0); // Phase 3: 투찰 시뮬레이터 사정률 슬라이더
   const[aiAdvice,setAiAdvice]=useState("");const[aiLoading,setAiLoading]=useState(false); // Phase 4-A: AI 어드바이저
   const[batchAi,setBatchAi]=useState({});const[batchAiLoading,setBatchAiLoading]=useState(null);const[expandedBatch,setExpandedBatch]=useState(null); // 일괄 AI
+  const[predSel,setPredSel]=useState({}); // 예측 내역 선택 삭제
   // AI 프롬프트 생성 (공통)
   const buildAiPrompt=(r)=>{
     const p=r.pred;if(!p)return null;
@@ -624,7 +625,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
               {["공고명","발주기관","사정률(100%)","예정가격","투찰금액","투찰율","하한율","개찰일","AI"].map((h,i)=>
                 <th key={i} style={{padding:"6px 4px",textAlign:i>=2?"right":i===8?"center":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:10}}>{h}</th>)}
             </tr></thead>
-            <tbody>{predResults.slice(0,50).map((r,i)=>{
+            <tbody>{[...predResults].sort((a,b)=>{const da=a.open_date||"";const db=b.open_date||"";return db>da?1:db<da?-1:0}).slice(0,50).map((r,i)=>{
               const isExpanded=expandedBatch===i;
               const hasAi=!!batchAi[i];
               const isLoading=batchAiLoading===i;
@@ -998,15 +999,30 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
               <div style={{fontSize:16,fontWeight:600,color:c.c}}>{c.v}</div>
             </div>)}
         </div>
-        <div style={{display:"flex",gap:4,marginBottom:10}}>
+        <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
           <button onClick={()=>setCompFilter("all")} style={btnS(compFilter==="all",C.gold)}>전체 ({compStats.total})</button>
           <button onClick={()=>setCompFilter("matched")} style={btnS(compFilter==="matched","#5dca96")}>매칭 ({compStats.matched})</button>
           <button onClick={()=>setCompFilter("pending")} style={btnS(compFilter==="pending","#e24b4a")}>대기 ({compStats.pending})</button>
+          {Object.values(predSel).some(v=>v)&&<button onClick={async()=>{
+            const ids=Object.keys(predSel).filter(k=>predSel[k]).map(Number);
+            if(!ids.length)return;
+            if(!confirm(`선택한 ${ids.length}건의 예측을 삭제하시겠습니까?`))return;
+            setBusy(true);
+            try{await sbDeletePredictions(ids);const preds=await sbFetchPredictions();setPredictions(preds||[]);
+              const filePreds=(preds||[]).filter(p=>p.source==="file_upload"&&p.pred_adj_rate!=null);
+              setPredResults(filePreds.map(p=>({pn:p.pn,pn_no:p.pn_no,ag:p.ag,at:p.at,ba:p.ba?Number(p.ba):null,ep:p.ep?Number(p.ep):null,av:p.av?Number(p.av):0,raw_cost:p.raw_cost,cat:p.cat,open_date:p.open_date,dedup_key:p.dedup_key,
+                pred:{adj:Number(p.pred_adj_rate),xp:Number(p.pred_expected_price),fr:Number(p.pred_floor_rate),bid:Number(p.pred_bid_amount),src:p.pred_source||"",baseAdj:Number(p.pred_base_adj||0),ci70:null,ci90:null,scenarios:[],bidRateRec:{avg:0,med:0,q1:0,q3:0,std:0},bidByRate:0,adjAvg:0,adjStd:0,biasAdj:0,driftUsed:0,detailInsight:null}})));
+              setPredSel({});setMsg({type:"ok",text:`${ids.length}건 삭제 완료`})}
+            catch(e){setMsg({type:"err",text:"삭제 실패: "+e.message})}finally{setBusy(false)}
+          }} style={{padding:"4px 12px",fontSize:11,background:"rgba(226,75,74,0.1)",border:"1px solid rgba(226,75,74,0.3)",borderRadius:5,color:"#e24b4a",cursor:"pointer",fontWeight:500,marginLeft:"auto"}}>
+            선택 삭제 ({Object.values(predSel).filter(v=>v).length}건)
+          </button>}
         </div>
         {compList.length>0?<div style={{overflow:"auto",maxHeight:500}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"18%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"7%"}}/><col style={{width:"5%"}}/></colgroup>
+            <colgroup><col style={{width:"3%"}}/><col style={{width:"17%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"7%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"7%"}}/><col style={{width:"5%"}}/></colgroup>
             <thead><tr style={{background:C.bg3}}>
+              <th style={{padding:"4px"}}><input type="checkbox" checked={compList.length>0&&compList.every(p=>predSel[p.id])} onChange={e=>{const v=e.target.checked;const s={};compList.forEach(p=>{s[p.id]=v});setPredSel(s)}}/></th>
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="예측사정률" sortKey="pred_adj_rate" current={predSort} setCurrent={setPredSort} align="right"/>
@@ -1024,7 +1040,8 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
               const errColor=p.adj_rate_error!=null?(Math.abs(p.adj_rate_error)<0.3?"#5dca96":Math.abs(p.adj_rate_error)<1?"#d4a834":"#e24b4a"):C.txd;
               const predBidRate=(p.pred_bid_amount&&p.pred_expected_price&&p.pred_expected_price>0)?Number(p.pred_bid_amount)/Number(p.pred_expected_price)*100:null;
               const actBidRate=(p.actual_bid_amount&&p.actual_expected_price&&p.actual_expected_price>0)?Number(p.actual_bid_amount)/Number(p.actual_expected_price)*100:null;
-              return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr}}>
+              return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr,background:predSel[p.id]?"rgba(226,75,74,0.04)":"transparent"}}>
+                <td style={{padding:"4px",textAlign:"center"}}><input type="checkbox" checked={!!predSel[p.id]} onChange={e=>setPredSel(s=>({...s,[p.id]:e.target.checked}))}/></td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"6px",textAlign:"right",color:"#5dca96"}}>{p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
