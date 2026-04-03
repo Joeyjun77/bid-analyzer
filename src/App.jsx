@@ -737,6 +737,63 @@ export default function App(){
         </table>
       </div>
 
+      {/* ★ D-2: 전략 참조 대시보드 */}
+      {(()=>{
+        const st=atF!=="all"&&curSt.ts[atF]?curSt.ts[atF]:null;
+        const vals=st?st.vals:Object.values(curSt.ts||{}).flatMap(v=>v.vals);
+        if(!vals||vals.length<20)return null;
+        // 소수점 1자리 구간 분포
+        const bins={};vals.forEach(v=>{const b=(Math.floor(v*10)/10).toFixed(1);bins[b]=(bins[b]||0)+1});
+        const sortedBins=Object.entries(bins).sort((a,b)=>parseFloat(a[0])-parseFloat(b[0]));
+        const maxCnt=Math.max(...sortedBins.map(b=>b[1]));
+        // 핵심 구간만 (-1.5 ~ +1.5)
+        const coreBins=sortedBins.filter(([k])=>{const v=parseFloat(k);return v>=-1.5&&v<=1.4});
+        // 누적 확률 (사정률 X 이상일 확률 = 예정가격 이하 확률)
+        const total=vals.length;const sorted=[...vals].sort((a,b)=>a-b);
+        const cumBelow=(x)=>Math.round(sorted.filter(v=>v>=x).length/total*1000)/10;
+        // TIP 자동 생성
+        const med=st?st.med:sorted[Math.floor(sorted.length/2)];
+        const std=st?st.std:0.7;
+        const typeName=atF!=="all"?atF:"전체";
+        const negPct=Math.round(vals.filter(v=>v<0).length/total*100);
+        const tip=negPct>55?`${typeName} 사정률은 ${negPct}%가 음수입니다. 기초금액보다 낮은 예정가격이 형성될 가능성이 높으므로, 안전 전략(-0.3% 이하)을 권장합니다.`
+          :negPct<45?`${typeName} 사정률은 양수 비율이 ${100-negPct}%로, 예정가격이 기초금액보다 높게 형성되는 경향이 있습니다. 균형~공격 전략이 유리합니다.`
+          :`${typeName} 사정률은 음수/양수 비율이 거의 균등(${negPct}/${100-negPct})합니다. 중앙값 ${(100+med).toFixed(4)}% 기준으로 밴드 전략을 권장합니다.`;
+        return<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"hidden",marginBottom:14}}>
+          <div style={{padding:"8px 14px",fontSize:12,fontWeight:600,color:"#a8b4ff",borderBottom:"1px solid "+C.bdr}}>
+            전략 참조 — {typeName} ({vals.length.toLocaleString()}건)
+          </div>
+          {/* 히스토그램 */}
+          <div style={{padding:"10px 14px"}}>
+            <div style={{display:"flex",alignItems:"flex-end",gap:1,height:80,marginBottom:4}}>
+              {coreBins.map(([k,cnt])=>{const h=Math.max(2,cnt/maxCnt*80);const neg=parseFloat(k)<0;
+                return<div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%"}}>
+                  <div style={{width:"100%",height:h,background:neg?"rgba(226,75,74,0.4)":"rgba(93,202,165,0.4)",borderRadius:"2px 2px 0 0",minWidth:2}}/>
+                </div>})}
+            </div>
+            <div style={{display:"flex",gap:1}}>
+              {coreBins.map(([k])=><div key={k} style={{flex:1,textAlign:"center",fontSize:8,color:C.txd}}>{parseFloat(k)===0?"0":parseFloat(k)%0.5===0?k:""}</div>)}
+            </div>
+          </div>
+          {/* 확률 테이블 */}
+          <div style={{padding:"0 14px 10px",overflow:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+              <thead><tr style={{background:C.bg3}}>
+                <th style={{padding:"5px 6px",textAlign:"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:10}}>투찰 사정률</th>
+                {["-0.5%","-0.3%","-0.1%","0.0%","+0.1%","+0.3%","+0.5%"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:10}}>{h}</th>)}
+              </tr></thead>
+              <tbody><tr>
+                <td style={{padding:"5px 6px",fontWeight:500}}>예정가 이하 확률</td>
+                {[-0.5,-0.3,-0.1,0,0.1,0.3,0.5].map(x=>{const p=cumBelow(x);return<td key={x} style={{padding:"5px 6px",textAlign:"center",fontWeight:500,color:p>=60?"#5dca96":p>=40?"#d4a834":"#e24b4a"}}>{p}%</td>})}
+              </tr></tbody>
+            </table>
+          </div>
+          {/* TIP */}
+          <div style={{padding:"8px 14px",borderTop:"1px solid "+C.bdr,fontSize:11,color:"#a8b4ff",background:"rgba(168,180,255,0.04)",lineHeight:1.5}}>
+            TIP: {tip}
+          </div>
+        </div>})()}
+
       {/* 낙찰 데이터 목록 */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <span style={{fontSize:12,fontWeight:600,color:C.gold}}>낙찰 데이터 ({filteredRecs.length.toLocaleString()}건)</span>
