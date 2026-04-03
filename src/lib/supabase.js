@@ -52,6 +52,9 @@ export async function sbMatchPredictions(predictions,records){
   }
   return updates.length}
 
+// ─── bid_predictions 삭제 ──────────────────────────────────
+export async function sbDeletePredictions(ids){const BATCH=50;for(let i=0;i<ids.length;i+=BATCH){await fetch(SB_URL+"/rest/v1/bid_predictions?id=in.("+ids.slice(i,i+BATCH).join(",")+")",{method:"DELETE",headers:hdrs})}}
+
 // ─── bid_details CRUD ────────────────────────────────────
 export async function sbSaveDetail(detail){
   const body=sanitizeJson(JSON.stringify(detail));
