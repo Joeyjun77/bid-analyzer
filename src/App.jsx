@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
-import { C, PAGE, inpS } from "./lib/constants.js";
+import { C, PAGE, inpS, SB_URL, hdrs } from "./lib/constants.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson } from "./lib/utils.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg } from "./lib/supabase.js";
 
@@ -117,8 +117,8 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
 2. 추천 투찰 전략 (보수/균형/공격 중)과 그 이유
 3. 투찰 시 유의사항 한 가지`};
   const callAi=async(prompt)=>{
-    const res=await fetch("/api/ai",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:500,messages:[{role:"user",content:prompt}]})});
+    const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({systemBase:buildChatSystem(),messages:[{role:"user",content:prompt}]})});
     if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||err.error||`API ${res.status}`)}
     const data=await res.json();return data.content?.map(c=>c.text||"").join("")||"응답 없음"};
 
@@ -293,6 +293,35 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     const summary=fileList.length===1?logs[0]?.ok?`${totalResults.length}건 예측 완료 · DB 저장`:logs[0]?.msg
       :`${fileList.length}개 파일 처리: 성공 ${successCount} · 실패 ${failCount} · 총 ${totalResults.length}건 예측`;
     setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails]);
+
+  // ★ 마크다운 → HTML 변환 (공통)
+  const md2html=(text)=>{if(!text)return"";
+    const tables=[];
+    let result=text.replace(/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)+)/gm,(match,hdr,sep,body)=>{
+      const hs=hdr.split("|").filter(c=>c.trim()).map(c=>c.trim());
+      const rs=body.trim().split("\n").map(l=>l.split("|").filter(c=>c.trim()).map(c=>c.trim()));
+      let h=`<table style="width:100%;border-collapse:collapse;font-size:12px;margin:8px 0"><thead><tr>`;
+      hs.forEach(c=>{h+=`<th style="padding:6px 8px;text-align:left;border-bottom:1px solid ${C.bdr};color:${C.txm};font-weight:500">${c}</th>`});
+      h+=`</tr></thead><tbody>`;
+      rs.forEach(r=>{h+=`<tr style="border-bottom:1px solid ${C.bdr}22">`;r.forEach(c=>{h+=`<td style="padding:4px 8px;color:${C.txt}">${c}</td>`});h+=`</tr>`});
+      h+=`</tbody></table>`;tables.push(h);return`__TBL${tables.length-1}__`});
+    result=result.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    result=result
+      .replace(/^### (.+)$/gm,`<div style="font-size:14px;font-weight:600;color:${C.gold};margin:12px 0 6px">$1</div>`)
+      .replace(/^## (.+)$/gm,`<div style="font-size:15px;font-weight:600;color:${C.gold};margin:14px 0 8px">$1</div>`)
+      .replace(/^# (.+)$/gm,`<div style="font-size:16px;font-weight:600;color:${C.gold};margin:16px 0 8px">$1</div>`)
+      .replace(/\*\*(.+?)\*\*/g,`<span style="font-weight:600;color:${C.txt}">$1</span>`)
+      .replace(/\*(.+?)\*/g,"<em>$1</em>")
+      .replace(/`(.+?)`/g,`<code style="background:${C.bg3};padding:1px 5px;border-radius:3px;font-size:12px;font-family:monospace">$1</code>`)
+      .replace(/^- (.+)$/gm,`<div style="padding:2px 0 2px 16px;position:relative"><span style="position:absolute;left:0;color:${C.txd}">·</span>$1</div>`)
+      .replace(/^(\d+)\. (.+)$/gm,`<div style="padding:2px 0 2px 20px;position:relative"><span style="position:absolute;left:0;color:${C.gold};font-weight:500">$1.</span>$2</div>`)
+      .replace(/^■ (.+)$/gm,`<div style="font-weight:600;color:#a8b4ff;margin:10px 0 4px">■ $1</div>`)
+      .replace(/^→ (.+)$/gm,`<div style="padding-left:14px;color:#5dca96">→ $1</div>`)
+      .replace(/^---$/gm,`<hr style="border:none;border-top:1px solid ${C.bdr};margin:12px 0"/>`)
+      .replace(/\n{2,}/g,'<div style="height:8px"></div>')
+      .replace(/\n/g,"<br/>");
+    tables.forEach((t,i)=>{result=result.replace(`__TBL${i}__`,t)});
+    return result};
 
   // 수동 예측 (DB 저장 안 함 — 시뮬레이션 전용)
   const doManualPred=useCallback(()=>{
@@ -724,13 +753,16 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
                 try{const prompt=buildAiPrompt({pn:d.pn,ag:d.ag,at:d.at,ba:ba,ep:ep,av:av,
                   pred:{adj:pa,xp:pxp,fr:Number(d.pred_floor_rate),bid:pb,src:d.pred_source||"",ci70:null,ci90:null}});
                   if(!prompt)throw new Error("데이터 없음");
-                  const text=await callAi(prompt);setDetailAi(text)}
+                  const text=await callAi(prompt);setDetailAi(text);
+                  // DB에 AI 분석 결과 저장
+                  if(d.id){try{await fetch(`${SB_URL}/rest/v1/bid_predictions?id=eq.${d.id}`,{method:"PATCH",headers:{...hdrs,"Prefer":"return=minimal"},body:JSON.stringify({ai_advice:text})});
+                    setPredictions(prev=>prev.map(p=>p.id===d.id?{...p,ai_advice:text}:p))}catch(e){}}}
                 catch(e){setDetailAi("⚠ "+e.message)}finally{setDetailAiLoading(false)}
               }} style={{padding:"4px 12px",fontSize:11,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.3)",borderRadius:5,color:"#a8b4ff",cursor:detailAiLoading?"default":"pointer"}}>
                 {detailAiLoading?"분석 중...":"전략 분석 요청"}
               </button>}
             </div>
-            {detailAi?<div style={{padding:"10px 12px",background:C.bg3,borderRadius:6,fontSize:13,lineHeight:1.8,color:C.txt,whiteSpace:"pre-wrap"}}>{detailAi}</div>
+            {detailAi?<div style={{padding:"10px 12px",background:C.bg3,borderRadius:6,fontSize:13,lineHeight:1.8,color:C.txt}} dangerouslySetInnerHTML={{__html:md2html(detailAi)}}/>
               :<div style={{fontSize:11,color:C.txd}}>전략 분석 요청 버튼을 클릭하면 AI가 이 입찰건의 맞춤 전략을 제안합니다</div>}
           </div>
         </div>
@@ -848,7 +880,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
                 <td style={{padding:"6px",textAlign:"right",color:"#85b7eb",fontFamily:"monospace",fontSize:11}}>{predBR!=null?predBR.toFixed(3)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span></td>
-                <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>{setDetailModal(p);setDetailAi("");setDetailAiLoading(false)}} style={{padding:"2px 8px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.25)",borderRadius:4,color:"#a8b4ff",cursor:"pointer"}}>상세</button></td>
+                <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>{setDetailModal(p);setDetailAi(p.ai_advice||"");setDetailAiLoading(false)}} style={{padding:"2px 8px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.25)",borderRadius:4,color:"#a8b4ff",cursor:"pointer"}}>상세</button></td>
               </tr>})}</tbody>
           </table>
         </div>:<div style={{textAlign:"center",padding:30,color:C.txd,fontSize:12}}>예측 내역이 없습니다. 입찰서류함을 업로드해주세요.</div>}
@@ -857,33 +889,6 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
 
     {/* ═══ AI 상담 탭 ═══ */}
     {tab==="chat"&&(()=>{
-      const md2html=(text)=>{if(!text)return"";
-        const tables=[];
-        let result=text.replace(/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)+)/gm,(match,hdr,sep,body)=>{
-          const hs=hdr.split("|").filter(c=>c.trim()).map(c=>c.trim());
-          const rs=body.trim().split("\n").map(l=>l.split("|").filter(c=>c.trim()).map(c=>c.trim()));
-          let h=`<table style="width:100%;border-collapse:collapse;font-size:12px;margin:8px 0"><thead><tr>`;
-          hs.forEach(c=>{h+=`<th style="padding:6px 8px;text-align:left;border-bottom:1px solid ${C.bdr};color:${C.txm};font-weight:500">${c}</th>`});
-          h+=`</tr></thead><tbody>`;
-          rs.forEach(r=>{h+=`<tr style="border-bottom:1px solid ${C.bdr}22">`;r.forEach(c=>{h+=`<td style="padding:4px 8px;color:${C.txt}">${c}</td>`});h+=`</tr>`});
-          h+=`</tbody></table>`;tables.push(h);return`__TBL${tables.length-1}__`});
-        result=result.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-        result=result
-          .replace(/^### (.+)$/gm,`<div style="font-size:14px;font-weight:600;color:${C.gold};margin:12px 0 6px">$1</div>`)
-          .replace(/^## (.+)$/gm,`<div style="font-size:15px;font-weight:600;color:${C.gold};margin:14px 0 8px">$1</div>`)
-          .replace(/^# (.+)$/gm,`<div style="font-size:16px;font-weight:600;color:${C.gold};margin:16px 0 8px">$1</div>`)
-          .replace(/\*\*(.+?)\*\*/g,`<span style="font-weight:600;color:${C.txt}">$1</span>`)
-          .replace(/\*(.+?)\*/g,"<em>$1</em>")
-          .replace(/`(.+?)`/g,`<code style="background:${C.bg3};padding:1px 5px;border-radius:3px;font-size:12px;font-family:monospace">$1</code>`)
-          .replace(/^- (.+)$/gm,`<div style="padding:2px 0 2px 16px;position:relative"><span style="position:absolute;left:0;color:${C.txd}">·</span>$1</div>`)
-          .replace(/^(\d+)\. (.+)$/gm,`<div style="padding:2px 0 2px 20px;position:relative"><span style="position:absolute;left:0;color:${C.gold};font-weight:500">$1.</span>$2</div>`)
-          .replace(/^■ (.+)$/gm,`<div style="font-weight:600;color:#a8b4ff;margin:10px 0 4px">■ $1</div>`)
-          .replace(/^→ (.+)$/gm,`<div style="padding-left:14px;color:#5dca96">→ $1</div>`)
-          .replace(/^---$/gm,`<hr style="border:none;border-top:1px solid ${C.bdr};margin:12px 0"/>`)
-          .replace(/\n{2,}/g,'<div style="height:8px"></div>')
-          .replace(/\n/g,"<br/>");
-        tables.forEach((t,i)=>{result=result.replace(`__TBL${i}__`,t)});
-        return result};
       const downloadChat=()=>{
         const now=new Date().toISOString().slice(0,16).replace("T"," ");
         let md=`# 입찰 분석 AI 상담 기록\n> ${now}\n\n---\n\n`;
