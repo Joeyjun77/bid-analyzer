@@ -139,7 +139,14 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
 - 입찰 전략과 관련된 질문에는 구체적 수치와 근거를 제시
 - 추정가격/기초금액/A값 등 용어는 정확하게 사용
 - 모르는 정보는 솔직히 모른다고 답변
-- 답변은 간결하게, 핵심 위주로`};
+- 답변은 간결하게, 핵심 위주로
+
+■ 응답 포맷
+- 마크다운 형식으로 답변 (제목, 볼드, 리스트 활용)
+- 데이터가 여러 건일 때는 마크다운 테이블 사용 (| 헤더1 | 헤더2 | 형식)
+- 숫자 데이터는 반드시 기관명, 날짜 등 컨텍스트와 함께 제시
+- 사정률은 소수점 4자리, 금액은 원 단위로 표시
+- 핵심 결론을 먼저 제시하고, 근거 데이터를 뒤에 배치`};
 
   const sendChat=async()=>{
     const text=chatInput.trim();if(!text||chatLoading)return;
@@ -828,31 +835,36 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     {tab==="chat"&&(()=>{
       // 마크다운 → HTML 간이 변환
       const md2html=(text)=>{if(!text)return"";
-        // 마크다운 테이블 변환
-        let result=text;
-        result=result.replace(/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)+)/gm,(match,headerLine,sepLine,bodyLines)=>{
-          const headers=headerLine.split("|").filter(c=>c.trim()).map(c=>c.trim());
-          const rows=bodyLines.trim().split("\n").map(line=>line.split("|").filter(c=>c.trim()).map(c=>c.trim()));
-          let html=`<table style="width:100%;border-collapse:collapse;font-size:12px;margin:8px 0"><thead><tr>`;
-          headers.forEach(h=>{html+=`<th style="padding:5px 8px;text-align:left;border-bottom:1px solid ${C.bdr};color:${C.txm};font-weight:500">${h}</th>`});
-          html+=`</tr></thead><tbody>`;
-          rows.forEach(r=>{html+=`<tr style="border-bottom:1px solid ${C.bdr}22">`;r.forEach(c=>{html+=`<td style="padding:4px 8px;color:${C.txt}">${c}</td>`});html+=`</tr>`});
-          html+=`</tbody></table>`;return html});
-        return result
-          .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-          .replace(/&lt;table/g,"<table").replace(/&lt;\/table&gt;/g,"</table>").replace(/&lt;thead/g,"<thead").replace(/&lt;\/thead&gt;/g,"</thead>").replace(/&lt;tbody/g,"<tbody").replace(/&lt;\/tbody&gt;/g,"</tbody>").replace(/&lt;tr/g,"<tr").replace(/&lt;\/tr&gt;/g,"</tr>").replace(/&lt;th/g,"<th").replace(/&lt;\/th&gt;/g,"</th>").replace(/&lt;td/g,"<td").replace(/&lt;\/td&gt;/g,"</td>")
-          .replace(/^### (.+)$/gm,'<div style="font-size:14px;font-weight:600;color:'+C.gold+';margin:12px 0 6px">$1</div>')
-          .replace(/^## (.+)$/gm,'<div style="font-size:15px;font-weight:600;color:'+C.gold+';margin:14px 0 8px">$1</div>')
-          .replace(/^# (.+)$/gm,'<div style="font-size:16px;font-weight:600;color:'+C.gold+';margin:16px 0 8px">$1</div>')
-          .replace(/\*\*(.+?)\*\*/g,'<span style="font-weight:600;color:'+C.txt+'">$1</span>')
-          .replace(/\*(.+?)\*/g,'<em>$1</em>')
-          .replace(/`(.+?)`/g,'<code style="background:'+C.bg3+';padding:1px 5px;border-radius:3px;font-size:12px;font-family:monospace">$1</code>')
-          .replace(/^- (.+)$/gm,'<div style="padding:2px 0 2px 12px;position:relative"><span style="position:absolute;left:0;color:'+C.txd+'">·</span>$1</div>')
-          .replace(/^(\d+)\. (.+)$/gm,'<div style="padding:2px 0 2px 18px;position:relative"><span style="position:absolute;left:0;color:'+C.gold+';font-weight:500">$1.</span>$2</div>')
-          .replace(/^■ (.+)$/gm,'<div style="font-weight:600;color:#a8b4ff;margin:10px 0 4px">■ $1</div>')
-          .replace(/^→ (.+)$/gm,'<div style="padding-left:12px;color:#5dca96">→ $1</div>')
+        // 1) 테이블을 먼저 추출하여 플레이스홀더로 교체
+        const tables=[];
+        let result=text.replace(/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)+)/gm,(match,hdr,sep,body)=>{
+          const hs=hdr.split("|").filter(c=>c.trim()).map(c=>c.trim());
+          const rs=body.trim().split("\n").map(l=>l.split("|").filter(c=>c.trim()).map(c=>c.trim()));
+          let h=`<table style="width:100%;border-collapse:collapse;font-size:12px;margin:8px 0"><thead><tr>`;
+          hs.forEach(c=>{h+=`<th style="padding:6px 8px;text-align:left;border-bottom:1px solid ${C.bdr};color:${C.txm};font-weight:500">${c}</th>`});
+          h+=`</tr></thead><tbody>`;
+          rs.forEach(r=>{h+=`<tr style="border-bottom:1px solid ${C.bdr}22">`;r.forEach(c=>{h+=`<td style="padding:4px 8px;color:${C.txt}">${c}</td>`});h+=`</tr>`});
+          h+=`</tbody></table>`;tables.push(h);return`__TBL${tables.length-1}__`});
+        // 2) HTML 이스케이프
+        result=result.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+        // 3) 마크다운 → HTML
+        result=result
+          .replace(/^### (.+)$/gm,`<div style="font-size:14px;font-weight:600;color:${C.gold};margin:12px 0 6px">$1</div>`)
+          .replace(/^## (.+)$/gm,`<div style="font-size:15px;font-weight:600;color:${C.gold};margin:14px 0 8px">$1</div>`)
+          .replace(/^# (.+)$/gm,`<div style="font-size:16px;font-weight:600;color:${C.gold};margin:16px 0 8px">$1</div>`)
+          .replace(/\*\*(.+?)\*\*/g,`<span style="font-weight:600;color:${C.txt}">$1</span>`)
+          .replace(/\*(.+?)\*/g,"<em>$1</em>")
+          .replace(/`(.+?)`/g,`<code style="background:${C.bg3};padding:1px 5px;border-radius:3px;font-size:12px;font-family:monospace">$1</code>`)
+          .replace(/^- (.+)$/gm,`<div style="padding:2px 0 2px 16px;position:relative"><span style="position:absolute;left:0;color:${C.txd}">·</span>$1</div>`)
+          .replace(/^(\d+)\. (.+)$/gm,`<div style="padding:2px 0 2px 20px;position:relative"><span style="position:absolute;left:0;color:${C.gold};font-weight:500">$1.</span>$2</div>`)
+          .replace(/^■ (.+)$/gm,`<div style="font-weight:600;color:#a8b4ff;margin:10px 0 4px">■ $1</div>`)
+          .replace(/^→ (.+)$/gm,`<div style="padding-left:14px;color:#5dca96">→ $1</div>`)
+          .replace(/^---$/gm,`<hr style="border:none;border-top:1px solid ${C.bdr};margin:12px 0"/>`)
           .replace(/\n{2,}/g,'<div style="height:8px"></div>')
-          .replace(/\n/g,"<br/>")};
+          .replace(/\n/g,"<br/>");
+        // 4) 테이블 플레이스홀더 복원
+        tables.forEach((t,i)=>{result=result.replace(`__TBL${i}__`,t)});
+        return result};
       // 문서 다운로드
       const downloadChat=()=>{
         const now=new Date().toISOString().slice(0,16).replace("T"," ");
