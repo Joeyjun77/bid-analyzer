@@ -147,10 +147,9 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     const newMsgs=[...chatMsgs,userMsg];
     setChatMsgs(newMsgs);setChatInput("");setChatLoading(true);
     try{
-      const res=await fetch("/api/ai",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-opus-4-6",max_tokens:2000,system:buildChatSystem(),
-          messages:newMsgs.slice(-20)})});
-      if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||`API ${res.status}`)}
+      const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({systemBase:buildChatSystem(),messages:newMsgs.slice(-20)})});
+      if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||err.error||`API ${res.status}`)}
       const data=await res.json();
       const reply=data.content?.map(c=>c.text||"").join("")||"응답을 받지 못했습니다.";
       setChatMsgs(prev=>[...prev,{role:"assistant",content:reply}])}
@@ -829,8 +828,19 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     {tab==="chat"&&(()=>{
       // 마크다운 → HTML 간이 변환
       const md2html=(text)=>{if(!text)return"";
-        return text
+        // 마크다운 테이블 변환
+        let result=text;
+        result=result.replace(/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)+)/gm,(match,headerLine,sepLine,bodyLines)=>{
+          const headers=headerLine.split("|").filter(c=>c.trim()).map(c=>c.trim());
+          const rows=bodyLines.trim().split("\n").map(line=>line.split("|").filter(c=>c.trim()).map(c=>c.trim()));
+          let html=`<table style="width:100%;border-collapse:collapse;font-size:12px;margin:8px 0"><thead><tr>`;
+          headers.forEach(h=>{html+=`<th style="padding:5px 8px;text-align:left;border-bottom:1px solid ${C.bdr};color:${C.txm};font-weight:500">${h}</th>`});
+          html+=`</tr></thead><tbody>`;
+          rows.forEach(r=>{html+=`<tr style="border-bottom:1px solid ${C.bdr}22">`;r.forEach(c=>{html+=`<td style="padding:4px 8px;color:${C.txt}">${c}</td>`});html+=`</tr>`});
+          html+=`</tbody></table>`;return html});
+        return result
           .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+          .replace(/&lt;table/g,"<table").replace(/&lt;\/table&gt;/g,"</table>").replace(/&lt;thead/g,"<thead").replace(/&lt;\/thead&gt;/g,"</thead>").replace(/&lt;tbody/g,"<tbody").replace(/&lt;\/tbody&gt;/g,"</tbody>").replace(/&lt;tr/g,"<tr").replace(/&lt;\/tr&gt;/g,"</tr>").replace(/&lt;th/g,"<th").replace(/&lt;\/th&gt;/g,"</th>").replace(/&lt;td/g,"<td").replace(/&lt;\/td&gt;/g,"</td>")
           .replace(/^### (.+)$/gm,'<div style="font-size:14px;font-weight:600;color:'+C.gold+';margin:12px 0 6px">$1</div>')
           .replace(/^## (.+)$/gm,'<div style="font-size:15px;font-weight:600;color:'+C.gold+';margin:14px 0 8px">$1</div>')
           .replace(/^# (.+)$/gm,'<div style="font-size:16px;font-weight:600;color:'+C.gold+';margin:16px 0 8px">$1</div>')
@@ -865,12 +875,12 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
             {recs.length.toLocaleString()}건의 낙찰 데이터와 예측 모델 기반으로 답변합니다.
           </div>
           <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
-            {["경기도 고양시 전기공사 3억 미만 투찰 전략은?",
-              "교육청과 지자체의 사정률 차이는?",
-              "낙찰하한율 89.745%에서 최적 마진은?",
-              "복수예비가격 메커니즘을 설명해줘",
+            {["경기도 고양시 최근 낙찰 패턴과 투찰 전략은?",
+              "교육청 vs 지자체 사정률 비교 분석해줘",
+              "현재 예측 모델의 MAE와 기관별 정확도는?",
+              "낙찰하한율 89.745%에서 최적 투찰 마진은?",
               "적격심사에서 입찰가격점수 85점 받으려면?",
-              "MAE 0.6%를 낮추려면 어떤 데이터가 더 필요해?"
+              "최근 낙찰 동향과 사정률 추이를 알려줘"
             ].map((q,i)=><button key={i} onClick={()=>{setChatInput(q);setTimeout(()=>{const el=document.getElementById("chat-send");if(el)el.click()},50)}}
               style={{padding:"6px 12px",fontSize:11,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:6,color:C.txm,cursor:"pointer",textAlign:"left",maxWidth:280}}>
               {q}
