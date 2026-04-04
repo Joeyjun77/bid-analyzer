@@ -95,20 +95,15 @@ async function queryDB(msg, sbKey) {
           const avg = adjs.reduce((a, b) => a + b, 0) / adjs.length;
           const std = Math.sqrt(adjs.reduce((a, b) => a + (b - avg) ** 2, 0) / adjs.length);
 
-          // 전체 건수 조회
-          const countRes = await sbQuery(
-            `bid_records?ag=eq.${encodeURIComponent(ag)}&br1=gte.95&br1=lte.105&select=id&limit=1`,
-            sbKey
-          ).catch(() => []);
-          
-          // HEAD로 count를 가져올 수 없으므로 대략적으로
-          parts.push(`[${ag}] 최근 ${records.length}건 사정률: 평균 ${avg.toFixed(4)}%, std ${std.toFixed(4)}%`);
+          parts.push(`\n[${ag}] 최근 ${records.length}건 분석: 평균 사정률 ${avg.toFixed(4)}%, 표준편차 ${std.toFixed(4)}%`);
           
           const recent5 = records.slice(0, 5);
-          parts.push(`최근 낙찰 건:`);
+          parts.push(`\n최근 낙찰 건:`);
+          parts.push(`| 개찰일 | 공고명 | 사정률 | 참여 | 1순위 |`);
+          parts.push(`|--------|--------|--------|------|-------|`);
           recent5.forEach(r => {
             const adj = Math.round((r.br1 - 100) * 10000) / 10000;
-            parts.push(`  · ${r.od} | ${(r.pn || "").slice(0, 30)} | 사정률 ${adj}% | ${r.pc}개사 | 1순위: ${r.co || "—"}`);
+            parts.push(`| ${r.od} | ${(r.pn || "").slice(0, 25)} | ${adj>0?"+":""}${adj}% | ${r.pc}개사 | ${(r.co || "—").slice(0,12)} |`);
           });
         }
       }
@@ -131,11 +126,13 @@ async function queryDB(msg, sbKey) {
         if (!byType[r.at]) byType[r.at] = [];
         byType[r.at].push(r.br1 - 100);
       });
-      parts.push(`\n기관유형별 사정률 (최근 5,000건 기준):`);
+      parts.push(`\n기관유형별 사정률 비교 (최근 5,000건 기준):`);
+      parts.push(`| 기관유형 | 건수 | 평균 사정률 | 표준편차 |`);
+      parts.push(`|---------|------|-----------|---------|`);
       for (const [t, vals] of Object.entries(byType).sort((a, b) => b[1].length - a[1].length)) {
         const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
         const std = Math.sqrt(vals.reduce((a, b) => a + (b - avg) ** 2, 0) / vals.length);
-        parts.push(`  ${t}: ${vals.length}건, 평균 ${avg.toFixed(4)}%, std ${std.toFixed(4)}%`);
+        parts.push(`| ${t} | ${vals.length} | ${avg.toFixed(4)}% | ${std.toFixed(4)}% |`);
       }
     }
   }
@@ -180,15 +177,29 @@ async function queryDB(msg, sbKey) {
   // 패턴 4: 최근/추이 관련
   if (/최근|추이|트렌드|변화|동향/.test(msg) && !agKeyword) {
     const recent = await sbQuery(
-      `bid_records?br1=gte.95&br1=lte.105&select=at,od,br1,ag,pc&order=od.desc&limit=30`,
+      `bid_records?br1=gte.95&br1=lte.105&select=at,od,br1,ag,pc,pn,co&order=od.desc&limit=30`,
       sbKey
     );
     if (recent.length > 0) {
-      parts.push(`\n최근 낙찰 동향 (최신 30건):`);
+      parts.push(`\n최근 낙찰 동향 (최신 ${Math.min(recent.length, 10)}건):`);
+      parts.push(`| 개찰일 | 기관유형 | 발주기관 | 사정률 | 참여업체 | 1순위 |`);
+      parts.push(`|--------|---------|---------|--------|---------|-------|`);
       recent.slice(0, 10).forEach(r => {
         const adj = Math.round((r.br1 - 100) * 10000) / 10000;
-        parts.push(`  · ${r.od} | ${r.at} | ${r.ag} | 사정률 ${adj}% | ${r.pc}개사`);
+        parts.push(`| ${r.od} | ${r.at} | ${(r.ag||"").slice(0,15)} | ${adj>0?"+":""}${adj}% | ${r.pc}개사 | ${(r.co||"—").slice(0,10)} |`);
       });
+
+      // 기관유형별 요약 추가
+      const byType = {};
+      recent.forEach(r => {
+        if (!byType[r.at]) byType[r.at] = { count: 0, sum: 0 };
+        byType[r.at].count++;
+        byType[r.at].sum += r.br1 - 100;
+      });
+      parts.push(`\n기관유형별 최근 30건 요약:`);
+      for (const [t, v] of Object.entries(byType).sort((a, b) => b[1].count - a[1].count)) {
+        parts.push(`  ${t}: ${v.count}건, 평균 사정률 ${(v.sum / v.count).toFixed(4)}%`);
+      }
     }
   }
 
