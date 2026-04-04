@@ -59,9 +59,26 @@ export default function App(){
   const[detailModal,setDetailModal]=useState(null); // 상세 모달 (prediction 객체)
   const[detailAi,setDetailAi]=useState("");const[detailAiLoading,setDetailAiLoading]=useState(false); // 모달 AI
   const[showSim,setShowSim]=useState(false); // 수동 시뮬레이션 토글
-  // ★ AI 챗봇
-  const[chatMsgs,setChatMsgs]=useState([]);const[chatInput,setChatInput]=useState("");const[chatLoading,setChatLoading]=useState(false);
-  const chatRef=useCallback(node=>{if(node)node.scrollTop=node.scrollHeight},[chatMsgs]);
+  // ★ AI 챗봇 (localStorage 세션 관리)
+  const[chatSessions,setChatSessions]=useState(()=>{try{return JSON.parse(localStorage.getItem("bid_chat_sessions")||"[]")}catch(e){return[]}});
+  const[chatSid,setChatSid]=useState(()=>localStorage.getItem("bid_chat_active")||"");
+  const[chatMsgs,setChatMsgs]=useState(()=>{if(!chatSid)return[];try{return JSON.parse(localStorage.getItem("bid_chat_msg_"+chatSid)||"[]")}catch(e){return[]}});
+  const[chatInput,setChatInput]=useState("");const[chatLoading,setChatLoading]=useState(false);
+  const[chatSideOpen,setChatSideOpen]=useState(true);
+  const chatRef=useCallback(node=>{if(node)setTimeout(()=>{node.scrollTop=node.scrollHeight},50)},[chatMsgs]);
+  // 세션 저장 헬퍼
+  const saveSessions=(sessions)=>{setChatSessions(sessions);try{localStorage.setItem("bid_chat_sessions",JSON.stringify(sessions))}catch(e){}};
+  const saveMsgs=(sid,msgs)=>{setChatMsgs(msgs);try{localStorage.setItem("bid_chat_msg_"+sid,JSON.stringify(msgs));localStorage.setItem("bid_chat_active",sid)}catch(e){}};
+  // 새 대화 시작
+  const newChat=()=>{const id="c_"+Date.now();const s={id,title:"새 대화",created:new Date().toISOString().slice(0,16)};
+    const next=[s,...chatSessions];saveSessions(next);setChatSid(id);saveMsgs(id,[]);localStorage.setItem("bid_chat_active",id)};
+  // 대화 선택
+  const selectChat=(id)=>{setChatSid(id);localStorage.setItem("bid_chat_active",id);
+    try{setChatMsgs(JSON.parse(localStorage.getItem("bid_chat_msg_"+id)||"[]"))}catch(e){setChatMsgs([])}};
+  // 대화 삭제
+  const deleteChat=(id)=>{const next=chatSessions.filter(s=>s.id!==id);saveSessions(next);
+    try{localStorage.removeItem("bid_chat_msg_"+id)}catch(e){}
+    if(chatSid===id){if(next.length>0){selectChat(next[0].id)}else{setChatSid("");setChatMsgs([])}}};
   // AI 프롬프트 생성 (공통)
   const buildAiPrompt=(r)=>{
     const p=r.pred;if(!p)return null;
@@ -150,17 +167,24 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
 
   const sendChat=async()=>{
     const text=chatInput.trim();if(!text||chatLoading)return;
+    // 세션이 없으면 자동 생성
+    let sid=chatSid;
+    if(!sid){const id="c_"+Date.now();const s={id,title:text.slice(0,20),created:new Date().toISOString().slice(0,16)};
+      saveSessions([s,...chatSessions]);sid=id;setChatSid(id);localStorage.setItem("bid_chat_active",id)}
     const userMsg={role:"user",content:text};
     const newMsgs=[...chatMsgs,userMsg];
-    setChatMsgs(newMsgs);setChatInput("");setChatLoading(true);
+    saveMsgs(sid,newMsgs);setChatInput("");setChatLoading(true);
+    // 첫 메시지면 세션 제목 업데이트
+    if(chatMsgs.length===0){const updated=chatSessions.map(s=>s.id===sid?{...s,title:text.slice(0,20)}:s);saveSessions(updated.length?updated:[{id:sid,title:text.slice(0,20),created:new Date().toISOString().slice(0,16)}])}
     try{
       const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({systemBase:buildChatSystem(),messages:newMsgs.slice(-20)})});
       if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||err.error||`API ${res.status}`)}
       const data=await res.json();
       const reply=data.content?.map(c=>c.text||"").join("")||"응답을 받지 못했습니다.";
-      setChatMsgs(prev=>[...prev,{role:"assistant",content:reply}])}
-    catch(e){setChatMsgs(prev=>[...prev,{role:"assistant",content:"⚠ 오류: "+e.message}])}
+      const finalMsgs=[...newMsgs,{role:"assistant",content:reply}];
+      saveMsgs(sid,finalMsgs)}
+    catch(e){const finalMsgs=[...newMsgs,{role:"assistant",content:"⚠ 오류: "+e.message}];saveMsgs(sid,finalMsgs)}
     finally{setChatLoading(false)}};
   // 정렬 상태
   const[dataSort,setDataSort]=useState({key:"od",dir:"desc"}); // 분석 탭 데이터
@@ -833,9 +857,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
 
     {/* ═══ AI 상담 탭 ═══ */}
     {tab==="chat"&&(()=>{
-      // 마크다운 → HTML 간이 변환
       const md2html=(text)=>{if(!text)return"";
-        // 1) 테이블을 먼저 추출하여 플레이스홀더로 교체
         const tables=[];
         let result=text.replace(/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)+)/gm,(match,hdr,sep,body)=>{
           const hs=hdr.split("|").filter(c=>c.trim()).map(c=>c.trim());
@@ -845,9 +867,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
           h+=`</tr></thead><tbody>`;
           rs.forEach(r=>{h+=`<tr style="border-bottom:1px solid ${C.bdr}22">`;r.forEach(c=>{h+=`<td style="padding:4px 8px;color:${C.txt}">${c}</td>`});h+=`</tr>`});
           h+=`</tbody></table>`;tables.push(h);return`__TBL${tables.length-1}__`});
-        // 2) HTML 이스케이프
         result=result.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-        // 3) 마크다운 → HTML
         result=result
           .replace(/^### (.+)$/gm,`<div style="font-size:14px;font-weight:600;color:${C.gold};margin:12px 0 6px">$1</div>`)
           .replace(/^## (.+)$/gm,`<div style="font-size:15px;font-weight:600;color:${C.gold};margin:14px 0 8px">$1</div>`)
@@ -862,81 +882,103 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
           .replace(/^---$/gm,`<hr style="border:none;border-top:1px solid ${C.bdr};margin:12px 0"/>`)
           .replace(/\n{2,}/g,'<div style="height:8px"></div>')
           .replace(/\n/g,"<br/>");
-        // 4) 테이블 플레이스홀더 복원
         tables.forEach((t,i)=>{result=result.replace(`__TBL${i}__`,t)});
         return result};
-      // 문서 다운로드
       const downloadChat=()=>{
         const now=new Date().toISOString().slice(0,16).replace("T"," ");
         let md=`# 입찰 분석 AI 상담 기록\n> ${now}\n\n---\n\n`;
-        chatMsgs.forEach(m=>{
-          if(m.role==="user")md+=`## 질문\n${m.content}\n\n`;
-          else md+=`## AI 답변\n${m.content}\n\n---\n\n`});
+        chatMsgs.forEach(m=>{if(m.role==="user")md+=`## 질문\n${m.content}\n\n`;else md+=`## AI 답변\n${m.content}\n\n---\n\n`});
         md+=`\n---\n*입찰 분석 시스템 (Claude Opus 4.6) · ${recs.length.toLocaleString()}건 데이터 기반*\n`;
-        const blob=new Blob([md],{type:"text/markdown;charset=utf-8"});
-        const url=URL.createObjectURL(blob);const a=document.createElement("a");
-        a.href=url;a.download=`AI상담_${new Date().toISOString().slice(0,10)}.md`;a.click();URL.revokeObjectURL(url)};
-      return<div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 60px)"}}>
-      {/* 대화 영역 */}
-      <div ref={chatRef} style={{flex:1,overflowY:"auto",padding:"16px 12px"}}>
-        {chatMsgs.length===0&&<div style={{textAlign:"center",padding:"60px 20px"}}>
-          <div style={{fontSize:28,opacity:0.2,marginBottom:12}}>AI</div>
-          <div style={{fontSize:15,fontWeight:600,color:C.gold,marginBottom:8}}>입찰 분석 AI 어드바이저</div>
-          <div style={{fontSize:12,color:C.txm,lineHeight:1.8,maxWidth:400,margin:"0 auto",marginBottom:20}}>
-            한국 공공조달 입찰(전기/통신/소방)에 대해 무엇이든 물어보세요.<br/>
-            {recs.length.toLocaleString()}건의 낙찰 데이터와 예측 모델 기반으로 답변합니다.
-          </div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
-            {["경기도 고양시 최근 낙찰 패턴과 투찰 전략은?",
-              "교육청 vs 지자체 사정률 비교 분석해줘",
-              "현재 예측 모델의 MAE와 기관별 정확도는?",
-              "낙찰하한율 89.745%에서 최적 투찰 마진은?",
-              "적격심사에서 입찰가격점수 85점 받으려면?",
-              "최근 낙찰 동향과 사정률 추이를 알려줘"
-            ].map((q,i)=><button key={i} onClick={()=>{setChatInput(q);setTimeout(()=>{const el=document.getElementById("chat-send");if(el)el.click()},50)}}
-              style={{padding:"6px 12px",fontSize:11,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:6,color:C.txm,cursor:"pointer",textAlign:"left",maxWidth:280}}>
-              {q}
-            </button>)}
-          </div>
-        </div>}
-        {chatMsgs.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",marginBottom:14}}>
-          {m.role==="assistant"&&<div style={{width:28,height:28,borderRadius:14,background:"rgba(168,180,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#a8b4ff",fontWeight:600,flexShrink:0,marginRight:8,marginTop:2}}>AI</div>}
-          <div style={{maxWidth:"80%",padding:m.role==="user"?"10px 14px":"14px 16px",
-            borderRadius:m.role==="user"?"12px 12px 2px 12px":"2px 12px 12px 12px",
-            background:m.role==="user"?"rgba(212,168,52,0.12)":"rgba(168,180,255,0.06)",
-            border:"1px solid "+(m.role==="user"?"rgba(212,168,52,0.2)":"rgba(168,180,255,0.12)")}}>
-            {m.role==="user"?<div style={{fontSize:13,lineHeight:1.7,color:C.txt,whiteSpace:"pre-wrap"}}>{m.content}</div>
-              :<div style={{fontSize:13,lineHeight:1.8,color:C.txt}} dangerouslySetInnerHTML={{__html:md2html(m.content)}}/>}
-          </div>
-          {m.role==="user"&&<div style={{width:28,height:28,borderRadius:14,background:"rgba(212,168,52,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.gold,fontWeight:600,flexShrink:0,marginLeft:8,marginTop:2}}>Q</div>}
-        </div>)}
-        {chatLoading&&<div style={{display:"flex",alignItems:"flex-start",marginBottom:14}}>
-          <div style={{width:28,height:28,borderRadius:14,background:"rgba(168,180,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#a8b4ff",fontWeight:600,flexShrink:0,marginRight:8}}>AI</div>
-          <div style={{padding:"14px 16px",borderRadius:"2px 12px 12px 12px",background:"rgba(168,180,255,0.06)",border:"1px solid rgba(168,180,255,0.12)",fontSize:13,color:C.txm}}>
-            <span style={{display:"inline-block",animation:"blink 1.2s infinite"}}>분석 중...</span>
-            <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
-          </div>
-        </div>}
-      </div>
-      {/* 입력 영역 */}
-      <div style={{borderTop:"1px solid "+C.bdr,padding:"12px 16px",background:C.bg2}}>
-        <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
-          <textarea value={chatInput} onChange={e=>setChatInput(e.target.value)}
-            onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat()}}}
-            placeholder="입찰 전략, 사정률 분석, 적격심사 등 무엇이든 물어보세요..."
-            rows={chatInput.split("\n").length>3?3:Math.max(1,chatInput.split("\n").length)}
-            style={{flex:1,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 14px",color:C.txt,fontSize:13,resize:"none",outline:"none",fontFamily:"inherit",lineHeight:1.6}}/>
-          <button id="chat-send" onClick={sendChat} disabled={chatLoading||!chatInput.trim()}
-            style={{padding:"10px 18px",background:chatInput.trim()?C.gold:"#333",border:"none",borderRadius:8,color:chatInput.trim()?"#000":"#666",fontWeight:700,fontSize:13,cursor:chatInput.trim()?"pointer":"default",flexShrink:0}}>
-            {chatLoading?"...":"전송"}
-          </button>
+        const blob=new Blob([md],{type:"text/markdown;charset=utf-8"});const url=URL.createObjectURL(blob);
+        const a=document.createElement("a");a.href=url;a.download=`AI상담_${new Date().toISOString().slice(0,10)}.md`;a.click();URL.revokeObjectURL(url)};
+      return<div style={{display:"flex",height:"calc(100vh - 60px)"}}>
+      {/* ★ 좌측 사이드바: 대화 목록 */}
+      <div style={{width:chatSideOpen?200:0,overflow:"hidden",transition:"width 0.2s",borderRight:chatSideOpen?"1px solid "+C.bdr:"none",background:C.bg,flexShrink:0,display:"flex",flexDirection:"column"}}>
+        <div style={{padding:"10px",borderBottom:"1px solid "+C.bdr}}>
+          <button onClick={newChat} style={{width:"100%",padding:"8px",background:C.gold,border:"none",borderRadius:6,color:"#000",fontWeight:600,fontSize:12,cursor:"pointer"}}>+ 새 대화</button>
         </div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6}}>
-          <span style={{fontSize:10,color:C.txd}}>Claude Opus 4.6 · Enter 전송 · Shift+Enter 줄바꿈</span>
-          <div style={{display:"flex",gap:8}}>
-            {chatMsgs.length>0&&<button onClick={downloadChat} style={{fontSize:10,color:"#a8b4ff",background:"none",border:"none",cursor:"pointer"}}>문서 다운로드</button>}
-            {chatMsgs.length>0&&<button onClick={()=>setChatMsgs([])} style={{fontSize:10,color:C.txd,background:"none",border:"none",cursor:"pointer"}}>초기화</button>}
+        <div style={{flex:1,overflowY:"auto"}}>
+          {chatSessions.map(s=><div key={s.id} onClick={()=>selectChat(s.id)}
+            style={{padding:"10px 12px",cursor:"pointer",borderBottom:"1px solid "+C.bdr+"44",
+              background:s.id===chatSid?"rgba(212,168,52,0.08)":"transparent",
+              borderLeft:s.id===chatSid?"2px solid "+C.gold:"2px solid transparent"}}>
+            <div style={{fontSize:12,color:s.id===chatSid?C.txt:C.txm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2}}>{s.title||"새 대화"}</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:10,color:C.txd}}>{s.created?.slice(5,10)||""}</span>
+              <button onClick={e=>{e.stopPropagation();if(confirm("이 대화를 삭제하시겠습니까?"))deleteChat(s.id)}}
+                style={{fontSize:9,color:C.txd,background:"none",border:"none",cursor:"pointer",padding:"2px 4px"}}>삭제</button>
+            </div>
+          </div>)}
+          {chatSessions.length===0&&<div style={{padding:20,textAlign:"center",fontSize:11,color:C.txd}}>대화 기록이 없습니다</div>}
+        </div>
+      </div>
+      {/* ★ 우측 대화 영역 */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
+        {/* 상단 바 */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 12px",borderBottom:"1px solid "+C.bdr,background:C.bg2}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <button onClick={()=>setChatSideOpen(!chatSideOpen)} style={{background:"none",border:"none",color:C.txm,cursor:"pointer",fontSize:16,padding:"2px 4px"}}>{chatSideOpen?"◁":"▷"}</button>
+            <span style={{fontSize:12,color:C.txm}}>{chatSessions.find(s=>s.id===chatSid)?.title||"AI 상담"}</span>
           </div>
+          <div style={{display:"flex",gap:6}}>
+            {chatMsgs.length>0&&<button onClick={downloadChat} style={{fontSize:10,color:"#a8b4ff",background:"none",border:"none",cursor:"pointer"}}>다운로드</button>}
+          </div>
+        </div>
+        {/* 대화 메시지 */}
+        <div ref={chatRef} style={{flex:1,overflowY:"auto",padding:"16px 12px"}}>
+          {chatMsgs.length===0&&<div style={{textAlign:"center",padding:"60px 20px"}}>
+            <div style={{fontSize:28,opacity:0.2,marginBottom:12}}>AI</div>
+            <div style={{fontSize:15,fontWeight:600,color:C.gold,marginBottom:8}}>입찰 분석 AI 어드바이저</div>
+            <div style={{fontSize:12,color:C.txm,lineHeight:1.8,maxWidth:400,margin:"0 auto",marginBottom:20}}>
+              한국 공공조달 입찰(전기/통신/소방)에 대해 무엇이든 물어보세요.<br/>
+              {recs.length.toLocaleString()}건의 낙찰 데이터와 예측 모델 기반으로 답변합니다.
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
+              {["경기도 고양시 최근 낙찰 패턴과 투찰 전략은?",
+                "교육청 vs 지자체 사정률 비교 분석해줘",
+                "현재 예측 모델의 MAE와 기관별 정확도는?",
+                "낙찰하한율 89.745%에서 최적 투찰 마진은?",
+                "적격심사에서 입찰가격점수 85점 받으려면?",
+                "최근 낙찰 동향과 사정률 추이를 알려줘"
+              ].map((q,i)=><button key={i} onClick={()=>{setChatInput(q);setTimeout(()=>{const el=document.getElementById("chat-send");if(el)el.click()},50)}}
+                style={{padding:"6px 12px",fontSize:11,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:6,color:C.txm,cursor:"pointer",textAlign:"left",maxWidth:280}}>
+                {q}
+              </button>)}
+            </div>
+          </div>}
+          {chatMsgs.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",marginBottom:14}}>
+            {m.role==="assistant"&&<div style={{width:28,height:28,borderRadius:14,background:"rgba(168,180,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#a8b4ff",fontWeight:600,flexShrink:0,marginRight:8,marginTop:2}}>AI</div>}
+            <div style={{maxWidth:"80%",padding:m.role==="user"?"10px 14px":"14px 16px",
+              borderRadius:m.role==="user"?"12px 12px 2px 12px":"2px 12px 12px 12px",
+              background:m.role==="user"?"rgba(212,168,52,0.12)":"rgba(168,180,255,0.06)",
+              border:"1px solid "+(m.role==="user"?"rgba(212,168,52,0.2)":"rgba(168,180,255,0.12)")}}>
+              {m.role==="user"?<div style={{fontSize:13,lineHeight:1.7,color:C.txt,whiteSpace:"pre-wrap"}}>{m.content}</div>
+                :<div style={{fontSize:13,lineHeight:1.8,color:C.txt}} dangerouslySetInnerHTML={{__html:md2html(m.content)}}/>}
+            </div>
+            {m.role==="user"&&<div style={{width:28,height:28,borderRadius:14,background:"rgba(212,168,52,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.gold,fontWeight:600,flexShrink:0,marginLeft:8,marginTop:2}}>Q</div>}
+          </div>)}
+          {chatLoading&&<div style={{display:"flex",alignItems:"flex-start",marginBottom:14}}>
+            <div style={{width:28,height:28,borderRadius:14,background:"rgba(168,180,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#a8b4ff",fontWeight:600,flexShrink:0,marginRight:8}}>AI</div>
+            <div style={{padding:"14px 16px",borderRadius:"2px 12px 12px 12px",background:"rgba(168,180,255,0.06)",border:"1px solid rgba(168,180,255,0.12)",fontSize:13,color:C.txm}}>
+              <span style={{display:"inline-block",animation:"blink 1.2s infinite"}}>분석 중...</span>
+              <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
+            </div>
+          </div>}
+        </div>
+        {/* 입력 영역 */}
+        <div style={{borderTop:"1px solid "+C.bdr,padding:"10px 12px",background:C.bg2}}>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+            <textarea value={chatInput} onChange={e=>setChatInput(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat()}}}
+              placeholder="입찰 전략, 사정률 분석, 적격심사 등 무엇이든 물어보세요..."
+              rows={chatInput.split("\n").length>3?3:Math.max(1,chatInput.split("\n").length)}
+              style={{flex:1,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 14px",color:C.txt,fontSize:13,resize:"none",outline:"none",fontFamily:"inherit",lineHeight:1.6}}/>
+            <button id="chat-send" onClick={sendChat} disabled={chatLoading||!chatInput.trim()}
+              style={{padding:"10px 18px",background:chatInput.trim()?C.gold:"#333",border:"none",borderRadius:8,color:chatInput.trim()?"#000":"#666",fontWeight:700,fontSize:13,cursor:chatInput.trim()?"pointer":"default",flexShrink:0}}>
+              {chatLoading?"...":"전송"}
+            </button>
+          </div>
+          <div style={{fontSize:10,color:C.txd,marginTop:4}}>Claude Opus 4.6 · Enter 전송 · Shift+Enter 줄바꿈</div>
         </div>
       </div>
     </div>})()}
