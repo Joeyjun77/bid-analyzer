@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS, SB_URL, hdrs } from "./lib/constants.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats } from "./lib/supabase.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
@@ -50,6 +50,7 @@ export default function App(){
   const[predictions,setPredictions]=useState([]);
   const[compFilter,setCompFilter]=useState("all");
   const[bidDetails,setBidDetails]=useState([]);
+  const[agAss,setAgAss]=useState({});
   const[simResult,setSimResult]=useState(null);
   const[expandedDetail,setExpandedDetail]=useState(null);
   const[simSlider,setSimSlider]=useState(0); // Phase 3: 투찰 시뮬레이터 사정률 슬라이더
@@ -85,7 +86,7 @@ export default function App(){
     const agType=r.at||clsAg(r.ag);const agName=r.ag||"";
     const curStat=allS.as?.[agName];const typeStat=allS.ts?.[agType];
     const agDets=bidDetails.filter(d=>d.ag===agName);
-    const rec=recommendAssumedAdj({at:agType,agName,ba:r.ba,ep:r.ep,av:r.av},allS.ts,allS.as);
+    const rec=recommendAssumedAdj({at:agType,agName,ba:r.ba,ep:r.ep,av:r.av},allS.ts,allS.as,agAss);
     return`당신은 한국 공공조달 입찰 전문가 AI입니다. 다음 입찰건에 대해 맞춤형 투찰 전략을 200자 이내로 간결하게 조언해주세요.
 
 ■ 입찰 정보
@@ -204,9 +205,9 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     try{const preds=await sbFetchPredictions();setPredictions(preds||[]);return preds}catch(e){return predictions}},[predictions]);
   // ★ 전체 데이터 새로고침 (새로고침 버튼용)
   const refreshAll=useCallback(async()=>{
-    try{const[rows,preds,dets]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails()]);
+    try{const[rows,preds,dets,agStats]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails(),sbFetchAgAssumedStats()]);
       setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));
-      setPredictions(preds||[]);setBidDetails(dets||[]);
+      setPredictions(preds||[]);setBidDetails(dets||[]);setAgAss(agStats||{});
       // 자동 매칭 시도
       const matched=await sbMatchPredictions(preds,rows);
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds)}
@@ -231,6 +232,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
       })))}
     }catch(e){setPredictions([])}
     try{const dets=await sbFetchDetails();setBidDetails(dets||[])}catch(e){setBidDetails([])}
+    try{const agStats=await sbFetchAgAssumedStats();setAgAss(agStats||{})}catch(e){setAgAss({})}
     setDbLoading(false)
   })()},[refreshStats]);
 
@@ -259,7 +261,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
           // 입찰서류함 → 예측 처리
           if(!Object.keys(allS.ts||{}).length){throw new Error("낙찰 통계가 로드되지 않았습니다. 낙찰정보리스트를 먼저 업로드해주세요.")}
           const items=parseBidDoc(raw);if(!items.length)throw new Error("입찰서류함: 예측 대상 0건");
-          const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as);return{...item,pred:p,rec}}).filter(r=>r.pred);
+          const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,agAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
           if(!results.length)throw new Error("예측 결과 0건");
           accPredResults=accPredResults.concat(results);setPredResults([...accPredResults]); // ★ 누적 표시
           const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,source:"file_upload",match_status:"pending"}));
@@ -288,7 +290,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     let totalResults=[];let successCount=0;let failCount=0;const logs=[];
     for(const file of Array.from(fileList)){
       try{const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length){logs.push({name:file.name,ok:false,msg:"예측 대상 0건"});failCount++;continue}
-        const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as);return{...item,pred:p,rec}}).filter(r=>r.pred);
+        const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,agAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
         if(!results.length){logs.push({name:file.name,ok:false,msg:"예측 결과 0건"});failCount++;continue}
         totalResults=totalResults.concat(results);
         logs.push({name:file.name,ok:true,msg:`${results.length}건 예측`});successCount++;
@@ -337,7 +339,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     const p=predictV5({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,bidDetails);
     if(!p){setMsg({type:"err",text:"예측 실패: 기관 또는 금액 정보를 확인해주세요."});return}
     setPred(p);if(p)setSimSlider(Math.round(p.adj*100));
-    const rec=recommendAssumedAdj({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as);
+    const rec=recommendAssumedAdj({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,agAss);
     setManualRec(rec)},[inp,allS,bidDetails]);
 
   // 삭제

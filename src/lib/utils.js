@@ -323,26 +323,33 @@ const ASSUMED_ADJ_TABLE={
 // 기관유형별 균형전략 탈락률 참고값 (3,318건 백테스트)
 const FAIL_RATES={"지자체":25.0,"교육청":24.5,"군시설":25.0,"한전":25.0,"조달청":25.0,"LH":25.0,"수자원공사":25.0};
 
-export function recommendAssumedAdj({at,agName,ba,ep,av,pc},ts,as){
+export function recommendAssumedAdj({at,agName,ba,ep,av,pc},ts,as,agAss){
   const tbl=ASSUMED_ADJ_TABLE[at]||ASSUMED_ADJ_TABLE["지자체"];
   const tier=(ba||0)<300000000?"under300M":"over300M";
   let base={p25:tbl[tier].p25,p50:tbl[tier].p50,p75:tbl[tier].p75};
 
-  // 2단계: 발주기관 개별 보정
+  // 2단계: 발주기관 개별 보정 (가정사정률 직접 사용 우선)
   let src=`${at} ${tier==="under300M"?"3억미만":"3억이상"}`;
-  const agSt=as?.[agName];
-  if(agSt&&agSt.n>=5){
-    // 기관 개별 가정사정률 역산 통계가 없으므로 사정률 통계로 근사
-    // 가정사정률 ≈ 사정률 + 0.5% (1위 마진 보정)
-    const agOffset=agSt.med-((ts?.[at]||{}).med||0);
-    const w=agSt.n>=10?0.7:0.5;
-    base={p25:base.p25+agOffset*w,p50:base.p50+agOffset*w,p75:base.p75+agOffset*w};
-    src+=` + ${agName}(${agSt.n}건)`
-  }else if(agSt&&agSt.n>=2){
-    const agOffset=agSt.med-((ts?.[at]||{}).med||0);
+  const agKey=agName+"|"+tier;
+  const agDirect=agAss?.[agKey];
+  if(agDirect&&agDirect.n>=5){
+    // DB에서 발주기관별 1위 가정사정률 P25/P50/P75 직접 사용
+    const w=agDirect.n>=10?0.8:0.5;
+    base={p25:base.p25*(1-w)+agDirect.p25*w, p50:base.p50*(1-w)+agDirect.p50*w, p75:base.p75*(1-w)+agDirect.p75*w};
+    src+=` + ${agName}(${agDirect.n}건,직접)`;
+  }else if(agDirect&&agDirect.n>=3){
     const w=0.3;
-    base={p25:base.p25+agOffset*w,p50:base.p50+agOffset*w,p75:base.p75+agOffset*w};
-    src+=` + ${agName}(${agSt.n}건)`
+    base={p25:base.p25*(1-w)+agDirect.p25*w, p50:base.p50*(1-w)+agDirect.p50*w, p75:base.p75*(1-w)+agDirect.p75*w};
+    src+=` + ${agName}(${agDirect.n}건,직접)`;
+  }else{
+    // DB에 가정사정률 통계 없으면 기존 방식(사정률 간접 보정) 폴백
+    const agSt=as?.[agName];
+    if(agSt&&agSt.n>=5){
+      const agOffset=agSt.med-((ts?.[at]||{}).med||0);
+      const w=agSt.n>=10?0.5:0.3;
+      base={p25:base.p25+agOffset*w,p50:base.p50+agOffset*w,p75:base.p75+agOffset*w};
+      src+=` + ${agName}(${agSt.n}건,간접)`;
+    }
   }
 
   // 3단계: 참여업체수 보정
