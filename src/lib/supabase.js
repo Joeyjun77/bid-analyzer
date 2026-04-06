@@ -57,7 +57,38 @@ export async function sbMatchPredictions(predictions,records){
     const{id,...data}=u;
     await fetch(SB_URL+"/rest/v1/bid_predictions?id=eq."+id,{method:"PATCH",headers:{...hdrs,"Prefer":"return=minimal"},body:JSON.stringify(data)})
   }
+  // ★ V5.2: 매칭된 기관의 ag_assumed_stats 자동 갱신
+  if(updates.length>0){
+    const affectedAgs=[...new Set(updates.map(u=>{const rec=records.find(r=>r.id===u.matched_record_id);return rec?rec.ag:null}).filter(Boolean))];
+    try{await sbRefreshAgAssumedStats(affectedAgs,records)}catch(e){console.warn("agAss 갱신 실패:",e)}
+  }
   return updates.length}
+
+// ★ V5.2: 매칭된 기관의 ag_assumed_stats를 bid_records 최신 데이터로 재계산
+// 1순위 가정사정률 역산: 사정률(br1-100)을 가정사정률의 프록시로 사용
+// (실제 가정사정률은 투찰금액에서 역산해야 하지만, A값/하한율 차이로 정확한 역산이 어려움)
+// 따라서 사정률 P25/P50/P75를 가정사정률의 근사치로 활용
+async function sbRefreshAgAssumedStats(agNames,records){
+  for(const ag of agNames){
+    const agRecs=records.filter(r=>r.ag===ag&&r.br1!=null&&r.br1>=95&&r.br1<=105&&r.od>="2025-07-01");
+    if(agRecs.length<3)continue;
+    for(const seg of["under300M","over300M"]){
+      const filtered=seg==="under300M"?agRecs.filter(r=>(r.ep||r.ba||0)<300000000):agRecs.filter(r=>(r.ep||r.ba||0)>=300000000);
+      if(filtered.length<3)continue;
+      const adjs=filtered.map(r=>r.br1-100).sort((a,b)=>a-b);
+      const len=adjs.length;
+      const p25=Math.round(adjs[Math.floor(len*0.25)]*10000)/10000;
+      const p50=Math.round(adjs[Math.floor(len*0.5)]*10000)/10000;
+      const p75=Math.round(adjs[Math.floor(len*0.75)]*10000)/10000;
+      const at=filtered[0].at||"지자체";
+      const body=sanitizeJson(JSON.stringify({ag,at,seg,n:len,p25,p50,p75,updated_at:new Date().toISOString()}));
+      await fetch(SB_URL+"/rest/v1/ag_assumed_stats?ag=eq."+encodeURIComponent(ag)+"&seg=eq."+seg,
+        {method:"DELETE",headers:hdrs});
+      await fetch(SB_URL+"/rest/v1/ag_assumed_stats",
+        {method:"POST",headers:{...hdrs,"Prefer":"return=minimal"},body})
+    }
+  }
+}
 
 // ─── bid_predictions 삭제 ──────────────────────────────────
 export async function sbDeletePredictions(ids){const BATCH=50;for(let i=0;i<ids.length;i+=BATCH){await fetch(SB_URL+"/rest/v1/bid_predictions?id=in.("+ids.slice(i,i+BATCH).join(",")+")",{method:"DELETE",headers:hdrs})}}
