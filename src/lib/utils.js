@@ -211,12 +211,17 @@ export function predictV5({at,agName,ba,ep,av,isWomenBiz},ts,as,details){
   const effStd=Math.max(std,noiseFloor); // 최소한 노이즈 바닥 이상
   const ci70={low:rnd4(ref.med-effStd*0.52),high:rnd4(ref.med+effStd*0.52)};
   const ci90={low:rnd4(ref.med-effStd*1.28),high:rnd4(ref.med+effStd*1.28)};
-  // ★ 최적 투찰: 예측 사정률 -0.1%p 오프셋 (63건 백테스트 최적, 낙찰률 30.2%)
-  const optAdj=rnd4(ref.med-0.1);const optXp=calcXp(ref.med-0.1);const optBid=calcBid(ref.med-0.1);
+  // ★ 최적 투찰: 기관별 차별 오프셋 (190건 백테스트 기반, B안 낙찰률 16.2%)
+  // 안정(30건+): 지자체 -0.15, 군시설 -0.15
+  // 참고(10~29건): 교육청 -0.2
+  // 불안정(<10건): 한전 +0.1 (음수 bias 보정), 나머지 -0.1 기본
+  const OPT_OFFSET={"지자체":-0.15,"군시설":-0.15,"교육청":-0.2,"한전":0.1,"LH":-0.1,"조달청":-0.1,"수자원공사":-0.1};
+  const off=OPT_OFFSET[at]||-0.1;
+  const optAdj=rnd4(ref.med+off);const optXp=calcXp(ref.med+off);const optBid=calcBid(ref.med+off);
   return{scenarios,fr,src,bidRateRec,bidByRate,
     adjAvg:rnd4(ref.avg),adjStd:rnd4(ref.std),
     adj:rnd4(ref.med),xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:rnd4(ref.avg),
-    detailInsight,biasAdj:rnd4(biasAdj),driftUsed:0,ci70,ci90,optAdj,optXp,optBid}}
+    detailInsight,biasAdj:rnd4(biasAdj),driftUsed:0,ci70,ci90,optAdj,optXp,optBid,optOffset:off}}
 
 // ─── 데이터 현황 (최근 업로드 + 실제 최신 개찰일 분리) ────
 export function calcDataStatus(rows){
