@@ -878,7 +878,7 @@ ${baseInfo}
                 {!detailAi&&<button disabled={detailAiLoading} onClick={async()=>{
                   setDetailAiLoading(true);setDetailAi("");
                   try{const isMatched=d.match_status==="matched"&&d.actual_adj_rate!=null;
-                    const matchedRec=isMatched?records.find(rc=>rc.id===d.matched_record_id)||{}:{};
+                    const matchedRec=isMatched?recs.find(rc=>rc.id===Number(d.matched_record_id))||{}:{};
                     const prompt=buildAiPrompt({pn:d.pn,ag:d.ag,at:d.at,ba:ba,ep:ep,av:av,
                       pred:{adj:pa,xp:pxp,fr:Number(d.pred_floor_rate),bid:pb,src:d.pred_source||"",ci70:null,ci90:null},
                       actual:isMatched?Number(d.actual_adj_rate):null,matchedRecord:matchedRec},isMatched?"post":"initial");
@@ -893,7 +893,7 @@ ${baseInfo}
                 {detailAi&&!detailAiLoading&&<button onClick={async()=>{
                   setDetailAiLoading(true);setDetailAi("");
                   try{const isMatched=d.match_status==="matched"&&d.actual_adj_rate!=null;
-                    const matchedRec=isMatched?records.find(rc=>rc.id===d.matched_record_id)||{}:{};
+                    const matchedRec=isMatched?recs.find(rc=>rc.id===Number(d.matched_record_id))||{}:{};
                     const prompt=buildAiPrompt({pn:d.pn,ag:d.ag,at:d.at,ba:ba,ep:ep,av:av,
                       pred:{adj:pa,xp:pxp,fr:Number(d.pred_floor_rate),bid:pb,src:d.pred_source||"",ci70:null,ci90:null},
                       actual:isMatched?Number(d.actual_adj_rate):null,matchedRecord:matchedRec},isMatched?"post":"initial");
