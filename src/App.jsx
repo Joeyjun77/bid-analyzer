@@ -51,7 +51,8 @@ export default function App(){
   const[compFilter,setCompFilter]=useState("all");
   const[bidDetails,setBidDetails]=useState([]);
   const[agAss,setAgAss]=useState({});
-  const[isWomenBiz,setIsWomenBiz]=useState(true); // 여성기업 가산 (기본 ON)  const[simResult,setSimResult]=useState(null);
+  const[isWomenBiz,setIsWomenBiz]=useState(true); // 여성기업 가산 (기본 ON)
+  const[simResult,setSimResult]=useState(null);
   const[expandedDetail,setExpandedDetail]=useState(null);
   const[simSlider,setSimSlider]=useState(0); // Phase 3: 투찰 시뮬레이터 사정률 슬라이더
   const[adjPatDec,setAdjPatDec]=useState(2); // 사정률 패턴 소수점 자릿수 (2~4)
@@ -984,8 +985,13 @@ ${baseInfo}
           </div>}
         </div>}
       </div>
-      {/* 시뮬레이션 토글 버튼 */}
-      <div style={{display:"flex",justifyContent:"flex-end",marginTop:-10,marginBottom:10}}>
+      {/* 시뮬레이션 토글 + 여성기업 가산 */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:-10,marginBottom:10}}>
+        <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:11,color:isWomenBiz?"#5dca96":C.txd}}>
+          <input type="checkbox" checked={isWomenBiz} onChange={e=>setIsWomenBiz(e.target.checked)} style={{accentColor:"#5dca96"}}/>
+          <span style={{fontWeight:isWomenBiz?600:400}}>여성기업 가산</span>
+          <span style={{fontSize:9,color:C.txd,fontWeight:400}}>(낙찰하한율 -0.25%p)</span>
+        </label>
         <button onClick={()=>{setShowSim(!showSim);if(showSim){setPred(null);setAiAdvice("")}}} style={{padding:"3px 10px",fontSize:10,background:showSim?"rgba(212,168,52,0.1)":"transparent",border:"1px solid "+(showSim?C.gold+"44":C.bdr),borderRadius:5,color:showSim?C.gold:C.txd,cursor:"pointer"}}>
           {showSim?"시뮬레이션 닫기":"빠른 시뮬레이션"}
         </button>
