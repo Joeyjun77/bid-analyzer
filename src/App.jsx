@@ -786,32 +786,30 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
               return hits.length>0?<div style={{marginTop:4,fontSize:10,color:"#5dca96"}}>1위 가능 전략: {hits.join(", ")}</div>:null}catch(e){return null}})()}
           </div>}
 
-          {/* ★ 발주기관 1위 투찰율 패턴 TOP 10 */}
+          {/* ★ 발주기관 1위 사정률 패턴 TOP 10 (소수 3자리) */}
           {(()=>{
-            const agRecs=recs.filter(r=>r.ag===d.ag&&r.br1&&r.ba>0&&r.bp>0&&Number(r.br1)>=95&&Number(r.br1)<=105&&r.co&&r.co!=="유찰"&&r.co!=="유찰(무)");
+            const agRecs=recs.filter(r=>r.ag===d.ag&&r.br1&&Number(r.br1)>=95&&Number(r.br1)<=105&&r.co&&r.co!=="유찰"&&r.co!=="유찰(무)");
             if(agRecs.length<3)return null;
             const freqMap={};
             for(const r of agRecs){
-              const xp=Number(r.ba)*(1+(Number(r.br1)-100)/100);
-              if(xp<=0)continue;
-              const rate=Math.round(Number(r.bp)/xp*1000)/10; // 0.1% 단위
-              freqMap[rate]=(freqMap[rate]||0)+1;
+              const adj=Math.round((Number(r.br1)-100)*1000)/1000; // 소수 3자리
+              freqMap[adj]=(freqMap[adj]||0)+1;
             }
-            const sorted=Object.entries(freqMap).map(([k,v])=>({rate:Number(k),cnt:v})).sort((a,b)=>b.cnt-a.cnt).slice(0,10);
+            const sorted=Object.entries(freqMap).map(([k,v])=>({adj:Number(k),cnt:v})).sort((a,b)=>b.cnt-a.cnt).slice(0,10);
             if(sorted.length===0)return null;
             const maxCnt=sorted[0].cnt;
             const total=agRecs.length;
             const top3Pct=Math.round((sorted.slice(0,3).reduce((s,x)=>s+x.cnt,0))/total*100);
-            const topRate=sorted[0].rate;
+            const topAdj=sorted[0].adj;
             return<div style={{borderTop:"1px solid "+C.bdr,paddingTop:12,marginBottom:14}}>
-              <div style={{fontSize:13,fontWeight:500,color:"#85b7eb",marginBottom:8}}>📊 {d.ag} — 1위 투찰율 패턴 ({total}건)</div>
+              <div style={{fontSize:13,fontWeight:500,color:"#85b7eb",marginBottom:8}}>📊 {d.ag} — 1위 사정률 패턴 ({total}건)</div>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                 <thead><tr style={{background:C.bg3}}>
-                  <th style={{padding:"4px 6px",textAlign:"center",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"10%"}}>순위</th>
-                  <th style={{padding:"4px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"20%"}}>투찰율(%)</th>
-                  <th style={{padding:"4px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"15%"}}>횟수</th>
-                  <th style={{padding:"4px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"15%"}}>비율</th>
-                  <th style={{padding:"4px 6px",textAlign:"left",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"40%"}}></th>
+                  <th style={{padding:"4px 6px",textAlign:"center",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"8%"}}>순위</th>
+                  <th style={{padding:"4px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"30%"}}>사정률</th>
+                  <th style={{padding:"4px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"12%"}}>횟수</th>
+                  <th style={{padding:"4px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"12%"}}>비율</th>
+                  <th style={{padding:"4px 6px",textAlign:"left",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"38%"}}></th>
                 </tr></thead>
                 <tbody>{sorted.map((s,i)=>{
                   const pct=Math.round(s.cnt/total*100);
@@ -819,13 +817,13 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
                   const isTop=i===0;
                   return<tr key={i} style={{borderBottom:"1px solid "+C.bdr+"44"}}>
                     <td style={{padding:"3px 6px",textAlign:"center",color:isTop?"#85b7eb":C.txm,fontWeight:isTop?600:400}}>{i+1}</td>
-                    <td style={{padding:"3px 6px",textAlign:"right",fontFamily:"monospace",color:isTop?"#85b7eb":C.txt,fontWeight:isTop?600:400}}>{s.rate.toFixed(1)}%</td>
+                    <td style={{padding:"3px 6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:isTop?"#85b7eb":C.txt,fontWeight:isTop?600:400}}>{(100+s.adj).toFixed(3)}% <span style={{color:C.txd,fontSize:9}}>({s.adj>=0?"+":""}{s.adj.toFixed(3)})</span></td>
                     <td style={{padding:"3px 6px",textAlign:"right",color:C.txt}}>{s.cnt}회</td>
                     <td style={{padding:"3px 6px",textAlign:"right",color:C.txm}}>{pct}%</td>
                     <td style={{padding:"3px 6px"}}><div style={{height:10,borderRadius:3,background:"rgba(133,183,235,"+((0.15+0.85*s.cnt/maxCnt).toFixed(2))+")",width:barW+"%"}}/></td>
                   </tr>})}</tbody>
               </table>
-              <div style={{marginTop:6,fontSize:10,color:C.txm}}>💡 이 기관은 <span style={{color:"#85b7eb",fontWeight:500}}>{topRate.toFixed(1)}%</span> 투찰율이 가장 많으며, 상위 3개 구간에 <span style={{color:"#85b7eb",fontWeight:500}}>{top3Pct}%</span> 집중</div>
+              <div style={{marginTop:6,fontSize:10,color:C.txm}}>💡 이 기관은 사정률 <span style={{color:"#85b7eb",fontWeight:500}}>{(100+topAdj).toFixed(3)}%</span> ({topAdj>=0?"+":""}{topAdj.toFixed(3)})이 가장 많으며, 상위 3개에 <span style={{color:"#85b7eb",fontWeight:500}}>{top3Pct}%</span> 집중</div>
             </div>})()}
 
           {/* AI 전략 어드바이저 */}
