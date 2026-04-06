@@ -307,3 +307,66 @@ export function simDraws(preRates){
     negPct:Math.round(negCount/len*1000)/10,hist,
     belowMinus05:Math.round(avgs.filter(v=>v<-0.5).length/len*1000)/10,
     belowMinus10:Math.round(avgs.filter(v=>v<-1.0).length/len*1000)/10}}
+
+// ─── 가정 사정률 추천 (1위 투찰 패턴 기반) ──────────────────
+// 2025.07 이후 데이터에서 역산한 1위 업체의 가정 사정률 분위수
+const ASSUMED_ADJ_TABLE={
+  "지자체":  {under300M:{p25:-0.68,p50:0.31,p75:0.92},over300M:{p25:-0.84,p50:0.20,p75:0.87}},
+  "교육청":  {under300M:{p25:-0.02,p50:0.49,p75:1.04},over300M:{p25:0.02,p50:0.69,p75:1.20}},
+  "군시설":  {under300M:{p25:-0.12,p50:0.33,p75:1.02},over300M:{p25:0.19,p50:1.04,p75:1.63}},
+  "한전":    {under300M:{p25:0.27,p50:0.59,p75:1.08},over300M:{p25:0.22,p50:0.71,p75:1.19}},
+  "조달청":  {under300M:{p25:-2.60,p50:-1.05,p75:0.51},over300M:{p25:0.84,p50:2.05,p75:3.15}},
+  "LH":     {under300M:{p25:-0.10,p50:0.01,p75:0.99},over300M:{p25:0.32,p50:1.56,p75:3.10}},
+  "수자원공사":{under300M:{p25:-0.20,p50:0.24,p75:0.65},over300M:{p25:0.25,p50:1.05,p75:1.60}}
+};
+// 기관유형별 탈락률 참고값 (균형 전략 기준)
+const FAIL_RATES={"지자체":30.4,"교육청":22.3,"군시설":30.8,"한전":9.0,"조달청":0.0,"LH":0.0,"수자원공사":28.0};
+
+export function recommendAssumedAdj({at,agName,ba,ep,av,pc},ts,as){
+  const tbl=ASSUMED_ADJ_TABLE[at]||ASSUMED_ADJ_TABLE["지자체"];
+  const tier=(ba||0)<300000000?"under300M":"over300M";
+  let base={p25:tbl[tier].p25,p50:tbl[tier].p50,p75:tbl[tier].p75};
+
+  // 2단계: 발주기관 개별 보정
+  let src=`${at} ${tier==="under300M"?"3억미만":"3억이상"}`;
+  const agSt=as?.[agName];
+  if(agSt&&agSt.n>=5){
+    // 기관 개별 가정사정률 역산 통계가 없으므로 사정률 통계로 근사
+    // 가정사정률 ≈ 사정률 + 0.5% (1위 마진 보정)
+    const agOffset=agSt.med-((ts?.[at]||{}).med||0);
+    const w=agSt.n>=10?0.7:0.5;
+    base={p25:base.p25+agOffset*w,p50:base.p50+agOffset*w,p75:base.p75+agOffset*w};
+    src+=` + ${agName}(${agSt.n}건)`
+  }else if(agSt&&agSt.n>=2){
+    const agOffset=agSt.med-((ts?.[at]||{}).med||0);
+    const w=0.3;
+    base={p25:base.p25+agOffset*w,p50:base.p50+agOffset*w,p75:base.p75+agOffset*w};
+    src+=` + ${agName}(${agSt.n}건)`
+  }
+
+  // 3단계: 참여업체수 보정
+  if(pc&&pc>0){
+    if(pc<100){base.p25-=0.05;base.p75+=0.05;src+=` · ${pc}개사(소규모)`}
+    else if(pc>3000){base.p25+=0.05;base.p75-=0.05;src+=` · ${pc}개사(대규모)`}
+  }
+
+  const r4=v=>Math.round(v*10000)/10000;
+  const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
+  const calcBid=(adjRate)=>{
+    const xp=ba*(1+adjRate/100);
+    if(at==="LH")return Math.ceil((av>0?av+(xp-av)*(fr/100):xp*(fr/100))/1000)*1000;
+    return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100))};
+
+  // 추천 전략 결정
+  let strategy="balanced";
+  if(pc&&pc>3000)strategy="balanced";
+  else if(pc&&pc<100)strategy="conservative";
+
+  return{
+    aggressive:{adj:r4(base.p25),bid:calcBid(base.p25)},
+    balanced:{adj:r4(base.p50),bid:calcBid(base.p50)},
+    conservative:{adj:r4(base.p75),bid:calcBid(base.p75)},
+    fr,source:src,strategy,
+    risk:{failRate:FAIL_RATES[at]||25,note:`${at} 균형 전략 기준 탈락률`}
+  }}
+

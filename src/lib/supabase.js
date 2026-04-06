@@ -44,7 +44,14 @@ export async function sbMatchPredictions(predictions,records){
     const actualAdj=match.br1!=null?Math.round((match.br1-100)*10000)/10000:null;
     const adjErr=p.pred_adj_rate!=null&&actualAdj!=null?Math.round((p.pred_adj_rate-actualAdj)*10000)/10000:null;
     const bidErr=p.pred_bid_amount!=null&&match.bp!=null?Math.round(p.pred_bid_amount-match.bp):null;
-    updates.push({id:p.id,actual_adj_rate:actualAdj,actual_expected_price:match.xp,actual_bid_amount:match.bp,actual_winner:match.co,actual_participant_count:match.pc,adj_rate_error:adjErr,bid_amount_error:bidErr,match_status:"matched",matched_record_id:match.id,matched_at:new Date().toISOString()})
+    updates.push({id:p.id,actual_adj_rate:actualAdj,actual_expected_price:match.xp,actual_bid_amount:match.bp,actual_winner:match.co,actual_participant_count:match.pc,adj_rate_error:adjErr,bid_amount_error:bidErr,match_status:"matched",matched_record_id:match.id,matched_at:new Date().toISOString(),
+      // ★ rec_1st_possible: 각 전략이 1위 가능했는지 판정
+      ...(match.xp&&match.bp&&match.fr?{rec_1st_possible:JSON.stringify({
+        existing:p.pred_bid_amount!=null&&Number(p.pred_bid_amount)<=Number(match.bp)&&Number(p.pred_bid_amount)>=Number(match.xp)*Number(match.fr)/100,
+        aggressive:p.rec_bid_p25!=null&&Number(p.rec_bid_p25)<=Number(match.bp)&&Number(p.rec_bid_p25)>=Number(match.xp)*Number(match.fr)/100,
+        balanced:p.rec_bid_p50!=null&&Number(p.rec_bid_p50)<=Number(match.bp)&&Number(p.rec_bid_p50)>=Number(match.xp)*Number(match.fr)/100,
+        conservative:p.rec_bid_p75!=null&&Number(p.rec_bid_p75)<=Number(match.bp)&&Number(p.rec_bid_p75)>=Number(match.xp)*Number(match.fr)/100
+      })}:{})})
   }
   for(const u of updates){
     const{id,...data}=u;
