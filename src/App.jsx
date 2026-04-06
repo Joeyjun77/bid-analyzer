@@ -916,7 +916,44 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
           <div style={{fontSize:13,fontWeight:600,color:C.gold}}>예측 내역 ({compStats.total}건)</div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
             <button onClick={()=>{
-              const wb=XLSX.utils.book_new();const data=compList.map(p=>({"공고명":p.pn,"발주기관":p.ag,"기관유형":p.at,"예측사정률":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4):"","가정사정률(균형)":p.rec_adj_p50!=null?(100+Number(p.rec_adj_p50)).toFixed(4):"","실제사정률":p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4):"","오차":p.adj_rate_error!=null?Number(p.adj_rate_error).toFixed(4):"","예측투찰금액":p.pred_bid_amount||"","추천투찰금액(균형)":p.rec_bid_p50||"","추천투찰금액(보수)":p.rec_bid_p75||"","추천투찰금액(공격)":p.rec_bid_p25||"","추천전략":p.rec_strategy||"","개찰일":p.open_date||"","상태":p.match_status}));
+              const wb=XLSX.utils.book_new();
+              const data=compList.map(p=>{
+                // 1위 가능 판정 파싱
+                let first1st="";
+                if(p.rec_1st_possible){try{const j=JSON.parse(p.rec_1st_possible);const hits=Object.entries(j).filter(([k,v])=>v).map(([k])=>({existing:"기존",aggressive:"공격",balanced:"균형",conservative:"보수"}[k]||k));first1st=hits.join(",")}catch(e){}}
+                return{
+                  // 리스트 핵심 (입찰 전)
+                  "공고명":p.pn||"",
+                  "공고번호":p.pn_no||"",
+                  "발주기관":p.ag||"",
+                  "기관유형":p.at||"",
+                  "추천전략":p.rec_strategy?{conservative:"보수적",balanced:"균형",aggressive:"공격적"}[p.rec_strategy]||p.rec_strategy:"",
+                  "추천투찰금액(균형)":p.rec_bid_p50||"",
+                  "개찰일":p.open_date||"",
+                  // 상세: 기본 정보
+                  "기초금액":p.ba||"",
+                  "추정가격":p.ep||"",
+                  "A값":p.av||"",
+                  "낙찰하한율":p.pred_floor_rate||"",
+                  // 상세: 예측 (분석용)
+                  "예측사정률":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4):"",
+                  "예측투찰금액":p.pred_bid_amount||"",
+                  "예측근거":p.pred_source||"",
+                  // 상세: 추천 3전략
+                  "가정사정률(균형)":p.rec_adj_p50!=null?(100+Number(p.rec_adj_p50)).toFixed(4):"",
+                  "가정사정률(보수)":p.rec_adj_p75!=null?(100+Number(p.rec_adj_p75)).toFixed(4):"",
+                  "가정사정률(공격)":p.rec_adj_p25!=null?(100+Number(p.rec_adj_p25)).toFixed(4):"",
+                  "추천투찰금액(보수)":p.rec_bid_p75||"",
+                  "추천투찰금액(공격)":p.rec_bid_p25||"",
+                  // 리스트 핵심 (입찰 후)
+                  "실제사정률":p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4):"",
+                  "예측오차":p.adj_rate_error!=null?Number(p.adj_rate_error).toFixed(4):"",
+                  "실제1위금액":p.actual_bid_amount||"",
+                  "실제1위업체":p.actual_winner||"",
+                  "참여업체수":p.actual_participant_count||"",
+                  "매칭상태":p.match_status||"",
+                  "1위가능전략":first1st
+                }});
               XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data),"예측내역");XLSX.writeFile(wb,"예측내역_"+new Date().toISOString().slice(0,10)+".xlsx")
             }} style={{padding:"4px 10px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txm,cursor:"pointer"}}>엑셀</button>
             <button onClick={async()=>{setBusy(true);const r=await refreshAll();setBusy(false);setMsg({type:"ok",text:r?`새로고침 완료${r.matched>0?" · "+r.matched+"건 매칭":""}`:""})}} disabled={busy}
@@ -930,33 +967,40 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
         </div>
         {compList.length>0?<div style={{overflow:"auto",maxHeight:600}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"18%"}}/><col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"5%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/></colgroup>
-            <thead><tr style={{background:C.bg3}}>
+            <colgroup><col style={{width:"22%"}}/><col style={{width:"11%"}}/><col style={{width:"7%"}}/><col style={{width:"13%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"6%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/></colgroup>
+            <thead>
+              <tr><th colSpan={5} style={{padding:"4px 6px",fontSize:10,color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>입찰 전 핵심 지표</th>
+                <th colSpan={3} style={{padding:"4px 6px",fontSize:10,color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>입찰 후 결과</th>
+                <th colSpan={2} style={{padding:"4px 6px",fontSize:10,borderBottom:"1px solid "+C.bdr+"44"}}></th></tr>
+              <tr style={{background:C.bg3}}>
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
-              <th style={{padding:"7px 4px",textAlign:"right",color:"#5dca96",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>예측사정률</th>
-              <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>가정사정률</th>
-              <SortTh label="오차" sortKey="adj_rate_error" current={predSort} setCurrent={setPredSort} align="right"/>
-              <th style={{padding:"7px 4px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>예측투찰금액</th>
+              <th style={{padding:"7px 4px",textAlign:"center",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천전략</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천투찰금액</th>
-              <th style={{padding:"7px 4px",textAlign:"center",color:"#5dca96",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천전략</th>
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
+              <th style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제사정률</th>
+              <SortTh label="오차" sortKey="adj_rate_error" current={predSort} setCurrent={setPredSort} align="right"/>
               <SortTh label="상태" sortKey="match_status" current={predSort} setCurrent={setPredSort} align="center"/>
-              <th style={{padding:"7px 4px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>상세</th>
+              <th style={{padding:"7px 4px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>1위</th>
+              <th style={{padding:"7px 4px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}></th>
             </tr></thead>
             <tbody>{compList.slice(0,100).map(p=>{
               const errColor=p.adj_rate_error!=null?(Math.abs(p.adj_rate_error)<0.3?"#5dca96":Math.abs(p.adj_rate_error)<1?"#d4a834":"#e24b4a"):C.txd;
+              // 1위 가능 판정 표시
+              let firstBadge=null;
+              if(p.rec_1st_possible){try{const j=JSON.parse(p.rec_1st_possible);const hits=Object.entries(j).filter(([k,v])=>v);
+                if(hits.length>0)firstBadge=<span style={{fontSize:8,padding:"1px 4px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>{hits.length}</span>;
+                else firstBadge=<span style={{fontSize:8,color:C.txd}}>-</span>}catch(e){}}
               return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr}}>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
-                <td style={{padding:"6px",textAlign:"right",color:"#5dca96",fontFamily:"monospace",fontSize:11}}>{p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
-                <td style={{padding:"6px",textAlign:"right",color:C.gold,fontFamily:"monospace",fontSize:11}}>{p.rec_adj_p50!=null?(100+Number(p.rec_adj_p50)).toFixed(4)+"%":""}</td>
-                <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600}}>{p.adj_rate_error!=null?Number(p.adj_rate_error).toFixed(4):""}</td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11}}>{p.pred_bid_amount?tc(Number(p.pred_bid_amount)):""}</td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold}}>{p.rec_bid_p50?tc(Number(p.rec_bid_p50)):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{p.rec_strategy?<span style={{fontSize:9,padding:"2px 5px",borderRadius:3,background:p.rec_strategy==="conservative"?"rgba(93,202,165,0.15)":p.rec_strategy==="balanced"?"rgba(212,168,52,0.15)":"rgba(226,75,74,0.15)",color:p.rec_strategy==="conservative"?"#5dca96":p.rec_strategy==="balanced"?C.gold:"#e24b4a"}}>{{conservative:"보수",balanced:"균형",aggressive:"공격"}[p.rec_strategy]||p.rec_strategy}</span>:""}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>{p.rec_bid_p50?tc(Number(p.rec_bid_p50)):p.pred_bid_amount?tc(Number(p.pred_bid_amount)):""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11}}>{p.open_date||""}</td>
+                <td style={{padding:"6px",textAlign:"right",color:"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
+                <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{p.adj_rate_error!=null?Number(p.adj_rate_error).toFixed(4):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span></td>
+                <td style={{padding:"6px",textAlign:"center"}}>{firstBadge}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>{setDetailModal(p);setDetailAi(p.ai_advice||"");setDetailAiLoading(false)}} style={{padding:"2px 8px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.25)",borderRadius:4,color:"#a8b4ff",cursor:"pointer"}}>상세</button></td>
               </tr>})}</tbody>
           </table>
