@@ -291,7 +291,7 @@ ${baseInfo}
           const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,isWomenBiz},allS.ts,allS.as,bidDetails);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,isWomenBiz},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
           if(!results.length)throw new Error("예측 결과 0건");
           accPredResults=accPredResults.concat(results);setPredResults([...accPredResults]); // ★ 누적 표시
-          const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,source:"file_upload",match_status:"pending"}));
+          const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,source:"file_upload",match_status:"pending"}));
           await sbSavePredictions(dbRows);
           logs.push({name:file.name,type:"ok",text:`[예측] ${results.length}건 예측 완료`});
           setUploadLog([...logs]);continue}
@@ -327,7 +327,7 @@ ${baseInfo}
       }catch(e){logs.push({name:file.name,ok:false,msg:e.message});failCount++}}
     if(totalResults.length>0){
       setPredResults(prev=>{const dkSet=new Set(totalResults.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...totalResults]});
-      const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,source:"file_upload",match_status:"pending"}));
+      const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,source:"file_upload",match_status:"pending"}));
       await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds)}
     const summary=fileList.length===1?logs[0]?.ok?`${totalResults.length}건 예측 완료 · DB 저장`:logs[0]?.msg
       :`${fileList.length}개 파일 처리: 성공 ${successCount} · 실패 ${failCount} · 총 ${totalResults.length}건 예측`;
@@ -786,6 +786,26 @@ ${baseInfo}
             {d.actual_winner&&<div style={{gridColumn:"1/4"}}>1순위: <span style={{color:"#5dca96",fontWeight:500}}>{d.actual_winner}</span></div>}
           </div>
 
+          {/* ★ 최적 투찰 전략 (V5.1) */}
+          {d.opt_bid&&(()=>{
+            const oa=Number(d.opt_adj);const ob=Number(d.opt_bid);
+            const oXp=ba?(ba*(1+oa/100)):null;const oBR=ob&&oXp?ob/oXp*100:null;
+            return<div style={{borderTop:"1px solid "+C.bdr,paddingTop:12,marginBottom:10}}>
+              <div style={{padding:"10px 12px",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.3)",borderRadius:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <div style={{fontSize:13,fontWeight:600,color:C.gold}}>★ 최적 투찰</div>
+                  <div style={{fontSize:9,color:C.txd,background:C.bg3,padding:"2px 8px",borderRadius:10}}>63건 백테스트 · 낙찰률 30.2%</div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,fontSize:12}}>
+                  <div><span style={{color:C.txd,fontSize:10}}>사정률</span><br/><span style={{color:C.gold,fontWeight:600,fontFamily:"monospace"}}>{(100+oa).toFixed(4)}%</span></div>
+                  <div><span style={{color:C.txd,fontSize:10}}>투찰금액</span><br/><span style={{color:C.gold,fontWeight:700,fontFamily:"monospace",fontSize:14}}>{tc(ob)}원</span></div>
+                  <div><span style={{color:C.txd,fontSize:10}}>투찰율</span><br/><span style={{color:"#85b7eb",fontFamily:"monospace"}}>{oBR?oBR.toFixed(4)+"%":"—"}</span></div>
+                </div>
+                {d.match_status==="matched"&&ab&&<div style={{marginTop:6,fontSize:10,color:ob<=ab?"#5dca96":"#e24b4a"}}>{ob<=ab?"✓ 1순위 가능 (실제 1위 "+tc(ab)+"원 대비 낮음)":"✗ 1순위 불가 (실제 1위 "+tc(ab)+"원 대비 높음)"}</div>}
+                <div style={{fontSize:9,color:C.txd,marginTop:4}}>예측 사정률({pa!=null?(100+pa).toFixed(4):"-"}%)에서 -0.1%p 오프셋</div>
+              </div>
+            </div>})()}
+
           {/* ★ 추천 투찰 전략 (가정 사정률 기반) */}
           {(d.rec_adj_p50!=null||d.rec_bid_p50!=null)&&<div style={{borderTop:"1px solid "+C.bdr,paddingTop:12,marginBottom:14}}>
             <div style={{fontSize:13,fontWeight:500,color:"#5dca96",marginBottom:8}}>추천 투찰 전략</div>
@@ -960,6 +980,16 @@ ${baseInfo}
               <div><span style={{color:C.txd}}>하한율:</span> {pred.fr}%</div>
               <div style={{gridColumn:"1/3"}}><span style={{color:C.txd}}>근거:</span> <span style={{fontSize:10}}>{pred.src}</span></div>
             </div>
+            {/* ★ 최적 투찰 (V5.1) */}
+            {pred.optBid&&<div style={{marginTop:8,padding:"8px 10px",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.25)",borderRadius:6}}>
+              <div style={{fontSize:11,fontWeight:600,color:C.gold,marginBottom:4}}>★ 최적 투찰 <span style={{fontWeight:400,fontSize:9,color:C.txd}}>(63건 백테스트 · 낙찰률 30.2%)</span></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,fontSize:12}}>
+                <div><span style={{color:C.txd,fontSize:10}}>사정률</span><br/><span style={{color:C.gold,fontWeight:600,fontFamily:"monospace"}}>{(100+pred.optAdj).toFixed(4)}%</span></div>
+                <div><span style={{color:C.txd,fontSize:10}}>투찰금액</span><br/><span style={{color:C.gold,fontWeight:700,fontFamily:"monospace",fontSize:13}}>{tc(pred.optBid)}원</span></div>
+                <div><span style={{color:C.txd,fontSize:10}}>투찰율</span><br/><span style={{color:"#85b7eb",fontFamily:"monospace"}}>{pred.optXp>0?(pred.optBid/pred.optXp*100).toFixed(4)+"%":"—"}</span></div>
+              </div>
+              <div style={{fontSize:9,color:C.txd,marginTop:3}}>예측 사정률 -0.1%p 오프셋 적용</div>
+            </div>}
             {/* AI 시뮬레이션 */}
             <div style={{marginTop:8,borderTop:"1px solid "+C.bdr,paddingTop:8}}>
               <button disabled={aiLoading} onClick={async()=>{
@@ -1061,6 +1091,9 @@ ${baseInfo}
                   "예측사정률":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4):"",
                   "예측투찰금액":p.pred_bid_amount||"",
                   "예측근거":p.pred_source||"",
+                  // ★ 최적 투찰
+                  "최적사정률":p.opt_adj!=null?(100+Number(p.opt_adj)).toFixed(4):"",
+                  "최적투찰금액":p.opt_bid||"",
                   // 상세: 추천 3전략
                   "가정사정률(균형)":p.rec_adj_p50!=null?(100+Number(p.rec_adj_p50)).toFixed(4):"",
                   "가정사정률(보수)":p.rec_adj_p75!=null?(100+Number(p.rec_adj_p75)).toFixed(4):"",
