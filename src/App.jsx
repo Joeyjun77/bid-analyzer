@@ -103,9 +103,9 @@ export default function App(){
 - 근거: ${p.src}
 
 ■ 추천 투찰 전략 (실전용: 가정 사정률 기반)
-- 보수적: 가정 사정률 ${rec.conservative.adj>=0?"+":""}${rec.conservative.adj.toFixed(4)}%, 투찰금액 ${rec.conservative.bid.toLocaleString()}원
-- 균형:   가정 사정률 ${rec.balanced.adj>=0?"+":""}${rec.balanced.adj.toFixed(4)}%, 투찰금액 ${rec.balanced.bid.toLocaleString()}원
-- 공격적: 가정 사정률 ${rec.aggressive.adj>=0?"+":""}${rec.aggressive.adj.toFixed(4)}%, 투찰금액 ${rec.aggressive.bid.toLocaleString()}원
+- 보수적: 가정 사정률 ${(100+rec.conservative.adj).toFixed(4)}%, 투찰금액 ${rec.conservative.bid.toLocaleString()}원
+- 균형:   가정 사정률 ${(100+rec.balanced.adj).toFixed(4)}%, 투찰금액 ${rec.balanced.bid.toLocaleString()}원
+- 공격적: 가정 사정률 ${(100+rec.aggressive.adj).toFixed(4)}%, 투찰금액 ${rec.aggressive.bid.toLocaleString()}원
 - 근거: ${rec.source}
 - 탈락률 참고: ${rec.risk.note} (${rec.risk.failRate}%)
 
@@ -760,7 +760,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:6}}>
               <thead><tr style={{background:C.bg3}}>
                 <th style={{padding:"5px 8px",textAlign:"left",fontWeight:500,color:C.txm}}>전략</th>
-                <th style={{padding:"5px 8px",textAlign:"right",fontWeight:500,color:C.txm}}>가정 사정률</th>
+                <th style={{padding:"5px 8px",textAlign:"right",fontWeight:500,color:C.txm}}>가정사정률</th>
                 <th style={{padding:"5px 8px",textAlign:"right",fontWeight:500,color:C.txm}}>투찰금액</th>
                 <th style={{padding:"5px 8px",textAlign:"center",fontWeight:500,color:C.txm}}>리스크</th>
               </tr></thead>
@@ -770,7 +770,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
                   {label:"공격적",adj:d.rec_adj_p25,bid:d.rec_bid_p25,color:"#e24b4a",risk:"높음",sel:d.rec_strategy==="aggressive"}
                 ].map((s,i)=><tr key={i} style={{borderBottom:"1px solid "+C.bdr+"44",background:s.sel?"rgba(212,168,52,0.06)":"transparent"}}>
                   <td style={{padding:"5px 8px"}}><span style={{color:s.color,fontWeight:s.sel?600:400}}>{s.sel?"● ":""}{s.label}</span></td>
-                  <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"monospace"}}>{s.adj!=null?(Number(s.adj)>=0?"+":"")+Number(s.adj).toFixed(4)+"%":"—"}</td>
+                  <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"monospace"}}>{s.adj!=null?(100+Number(s.adj)).toFixed(4)+"%":"—"}</td>
                   <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"monospace",fontWeight:500}}>{s.bid?tc(Math.round(Number(s.bid))):"—"}</td>
                   <td style={{padding:"5px 8px",textAlign:"center",fontSize:10,color:s.color}}>{s.risk}</td>
                 </tr>)}
@@ -864,7 +864,7 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
                   {label:"공격적",d:manualRec.aggressive,color:"#e24b4a",risk:"탈락 60%"}
                 ].map((s,i)=><div key={i} style={{padding:"8px",background:C.bg,borderRadius:6,border:"1px solid "+(manualRec.strategy===(["conservative","balanced","aggressive"][i])?s.color+"44":C.bdr+"44"),textAlign:"center"}}>
                   <div style={{fontSize:10,color:s.color,fontWeight:600,marginBottom:4}}>{s.label}</div>
-                  <div style={{fontSize:11,fontFamily:"monospace",color:C.txt}}>{(s.d.adj>=0?"+":"")+s.d.adj.toFixed(4)}%</div>
+                  <div style={{fontSize:11,fontFamily:"monospace",color:C.txt}}>{(100+s.d.adj).toFixed(4)}%</div>
                   <div style={{fontSize:12,fontFamily:"monospace",fontWeight:600,color:C.txt,marginTop:2}}>{tc(s.d.bid)}원</div>
                   <div style={{fontSize:9,color:C.txd,marginTop:2}}>{s.risk}</div>
                 </div>)}
