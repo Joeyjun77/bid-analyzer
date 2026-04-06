@@ -215,12 +215,42 @@ async function queryDB(msg, sbKey) {
       const medMargin = margins.sort((a, b) => a - b)[Math.floor(margins.length / 2)];
       parts.push(`\n[${agKeyword}] 1순위 투찰 마진 분석 (${recent.length}건):`);
       parts.push(`  낙찰하한율 대비 평균 마진: ${avgMargin.toFixed(4)}%, 중앙값: ${medMargin.toFixed(4)}%`);
+      // 가정 사정률 역산
+      const assumed = recent.map(r => ((Number(r.bp) / (Number(r.ba) * Number(r.fr) / 100)) - 1) * 100);
+      assumed.sort((a, b) => a - b);
+      const p25 = assumed[Math.floor(assumed.length * 0.25)];
+      const p50 = assumed[Math.floor(assumed.length * 0.5)];
+      const p75 = assumed[Math.floor(assumed.length * 0.75)];
+      parts.push(`  1순위 가정 사정률: P25=${p25.toFixed(4)}%, P50=${p50.toFixed(4)}%, P75=${p75.toFixed(4)}%`);
       parts.push(`  최근 투찰 패턴:`);
       recent.slice(0, 5).forEach(r => {
         const bidRate = (Number(r.bp) / Number(r.xp) * 100);
         const margin = bidRate - Number(r.fr);
         parts.push(`    · ${r.od} | 투찰율 ${bidRate.toFixed(4)}% | 하한율 ${r.fr}% | 마진 ${margin.toFixed(4)}% | ${r.pc}개사`);
       });
+    }
+  }
+
+  // 패턴 6: 가정사정률/투찰전략 관련 (기관 무관)
+  if (/가정\s*사정|몇\s*%|얼마에\s*투찰|투찰\s*전략|추천.*사정/.test(msg) && !agKeyword) {
+    const recent = await sbQuery(
+      `bid_records?br1=gte.95&br1=lte.105&bp=gt.0&ba=gt.0&fr=gt.0&select=at,bp,ba,fr,od&order=od.desc&limit=3000&od=gte.2025-07-01`,
+      sbKey
+    );
+    if (recent.length > 0) {
+      const byType = {};
+      recent.forEach(r => {
+        if (!byType[r.at]) byType[r.at] = [];
+        byType[r.at].push(((Number(r.bp) / (Number(r.ba) * Number(r.fr) / 100)) - 1) * 100);
+      });
+      parts.push(`\n기관유형별 1순위 가정 사정률 분포 (2025.07~):`);
+      parts.push(`| 기관유형 | 건수 | P25 | P50(중앙) | P75 |`);
+      parts.push(`|---------|------|-----|----------|-----|`);
+      for (const [t, vals] of Object.entries(byType).sort((a, b) => b[1].length - a[1].length)) {
+        vals.sort((a, b) => a - b);
+        const n = vals.length;
+        parts.push(`| ${t} | ${n} | ${vals[Math.floor(n*0.25)].toFixed(4)}% | ${vals[Math.floor(n*0.5)].toFixed(4)}% | ${vals[Math.floor(n*0.75)].toFixed(4)}% |`);
+      }
     }
   }
 
