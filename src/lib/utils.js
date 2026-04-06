@@ -7,39 +7,44 @@ import { CHO } from "./constants.js";
 // 신기준: 조달청계열 → 90/100, 지자체/교육청 → 88/100 유지 (구간만 변경)
 // 시행일: 기관별 상이 (cutoffDate 참조)
 const RATE_TABLE={
-  // ── 조달청 (시행 2026.01.30) ──
+  // ── 조달청 (시행 2026.01.30) ── 별표5/6: 3억미만은 90/100 기준(90.25%)
   "조달청":{cutoff:"2026-01-30",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:87.745}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:89.745}]},
-  // ── 지자체 (행정안전부 기준, 시행 2025.07.01) - 88/100 유지 ──
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
+  // ── 지자체 (행정안전부 기준, 시행 2025.07.01) ── 3억미만: 88/100→90/100 별표전환
   "지자체":{cutoff:"2025-07-01",
-    old:[{min:1e10,max:3e11,rate:79.995},{min:5e9,max:1e10,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:4e8,max:1e9,rate:87.745},{min:2e8,max:4e8,rate:87.745},{min:0,max:2e8,rate:87.745}],
-    new:[{min:1e10,max:3e11,rate:81.995},{min:5e9,max:1e10,rate:87.495},{min:3e9,max:5e9,rate:88.745},{min:1e9,max:3e9,rate:88.745},{min:4e8,max:1e9,rate:89.745},{min:2e8,max:4e8,rate:89.745},{min:0,max:2e8,rate:89.745}]},
+    old:[{min:1e10,max:3e11,rate:79.995},{min:5e9,max:1e10,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:4e8,max:1e9,rate:87.745},{min:3e8,max:4e8,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:1e10,max:3e11,rate:81.995},{min:5e9,max:1e10,rate:87.495},{min:3e9,max:5e9,rate:88.745},{min:1e9,max:3e9,rate:88.745},{min:4e8,max:1e9,rate:89.745},{min:3e8,max:4e8,rate:89.745},{min:0,max:3e8,rate:90.25}]},
   // ── 교육청 (행정안전부 기준 준용) ──
   "교육청":{cutoff:"2025-07-01",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:4e8,max:1e9,rate:87.745},{min:2e8,max:4e8,rate:87.745},{min:0,max:2e8,rate:87.745}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:3e9,max:5e9,rate:88.745},{min:1e9,max:3e9,rate:88.745},{min:4e8,max:1e9,rate:89.745},{min:2e8,max:4e8,rate:89.745},{min:0,max:2e8,rate:89.745}]},
+    old:[{min:5e9,max:1e11,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:4e8,max:1e9,rate:87.745},{min:3e8,max:4e8,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:3e9,max:5e9,rate:88.745},{min:1e9,max:3e9,rate:88.745},{min:4e8,max:1e9,rate:89.745},{min:3e8,max:4e8,rate:89.745},{min:0,max:3e8,rate:90.25}]},
   // ── 한전 (한국전력공사) ──
   "한전":{cutoff:"2026-01-30",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:87.745}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:89.745}]},
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
   // ── LH (한국토지주택공사, 시행 2026.02.01) ──
   "LH":{cutoff:"2026-02-01",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:87.745}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:89.745}]},
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
   // ── 군시설 (시행 2026.01.19, 자체훈령/계약예규 상이 가능) ──
   "군시설":{cutoff:"2026-01-19",
-    old:[{min:5e9,max:1e11,rate:83.495},{min:1e9,max:5e9,rate:84.745},{min:3e8,max:1e9,rate:85.745},{min:0,max:3e8,rate:85.745}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:89.745}]},
+    old:[{min:5e9,max:1e11,rate:83.495},{min:1e9,max:5e9,rate:84.745},{min:3e8,max:1e9,rate:85.745},{min:0,max:3e8,rate:86.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
   // ── 수자원공사 (시행 2026.02.27) ──
   "수자원공사":{cutoff:"2026-02-27",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:87.745}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:89.745}]}
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]}
 };
 export function getFloorRate(at,ep,isNew){const tbl=RATE_TABLE[at]||RATE_TABLE["조달청"];const rules=isNew?tbl.new:tbl.old;for(const r of rules){if(ep>=r.min&&ep<r.max)return r.rate}return rules[rules.length-1].rate}
 export function getCutoffDate(at){return(RATE_TABLE[at]||RATE_TABLE["조달청"]).cutoff}
 export function isNewEra(at,od){if(!od)return false;return od>=getCutoffDate(at)}
-
+// 여성기업/사회적기업/장애인기업 가산: 경영상태 취득점수 10% 가산 → 낙찰하한율 하향
+// 별표5(3억미만): 경영상태 5점 만점×10%=0.5점 여유 → 입찰가격 84.5점 기준 → 90.00% (90.25%-0.25%p)
+// 별표3/4(3억이상): 경영상태 5점(별표4) 또는 15점(별표3)×10% → 0.5~1.5점 여유 → ~0.25%p 하향
+// 실전에서 공통적으로 약 0.25%p 하향 효과
+export function womenBizAdj(baseRate,isWomenBiz){return isWomenBiz?Math.round((baseRate-0.25)*1000)/1000:baseRate}
+export function eraFR(at,ep,od,isWomenBiz){return womenBizAdj(getFloorRate(at,ep||0,isNewEra(at,od)),isWomenBiz)}
 // ─── 유틸 ──────────────────────────────────────────────────
 export function clsAg(n){if(!n)return"조달청";const s=n.trim();if(/조달청/.test(s))return"조달청";if(/교육/.test(s))return"교육청";if(/한국전력|한전/.test(s))return"한전";if(/LH|주택공사|토지주택/.test(s))return"LH";if(/군|사단|국방|해군|공군|육군|해병/.test(s))return"군시설";if(/수자원/.test(s))return"수자원공사";return"지자체"}
 export function clean(v){if(v==null)return"";return String(v).replace(/[\u0000\u2800-\u2BFF\uE000-\uF8FF]/g,"").replace(/\s+/g," ").trim()}
@@ -48,7 +53,6 @@ export function sn(v){const n=pnv(v);return n===0?null:n}
 export function tc(v){return Number(v||0).toLocaleString()}
 export function tn(s){return Number(String(s).replace(/,/g,""))||0}
 export function pDt(v){if(!v)return null;const s=String(v).trim();let m;if((m=s.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/)))return`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;if((m=s.match(/^(\d{2})[-./](\d{1,2})[-./](\d{1,2})/)))return`20${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;return null}
-export function eraFR(at,ep,od){return getFloorRate(at,ep||0,isNewEra(at,od))}
 // CHO imported from constants.js
 export function getCho(c){const code=c.charCodeAt(0);if(code>=0xAC00&&code<=0xD7A3)return CHO[Math.floor((code-0xAC00)/588)];return c}
 export function mSch(t,q){if(!q)return true;const tl=t.toLowerCase(),ql=q.toLowerCase();if(tl.includes(ql))return true;return Array.from(t).map(getCho).join("").includes(q)}
@@ -148,7 +152,7 @@ export function calcStats(recs,filter){const src=filter?recs.filter(filter):recs
 
 // ─── 예측 v5 (51K 백테스트 기반 보정) ────────────────────────
 const rnd4=v=>Math.round((v||0)*10000)/10000;
-export function predictV5({at,agName,ba,ep,av},ts,as,details){
+export function predictV5({at,agName,ba,ep,av,isWomenBiz},ts,as,details){
   if(!ba)return null;
   const tKeys=Object.keys(ts||{});
   if(!tKeys.length)return null;
@@ -191,7 +195,7 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details){
   biasAdj=Math.max(-0.5,Math.min(0.5,biasAdj));
   ref={...ref,med:ref.med+biasAdj,q1:ref.q1+biasAdj,q3:ref.q3+biasAdj,avg:ref.avg+biasAdj};
 
-  const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
+  const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10),isWomenBiz);
   const calcBid=(adjRate)=>{const xp=ba*(1+adjRate/100);return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100))};
   const calcXp=(adjRate)=>Math.round(ba*(1+adjRate/100));
   const scenarios=[
@@ -323,7 +327,7 @@ const ASSUMED_ADJ_TABLE={
 // 기관유형별 균형전략 탈락률 참고값 (3,318건 백테스트)
 const FAIL_RATES={"지자체":25.0,"교육청":24.5,"군시설":25.0,"한전":25.0,"조달청":25.0,"LH":25.0,"수자원공사":25.0};
 
-export function recommendAssumedAdj({at,agName,ba,ep,av,pc},ts,as,agAss){
+export function recommendAssumedAdj({at,agName,ba,ep,av,pc,isWomenBiz},ts,as,agAss){
   const tbl=ASSUMED_ADJ_TABLE[at]||ASSUMED_ADJ_TABLE["지자체"];
   const tier=(ba||0)<300000000?"under300M":"over300M";
   let base={p25:tbl[tier].p25,p50:tbl[tier].p50,p75:tbl[tier].p75};
@@ -359,7 +363,7 @@ export function recommendAssumedAdj({at,agName,ba,ep,av,pc},ts,as,agAss){
   }
 
   const r4=v=>Math.round(v*10000)/10000;
-  const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
+  const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10),isWomenBiz);
   const calcBid=(adjRate)=>{
     const xp=ba*(1+adjRate/100);
     if(at==="LH")return Math.ceil((av>0?av+(xp-av)*(fr/100):xp*(fr/100))/1000)*1000;
