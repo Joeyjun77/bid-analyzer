@@ -82,15 +82,13 @@ export default function App(){
     try{localStorage.removeItem("bid_chat_msg_"+id)}catch(e){}
     if(chatSid===id){if(next.length>0){selectChat(next[0].id)}else{setChatSid("");setChatMsgs([])}}};
   // AI 프롬프트 생성 (공통)
-  const buildAiPrompt=(r)=>{
+  const buildAiPrompt=(r,mode="initial")=>{
     const p=r.pred;if(!p)return null;
     const agType=r.at||clsAg(r.ag);const agName=r.ag||"";
     const curStat=allS.as?.[agName];const typeStat=allS.ts?.[agType];
     const agDets=bidDetails.filter(d=>d.ag===agName);
     const rec=recommendAssumedAdj({at:agType,agName,ba:r.ba,ep:r.ep,av:r.av},allS.ts,allS.as,agAss);
-    return`당신은 한국 공공조달 입찰 전문가 AI입니다. 다음 입찰건에 대해 맞춤형 투찰 전략을 200자 이내로 간결하게 조언해주세요.
-
-■ 입찰 정보
+    const baseInfo=`■ 입찰 정보
 - 공고명: ${(r.pn||"").slice(0,50)}
 - 발주기관: ${agName} (${agType})
 - 기초금액: ${r.ba?Number(r.ba).toLocaleString():"미입력"}원
@@ -119,7 +117,31 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
 
 ■ 핵심 제약
 - 복수예비가격 C(15,4) 추첨의 노이즈 바닥 = 0.642%
-- 1순위 업체의 낙찰하한율 대비 마진: 중앙값 0.5%
+- 1순위 업체의 낙찰하한율 대비 마진: 중앙값 0.5%`;
+
+    if(mode==="post"&&r.actual!=null){
+      const err=r.actual-p.adj;const errDir=err>0?"높게":"낮게";
+      const matchedRec=r.matchedRecord||{};
+      return`당신은 한국 공공조달 입찰 전문가 AI입니다. 이 입찰건은 이미 개찰이 완료되어 실제 결과가 확인되었습니다. 예측과 실제의 차이를 분석하고, 향후 유사건에 대한 교훈을 300자 이내로 정리해주세요.
+
+${baseInfo}
+
+■ 실제 결과 (개찰 완료)
+- 실제 사정률: ${r.actual>=0?"+":""}${Number(r.actual).toFixed(4)}%
+- 예측 오차: ${err>=0?"+":""}${err.toFixed(4)}% (예측이 실제보다 ${Math.abs(err).toFixed(4)}% ${errDir} 예측)
+${matchedRec.co?`- 1순위 업체: ${matchedRec.co}`:""}
+${matchedRec.pc?`- 참여업체 수: ${matchedRec.pc}개사`:""}
+${matchedRec.bp?`- 1순위 투찰금액: ${Number(matchedRec.bp).toLocaleString()}원`:""}
+${matchedRec.br1?`- 1순위 투찰율: ${Number(matchedRec.br1).toFixed(4)}%`:""}
+
+위 정보를 바탕으로:
+1. 예측 오차의 원인 분석 (기관 특성, 복수예가 추첨 변동성, 데이터 부족 등)
+2. 이 기관의 향후 입찰에 적용할 수 있는 교훈 한 가지
+3. 전략 보정 제안: 이 기관에서는 보수/균형/공격 중 어떤 접근이 유리했는지`}
+
+    return`당신은 한국 공공조달 입찰 전문가 AI입니다. 다음 입찰건에 대해 맞춤형 투찰 전략을 200자 이내로 간결하게 조언해주세요.
+
+${baseInfo}
 
 위 정보를 바탕으로:
 1. 이 입찰건의 특성과 리스크를 한 줄로 요약
@@ -844,22 +866,42 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
           {/* AI 전략 어드바이저 */}
           <div style={{borderTop:"1px solid "+C.bdr,paddingTop:12}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <div style={{fontSize:13,fontWeight:500,color:"#a8b4ff"}}>AI 전략 어드바이저</div>
-              {!detailAi&&<button disabled={detailAiLoading} onClick={async()=>{
-                setDetailAiLoading(true);setDetailAi("");
-                try{const prompt=buildAiPrompt({pn:d.pn,ag:d.ag,at:d.at,ba:ba,ep:ep,av:av,
-                  pred:{adj:pa,xp:pxp,fr:Number(d.pred_floor_rate),bid:pb,src:d.pred_source||"",ci70:null,ci90:null}});
-                  if(!prompt)throw new Error("데이터 없음");
-                  const text=await callAi(prompt);setDetailAi(text);
-                  // DB에 AI 분석 결과 저장
-                  if(d.id){try{await fetch(`${SB_URL}/rest/v1/bid_predictions?id=eq.${d.id}`,{method:"PATCH",headers:{...hdrs,"Prefer":"return=minimal"},body:JSON.stringify({ai_advice:text})});
-                    setPredictions(prev=>prev.map(p=>p.id===d.id?{...p,ai_advice:text}:p))}catch(e){}}}
-                catch(e){setDetailAi("⚠ "+e.message)}finally{setDetailAiLoading(false)}
-              }} style={{padding:"4px 12px",fontSize:11,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.3)",borderRadius:5,color:"#a8b4ff",cursor:detailAiLoading?"default":"pointer"}}>
-                {detailAiLoading?"분석 중...":"전략 분석 요청"}
-              </button>}
+              <div style={{fontSize:13,fontWeight:500,color:"#a8b4ff"}}>AI 전략 어드바이저{d.match_status==="matched"&&detailAi?" (사후분석 가능)":""}</div>
+              <div style={{display:"flex",gap:6}}>
+                {!detailAi&&<button disabled={detailAiLoading} onClick={async()=>{
+                  setDetailAiLoading(true);setDetailAi("");
+                  try{const isMatched=d.match_status==="matched"&&d.actual_adj_rate!=null;
+                    const matchedRec=isMatched?records.find(rc=>rc.id===d.matched_record_id)||{}:{};
+                    const prompt=buildAiPrompt({pn:d.pn,ag:d.ag,at:d.at,ba:ba,ep:ep,av:av,
+                      pred:{adj:pa,xp:pxp,fr:Number(d.pred_floor_rate),bid:pb,src:d.pred_source||"",ci70:null,ci90:null},
+                      actual:isMatched?Number(d.actual_adj_rate):null,matchedRecord:matchedRec},isMatched?"post":"initial");
+                    if(!prompt)throw new Error("데이터 없음");
+                    const text=await callAi(prompt);setDetailAi(text);
+                    if(d.id){try{await fetch(`${SB_URL}/rest/v1/bid_predictions?id=eq.${d.id}`,{method:"PATCH",headers:{...hdrs,"Prefer":"return=minimal"},body:JSON.stringify({ai_advice:text})});
+                      setPredictions(prev=>prev.map(p=>p.id===d.id?{...p,ai_advice:text}:p))}catch(e){}}}
+                  catch(e){setDetailAi("⚠ "+e.message)}finally{setDetailAiLoading(false)}
+                }} style={{padding:"4px 12px",fontSize:11,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.3)",borderRadius:5,color:"#a8b4ff",cursor:detailAiLoading?"default":"pointer"}}>
+                  {detailAiLoading?"분석 중...":(d.match_status==="matched"&&d.actual_adj_rate!=null?"사후 분석 요청":"전략 분석 요청")}
+                </button>}
+                {detailAi&&!detailAiLoading&&<button onClick={async()=>{
+                  setDetailAiLoading(true);setDetailAi("");
+                  try{const isMatched=d.match_status==="matched"&&d.actual_adj_rate!=null;
+                    const matchedRec=isMatched?records.find(rc=>rc.id===d.matched_record_id)||{}:{};
+                    const prompt=buildAiPrompt({pn:d.pn,ag:d.ag,at:d.at,ba:ba,ep:ep,av:av,
+                      pred:{adj:pa,xp:pxp,fr:Number(d.pred_floor_rate),bid:pb,src:d.pred_source||"",ci70:null,ci90:null},
+                      actual:isMatched?Number(d.actual_adj_rate):null,matchedRecord:matchedRec},isMatched?"post":"initial");
+                    if(!prompt)throw new Error("데이터 없음");
+                    const text=await callAi(prompt);setDetailAi(text);
+                    if(d.id){try{await fetch(`${SB_URL}/rest/v1/bid_predictions?id=eq.${d.id}`,{method:"PATCH",headers:{...hdrs,"Prefer":"return=minimal"},body:JSON.stringify({ai_advice:text})});
+                      setPredictions(prev=>prev.map(p=>p.id===d.id?{...p,ai_advice:text}:p))}catch(e){}}}
+                  catch(e){setDetailAi("⚠ "+e.message)}finally{setDetailAiLoading(false)}
+                }} style={{padding:"4px 12px",fontSize:11,background:"rgba(93,202,150,0.1)",border:"1px solid rgba(93,202,150,0.3)",borderRadius:5,color:"#5dca96",cursor:"pointer"}}>
+                  {d.match_status==="matched"&&d.actual_adj_rate!=null?"사후 재분석":"재분석"}
+                </button>}
+              </div>
             </div>
-            {detailAi?<div style={{padding:"10px 12px",background:C.bg3,borderRadius:6,fontSize:13,lineHeight:1.8,color:C.txt}} dangerouslySetInnerHTML={{__html:md2html(detailAi)}}/>
+            {detailAiLoading?<div style={{padding:"16px",textAlign:"center",color:"#a8b4ff",fontSize:12}}>AI 분석 중...</div>
+              :detailAi?<div style={{padding:"10px 12px",background:C.bg3,borderRadius:6,fontSize:13,lineHeight:1.8,color:C.txt}} dangerouslySetInnerHTML={{__html:md2html(detailAi)}}/>
               :<div style={{fontSize:11,color:C.txd}}>전략 분석 요청 버튼을 클릭하면 AI가 이 입찰건의 맞춤 전략을 제안합니다</div>}
           </div>
         </div>
