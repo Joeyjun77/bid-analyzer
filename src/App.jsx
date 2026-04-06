@@ -54,6 +54,7 @@ export default function App(){
   const[simResult,setSimResult]=useState(null);
   const[expandedDetail,setExpandedDetail]=useState(null);
   const[simSlider,setSimSlider]=useState(0); // Phase 3: 투찰 시뮬레이터 사정률 슬라이더
+  const[adjPatDec,setAdjPatDec]=useState(2); // 사정률 패턴 소수점 자릿수 (2~4)
   const[aiAdvice,setAiAdvice]=useState("");const[aiLoading,setAiLoading]=useState(false); // Phase 4-A: AI 어드바이저
   const[batchAi,setBatchAi]=useState({});const[batchAiLoading,setBatchAiLoading]=useState(null);const[expandedBatch,setExpandedBatch]=useState(null); // 일괄 AI
   const[predSel,setPredSel]=useState({}); // 예측 내역 선택 삭제
@@ -786,23 +787,37 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
               return hits.length>0?<div style={{marginTop:4,fontSize:10,color:"#5dca96"}}>1위 가능 전략: {hits.join(", ")}</div>:null}catch(e){return null}})()}
           </div>}
 
-          {/* ★ 발주기관 1위 사정률 패턴 TOP 10 (소수 3자리) */}
+          {/* ★ 발주기관 1위 사정률 패턴 (소수점 2~4자리 선택) */}
           {(()=>{
             const agRecs=recs.filter(r=>r.ag===d.ag&&r.br1&&Number(r.br1)>=95&&Number(r.br1)<=105&&r.co&&r.co!=="유찰"&&r.co!=="유찰(무)");
             if(agRecs.length<3)return null;
+            const dec=adjPatDec;
+            const mul=Math.pow(10,dec);
             const freqMap={};
             for(const r of agRecs){
-              const adj=Math.round((Number(r.br1)-100)*1000)/1000; // 소수 3자리
+              const adj=Math.round((Number(r.br1)-100)*mul)/mul;
               freqMap[adj]=(freqMap[adj]||0)+1;
             }
-            const sorted=Object.entries(freqMap).map(([k,v])=>({adj:Number(k),cnt:v})).sort((a,b)=>b.cnt-a.cnt).slice(0,10);
-            if(sorted.length===0)return null;
-            const maxCnt=sorted[0].cnt;
+            const allSorted=Object.entries(freqMap).map(([k,v])=>({adj:Number(k),cnt:v})).sort((a,b)=>b.cnt-a.cnt);
+            // 중복 2회 이상인 것만 표시, 최소 10개 ~ 최대 30개
+            const multi=allSorted.filter(s=>s.cnt>=2);
+            const showList=multi.length>=10?multi.slice(0,30):allSorted.slice(0,Math.max(10,multi.length));
+            if(showList.length===0)return null;
+            const maxCnt=showList[0].cnt;
             const total=agRecs.length;
-            const top3Pct=Math.round((sorted.slice(0,3).reduce((s,x)=>s+x.cnt,0))/total*100);
-            const topAdj=sorted[0].adj;
+            const top3Pct=Math.round((showList.slice(0,3).reduce((s,x)=>s+x.cnt,0))/total*100);
+            const topAdj=showList[0].adj;
             return<div style={{borderTop:"1px solid "+C.bdr,paddingTop:12,marginBottom:14}}>
-              <div style={{fontSize:13,fontWeight:500,color:"#85b7eb",marginBottom:8}}>📊 {d.ag} — 1위 사정률 패턴 ({total}건)</div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontSize:13,fontWeight:500,color:"#85b7eb"}}>📊 {d.ag} — 1위 사정률 패턴 ({total}건)</div>
+                <div style={{display:"flex",gap:3}}>
+                  {[2,3,4].map(v=><button key={v} onClick={()=>setAdjPatDec(v)}
+                    style={{padding:"2px 7px",fontSize:10,borderRadius:3,cursor:"pointer",
+                      background:dec===v?"rgba(133,183,235,0.25)":"transparent",
+                      border:dec===v?"1px solid #85b7eb":"1px solid "+C.bdr,
+                      color:dec===v?"#85b7eb":C.txm}}>{v}자리</button>)}
+                </div>
+              </div>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                 <thead><tr style={{background:C.bg3}}>
                   <th style={{padding:"4px 6px",textAlign:"center",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"8%"}}>순위</th>
@@ -811,19 +826,19 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
                   <th style={{padding:"4px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"12%"}}>비율</th>
                   <th style={{padding:"4px 6px",textAlign:"left",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"38%"}}></th>
                 </tr></thead>
-                <tbody>{sorted.map((s,i)=>{
-                  const pct=Math.round(s.cnt/total*100);
+                <tbody>{showList.map((s,i)=>{
+                  const pct=Math.round(s.cnt/total*1000)/10;
                   const barW=Math.max(Math.round(s.cnt/maxCnt*100),2);
                   const isTop=i===0;
                   return<tr key={i} style={{borderBottom:"1px solid "+C.bdr+"44"}}>
                     <td style={{padding:"3px 6px",textAlign:"center",color:isTop?"#85b7eb":C.txm,fontWeight:isTop?600:400}}>{i+1}</td>
-                    <td style={{padding:"3px 6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:isTop?"#85b7eb":C.txt,fontWeight:isTop?600:400}}>{(100+s.adj).toFixed(3)}% <span style={{color:C.txd,fontSize:9}}>({s.adj>=0?"+":""}{s.adj.toFixed(3)})</span></td>
-                    <td style={{padding:"3px 6px",textAlign:"right",color:C.txt}}>{s.cnt}회</td>
+                    <td style={{padding:"3px 6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:isTop?"#85b7eb":C.txt,fontWeight:isTop?600:400}}>{(100+s.adj).toFixed(dec)}% <span style={{color:C.txd,fontSize:9}}>({s.adj>=0?"+":""}{s.adj.toFixed(dec)})</span></td>
+                    <td style={{padding:"3px 6px",textAlign:"right",color:C.txt,fontWeight:s.cnt>=3?600:400}}>{s.cnt}회</td>
                     <td style={{padding:"3px 6px",textAlign:"right",color:C.txm}}>{pct}%</td>
                     <td style={{padding:"3px 6px"}}><div style={{height:10,borderRadius:3,background:"rgba(133,183,235,"+((0.15+0.85*s.cnt/maxCnt).toFixed(2))+")",width:barW+"%"}}/></td>
                   </tr>})}</tbody>
               </table>
-              <div style={{marginTop:6,fontSize:10,color:C.txm}}>💡 이 기관은 사정률 <span style={{color:"#85b7eb",fontWeight:500}}>{(100+topAdj).toFixed(3)}%</span> ({topAdj>=0?"+":""}{topAdj.toFixed(3)})이 가장 많으며, 상위 3개에 <span style={{color:"#85b7eb",fontWeight:500}}>{top3Pct}%</span> 집중</div>
+              <div style={{marginTop:6,fontSize:10,color:C.txm}}>💡 사정률 <span style={{color:"#85b7eb",fontWeight:500}}>{(100+topAdj).toFixed(dec)}%</span>이 {showList[0].cnt}회로 가장 많으며, 상위 3개에 <span style={{color:"#85b7eb",fontWeight:500}}>{top3Pct}%</span> 집중 · 중복 {multi.length}개</div>
             </div>})()}
 
           {/* AI 전략 어드바이저 */}
