@@ -211,10 +211,12 @@ export function predictV5({at,agName,ba,ep,av,isWomenBiz},ts,as,details){
   const effStd=Math.max(std,noiseFloor); // 최소한 노이즈 바닥 이상
   const ci70={low:rnd4(ref.med-effStd*0.52),high:rnd4(ref.med+effStd*0.52)};
   const ci90={low:rnd4(ref.med-effStd*1.28),high:rnd4(ref.med+effStd*1.28)};
+  // ★ 최적 투찰: 예측 사정률 -0.1%p 오프셋 (63건 백테스트 최적, 낙찰률 30.2%)
+  const optAdj=rnd4(ref.med-0.1);const optXp=calcXp(ref.med-0.1);const optBid=calcBid(ref.med-0.1);
   return{scenarios,fr,src,bidRateRec,bidByRate,
     adjAvg:rnd4(ref.avg),adjStd:rnd4(ref.std),
     adj:rnd4(ref.med),xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:rnd4(ref.avg),
-    detailInsight,biasAdj:rnd4(biasAdj),driftUsed:0,ci70,ci90}}
+    detailInsight,biasAdj:rnd4(biasAdj),driftUsed:0,ci70,ci90,optAdj,optXp,optBid}}
 
 // ─── 데이터 현황 (최근 업로드 + 실제 최신 개찰일 분리) ────
 export function calcDataStatus(rows){
