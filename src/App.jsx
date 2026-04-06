@@ -786,15 +786,17 @@ ${baseInfo}
             {d.actual_winner&&<div style={{gridColumn:"1/4"}}>1순위: <span style={{color:"#5dca96",fontWeight:500}}>{d.actual_winner}</span></div>}
           </div>
 
-          {/* ★ 최적 투찰 전략 (V5.1) */}
+          {/* ★ 최적 투찰 전략 (기관별 차별 오프셋) */}
           {d.opt_bid&&(()=>{
             const oa=Number(d.opt_adj);const ob=Number(d.opt_bid);
             const oXp=ba?(ba*(1+oa/100)):null;const oBR=ob&&oXp?ob/oXp*100:null;
+            const offMap={"지자체":-0.15,"군시설":-0.15,"교육청":-0.2,"한전":0.1,"LH":-0.1,"조달청":-0.1,"수자원공사":-0.1};
+            const off=offMap[d.at]||-0.1;
             return<div style={{borderTop:"1px solid "+C.bdr,paddingTop:12,marginBottom:10}}>
               <div style={{padding:"10px 12px",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.3)",borderRadius:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <div style={{fontSize:13,fontWeight:600,color:C.gold}}>★ 최적 투찰</div>
-                  <div style={{fontSize:9,color:C.txd,background:C.bg3,padding:"2px 8px",borderRadius:10}}>63건 백테스트 · 낙찰률 30.2%</div>
+                  <div style={{fontSize:9,color:C.txd,background:C.bg3,padding:"2px 8px",borderRadius:10}}>190건 백테스트 · {d.at} {off>0?"+":""}{off}%p</div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,fontSize:12}}>
                   <div><span style={{color:C.txd,fontSize:10}}>사정률</span><br/><span style={{color:C.gold,fontWeight:600,fontFamily:"monospace"}}>{(100+oa).toFixed(4)}%</span></div>
@@ -802,7 +804,7 @@ ${baseInfo}
                   <div><span style={{color:C.txd,fontSize:10}}>투찰율</span><br/><span style={{color:"#85b7eb",fontFamily:"monospace"}}>{oBR?oBR.toFixed(4)+"%":"—"}</span></div>
                 </div>
                 {d.match_status==="matched"&&ab&&<div style={{marginTop:6,fontSize:10,color:ob<=ab?"#5dca96":"#e24b4a"}}>{ob<=ab?"✓ 1순위 가능 (실제 1위 "+tc(ab)+"원 대비 낮음)":"✗ 1순위 불가 (실제 1위 "+tc(ab)+"원 대비 높음)"}</div>}
-                <div style={{fontSize:9,color:C.txd,marginTop:4}}>예측 사정률({pa!=null?(100+pa).toFixed(4):"-"}%)에서 -0.1%p 오프셋</div>
+                <div style={{fontSize:9,color:C.txd,marginTop:4}}>예측 사정률({pa!=null?(100+pa).toFixed(4):"-"}%) {off>0?"+":""}{off}%p 기관별 오프셋</div>
               </div>
             </div>})()}
 
@@ -980,15 +982,15 @@ ${baseInfo}
               <div><span style={{color:C.txd}}>하한율:</span> {pred.fr}%</div>
               <div style={{gridColumn:"1/3"}}><span style={{color:C.txd}}>근거:</span> <span style={{fontSize:10}}>{pred.src}</span></div>
             </div>
-            {/* ★ 최적 투찰 (V5.1) */}
+            {/* ★ 최적 투찰 (기관별 차별 오프셋) */}
             {pred.optBid&&<div style={{marginTop:8,padding:"8px 10px",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.25)",borderRadius:6}}>
-              <div style={{fontSize:11,fontWeight:600,color:C.gold,marginBottom:4}}>★ 최적 투찰 <span style={{fontWeight:400,fontSize:9,color:C.txd}}>(63건 백테스트 · 낙찰률 30.2%)</span></div>
+              <div style={{fontSize:11,fontWeight:600,color:C.gold,marginBottom:4}}>★ 최적 투찰 <span style={{fontWeight:400,fontSize:9,color:C.txd}}>(190건 백테스트 · {clsAg(inp.agency)} {pred.optOffset>0?"+":""}{pred.optOffset}%p)</span></div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,fontSize:12}}>
                 <div><span style={{color:C.txd,fontSize:10}}>사정률</span><br/><span style={{color:C.gold,fontWeight:600,fontFamily:"monospace"}}>{(100+pred.optAdj).toFixed(4)}%</span></div>
                 <div><span style={{color:C.txd,fontSize:10}}>투찰금액</span><br/><span style={{color:C.gold,fontWeight:700,fontFamily:"monospace",fontSize:13}}>{tc(pred.optBid)}원</span></div>
                 <div><span style={{color:C.txd,fontSize:10}}>투찰율</span><br/><span style={{color:"#85b7eb",fontFamily:"monospace"}}>{pred.optXp>0?(pred.optBid/pred.optXp*100).toFixed(4)+"%":"—"}</span></div>
               </div>
-              <div style={{fontSize:9,color:C.txd,marginTop:3}}>예측 사정률 -0.1%p 오프셋 적용</div>
+              <div style={{fontSize:9,color:C.txd,marginTop:3}}>기관별 오프셋 적용 ({pred.optOffset>0?"+":""}{pred.optOffset}%p)</div>
             </div>}
             {/* AI 시뮬레이션 */}
             <div style={{marginTop:8,borderTop:"1px solid "+C.bdr,paddingTop:8}}>
