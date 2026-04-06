@@ -51,7 +51,7 @@ export default function App(){
   const[compFilter,setCompFilter]=useState("all");
   const[bidDetails,setBidDetails]=useState([]);
   const[agAss,setAgAss]=useState({});
-  const[simResult,setSimResult]=useState(null);
+  const[isWomenBiz,setIsWomenBiz]=useState(true); // 여성기업 가산 (기본 ON)  const[simResult,setSimResult]=useState(null);
   const[expandedDetail,setExpandedDetail]=useState(null);
   const[simSlider,setSimSlider]=useState(0); // Phase 3: 투찰 시뮬레이터 사정률 슬라이더
   const[adjPatDec,setAdjPatDec]=useState(2); // 사정률 패턴 소수점 자릿수 (2~4)
@@ -87,7 +87,7 @@ export default function App(){
     const agType=r.at||clsAg(r.ag);const agName=r.ag||"";
     const curStat=allS.as?.[agName];const typeStat=allS.ts?.[agType];
     const agDets=bidDetails.filter(d=>d.ag===agName);
-    const rec=recommendAssumedAdj({at:agType,agName,ba:r.ba,ep:r.ep,av:r.av},allS.ts,allS.as,agAss);
+    const rec=recommendAssumedAdj({at:agType,agName,ba:r.ba,ep:r.ep,av:r.av,isWomenBiz},allS.ts,allS.as,agAss);
     const baseInfo=`■ 입찰 정보
 - 공고명: ${(r.pn||"").slice(0,50)}
 - 발주기관: ${agName} (${agType})
@@ -284,7 +284,7 @@ ${baseInfo}
           // 입찰서류함 → 예측 처리
           if(!Object.keys(allS.ts||{}).length){throw new Error("낙찰 통계가 로드되지 않았습니다. 낙찰정보리스트를 먼저 업로드해주세요.")}
           const items=parseBidDoc(raw);if(!items.length)throw new Error("입찰서류함: 예측 대상 0건");
-          const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,agAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
+          const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,isWomenBiz},allS.ts,allS.as,bidDetails);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,isWomenBiz},allS.ts,allS.as,agAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
           if(!results.length)throw new Error("예측 결과 0건");
           accPredResults=accPredResults.concat(results);setPredResults([...accPredResults]); // ★ 누적 표시
           const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,source:"file_upload",match_status:"pending"}));
@@ -313,7 +313,7 @@ ${baseInfo}
     let totalResults=[];let successCount=0;let failCount=0;const logs=[];
     for(const file of Array.from(fileList)){
       try{const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length){logs.push({name:file.name,ok:false,msg:"예측 대상 0건"});failCount++;continue}
-        const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,agAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
+        const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,isWomenBiz},allS.ts,allS.as,bidDetails);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,isWomenBiz},allS.ts,allS.as,agAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
         if(!results.length){logs.push({name:file.name,ok:false,msg:"예측 결과 0건"});failCount++;continue}
         totalResults=totalResults.concat(results);
         logs.push({name:file.name,ok:true,msg:`${results.length}건 예측`});successCount++;
@@ -359,11 +359,11 @@ ${baseInfo}
   const[manualRec,setManualRec]=useState(null);
   const doManualPred=useCallback(()=>{
     if(!Object.keys(allS.ts||{}).length){setMsg({type:"err",text:"낙찰 데이터가 없습니다. 먼저 데이터를 업로드해주세요."});return}
-    const p=predictV5({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,bidDetails);
+    const p=predictV5({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue),isWomenBiz},allS.ts,allS.as,bidDetails);
     if(!p){setMsg({type:"err",text:"예측 실패: 기관 또는 금액 정보를 확인해주세요."});return}
     setPred(p);if(p)setSimSlider(Math.round(p.adj*100));
-    const rec=recommendAssumedAdj({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,agAss);
-    setManualRec(rec)},[inp,allS,bidDetails]);
+    const rec=recommendAssumedAdj({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue),isWomenBiz},allS.ts,allS.as,agAss);
+    setManualRec(rec)},[inp,allS,bidDetails,isWomenBiz]);
 
   // 삭제
   const selCount=Object.keys(sel).filter(k=>sel[k]).length;
@@ -906,6 +906,17 @@ ${baseInfo}
           </div>
         </div>
       </div>})()}
+
+      {/* 여성기업 가산 옵션 */}
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,padding:"8px 14px",background:isWomenBiz?"rgba(93,202,150,0.06)":"rgba(255,255,255,0.02)",border:"1px solid "+(isWomenBiz?"rgba(93,202,150,0.25)":C.bdr),borderRadius:8}}>
+        <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:12,color:isWomenBiz?"#5dca96":C.txm}} onClick={()=>setIsWomenBiz(!isWomenBiz)}>
+          <span style={{width:16,height:16,borderRadius:3,border:"1.5px solid "+(isWomenBiz?"#5dca96":C.txd),background:isWomenBiz?"#5dca96":"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#fff",fontWeight:700,flexShrink:0}}>{isWomenBiz?"✓":""}</span>
+          여성기업 가산 적용
+        </label>
+        <span style={{fontSize:10,color:C.txd}}>|</span>
+        <span style={{fontSize:10,color:C.txm}}>경영상태 10% 가산 → 낙찰하한율 <span style={{color:isWomenBiz?"#5dca96":C.txd,fontWeight:600}}>{isWomenBiz?"-0.25%p 적용중":"미적용"}</span></span>
+        <span style={{fontSize:10,color:C.txd,marginLeft:"auto"}}>별표5 기준 · 시공비율 10% 이상(단독 포함)</span>
+      </div>
 
       {/* 상단: 파일 업로드 + 수동 시뮬레이션 토글 */}
       <div style={{display:"grid",gridTemplateColumns:showSim?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
