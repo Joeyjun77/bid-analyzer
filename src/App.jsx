@@ -49,6 +49,7 @@ export default function App(){
   const[predResults,setPredResults]=useState([]);
   const[predictions,setPredictions]=useState([]);
   const[compFilter,setCompFilter]=useState("all");
+  const[predListShow,setPredListShow]=useState(50); // 리스트 표시 건수 (더보기)
   const[bidDetails,setBidDetails]=useState([]);
   const[agAss,setAgAss]=useState({});
   const[isWomenBiz,setIsWomenBiz]=useState(true); // 여성기업 가산 (기본 ON)
@@ -1144,11 +1145,11 @@ ${baseInfo}
           </div>
         </div>
         <div style={{display:"flex",gap:4,marginBottom:10}}>
-          <button onClick={()=>setCompFilter("all")} style={btnS(compFilter==="all",C.gold)}>전체 ({compStats.total})</button>
-          <button onClick={()=>setCompFilter("matched")} style={btnS(compFilter==="matched","#5dca96")}>매칭 ({compStats.matched})</button>
-          <button onClick={()=>setCompFilter("pending")} style={btnS(compFilter==="pending","#e24b4a")}>대기 ({compStats.pending})</button>
+          <button onClick={()=>{setCompFilter("all");setPredListShow(50)}} style={btnS(compFilter==="all",C.gold)}>전체 ({compStats.total})</button>
+          <button onClick={()=>{setCompFilter("matched");setPredListShow(50)}} style={btnS(compFilter==="matched","#5dca96")}>매칭 ({compStats.matched})</button>
+          <button onClick={()=>{setCompFilter("pending");setPredListShow(50)}} style={btnS(compFilter==="pending","#e24b4a")}>대기 ({compStats.pending})</button>
         </div>
-        {compList.length>0?<div style={{overflow:"auto",maxHeight:600}}>
+        {compList.length>0?<div style={{overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
             <colgroup><col style={{width:"18%"}}/><col style={{width:"10%"}}/><col style={{width:"9%"}}/><col style={{width:"12%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
             <thead>
@@ -1167,7 +1168,7 @@ ${baseInfo}
               <th style={{padding:"7px 4px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>낙찰</th>
               <th style={{padding:"7px 4px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}></th>
             </tr></thead>
-            <tbody>{compList.slice(0,100).map(p=>{
+            <tbody>{compList.slice(0,predListShow).map(p=>{
               const optErr=(p.opt_adj!=null&&p.actual_adj_rate!=null)?Number(p.opt_adj)-Number(p.actual_adj_rate):null;
               const isAnomaly=optErr!=null&&Math.abs(optErr)>5;
               const errColor=isAnomaly?"#e24b4a":optErr!=null?(Math.abs(optErr)<0.3?"#5dca96":Math.abs(optErr)<1?"#d4a834":"#e24b4a"):C.txd;
@@ -1185,6 +1186,13 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>{setDetailModal(p);setDetailAi(p.ai_advice||"");setDetailAiLoading(false)}} style={{padding:"2px 8px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.25)",borderRadius:4,color:"#a8b4ff",cursor:"pointer"}}>상세</button></td>
               </tr>})}</tbody>
           </table>
+          {/* 더보기 + 건수 표시 */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0"}}>
+            <span style={{fontSize:11,color:C.txd}}>{Math.min(predListShow,compList.length)} / {compList.length}건 표시</span>
+            {predListShow<compList.length?<button onClick={()=>setPredListShow(prev=>prev+50)} style={{padding:"6px 20px",fontSize:11,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:6,color:C.gold,cursor:"pointer",fontWeight:500}}>
+              더보기 (+50건)
+            </button>:<span style={{fontSize:10,color:C.txd}}>전체 표시 완료</span>}
+          </div>
         </div>:<div style={{textAlign:"center",padding:30,color:C.txd,fontSize:12}}>예측 내역이 없습니다. 입찰서류함을 업로드해주세요.</div>}
       </div>
     </div>}
