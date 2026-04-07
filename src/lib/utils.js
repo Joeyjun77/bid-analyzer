@@ -215,7 +215,9 @@ export function predictV5({at,agName,ba,ep,av,isWomenBiz},ts,as,details){
   // 안정(30건+): 지자체 -0.15, 군시설 -0.15
   // 참고(10~29건): 교육청 -0.2
   // 불안정(<10건): 한전 +0.1 (음수 bias 보정), 나머지 -0.1 기본
-  const OPT_OFFSET={"지자체":-0.15,"군시설":-0.15,"교육청":-0.2,"한전":0.1,"LH":-0.1,"조달청":-0.1,"수자원공사":-0.1};
+  // ★ 기관별 오프셋 (722건 백테스트 기반, 2026-04-07 재교정)
+  // 군시설: -0.15→0.0 (낙찰 2→3건, 탈락 61→51건 감소)
+  const OPT_OFFSET={"지자체":-0.15,"군시설":0.0,"교육청":-0.2,"한전":0.1,"LH":-0.1,"조달청":-0.1,"수자원공사":-0.1};
   const off=OPT_OFFSET[at]||-0.1;
   const optAdj=rnd4(ref.med+off);const optXp=calcXp(ref.med+off);const optBid=calcBid(ref.med+off);
   return{scenarios,fr,src,bidRateRec,bidByRate,
