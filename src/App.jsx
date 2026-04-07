@@ -50,6 +50,7 @@ export default function App(){
   const[predictions,setPredictions]=useState([]);
   const[compFilter,setCompFilter]=useState("all");
   const[predListShow,setPredListShow]=useState(50); // 리스트 표시 건수 (더보기)
+  const[hideYuchal,setHideYuchal]=useState(true); // 유찰 건 숨김 (기본 ON)
   const[bidDetails,setBidDetails]=useState([]);
   const[agAss,setAgAss]=useState({});
   const[isWomenBiz,setIsWomenBiz]=useState(true); // 여성기업 가산 (기본 ON)
@@ -422,7 +423,8 @@ ${baseInfo}
     Object.values(byType).forEach(v=>{v.avgErr=v.n?Math.round(v.errSum/v.n*10000)/10000:0});
     return{total:preds.length,matched:matched.length,pending:pending.length,avgErr,bias,within05,byType}},[predictions]);
   const compList=useMemo(()=>{const p=predictions||[];let list;if(compFilter==="matched")list=p.filter(x=>x.match_status==="matched");else if(compFilter==="pending")list=p.filter(x=>x.match_status==="pending");else list=p;
-    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,predSort]);
+    if(hideYuchal)list=list.filter(x=>!(x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)")));
+    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,predSort,hideYuchal]);
 
   // 스타일
   const btnS=(act,c)=>({padding:"4px 12px",fontSize:11,fontWeight:act?600:400,background:act?c+"22":"#1a1a30",color:act?c:"#888",border:"1px solid "+(act?c+"44":"#252540"),borderRadius:5,cursor:"pointer"});
@@ -1144,10 +1146,14 @@ ${baseInfo}
               style={{padding:"4px 10px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,cursor:busy?"default":"pointer"}}>{busy?"갱신...":"새로고침"}</button>
           </div>
         </div>
-        <div style={{display:"flex",gap:4,marginBottom:10}}>
+        <div style={{display:"flex",gap:4,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
           <button onClick={()=>{setCompFilter("all");setPredListShow(50)}} style={btnS(compFilter==="all",C.gold)}>전체 ({compStats.total})</button>
           <button onClick={()=>{setCompFilter("matched");setPredListShow(50)}} style={btnS(compFilter==="matched","#5dca96")}>매칭 ({compStats.matched})</button>
           <button onClick={()=>{setCompFilter("pending");setPredListShow(50)}} style={btnS(compFilter==="pending","#e24b4a")}>대기 ({compStats.pending})</button>
+          <label style={{display:"flex",alignItems:"center",gap:4,marginLeft:8,cursor:"pointer",fontSize:10,color:hideYuchal?C.txd:"#e24b4a"}}>
+            <input type="checkbox" checked={hideYuchal} onChange={e=>{setHideYuchal(e.target.checked);setPredListShow(50)}} style={{accentColor:"#e24b4a",width:12,height:12}}/>
+            <span>유찰 숨김 ({predictions.filter(p=>p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)")).length}건)</span>
+          </label>
         </div>
         {compList.length>0?<div style={{overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
@@ -1173,15 +1179,16 @@ ${baseInfo}
               const isAnomaly=optErr!=null&&Math.abs(optErr)>5;
               const errColor=isAnomaly?"#e24b4a":optErr!=null?(Math.abs(optErr)<0.3?"#5dca96":Math.abs(optErr)<1?"#d4a834":"#e24b4a"):C.txd;
               const canWin=!isAnomaly&&p.opt_bid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(p.opt_bid)<=Number(p.actual_bid_amount)&&Number(p.opt_bid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
-              return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:isAnomaly?0.5:1}}>
+              const isYuchal=p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)");
+              return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:isAnomaly||isYuchal?0.5:1}}>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>{p.opt_adj!=null?(100+Number(p.opt_adj)).toFixed(4)+"%":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>{p.opt_bid?tc(Number(p.opt_bid)):p.pred_bid_amount?tc(Number(p.pred_bid_amount)):""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11}}>{p.open_date||""}</td>
-                <td style={{padding:"6px",textAlign:"right",color:"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
-                <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
-                <td style={{padding:"6px",textAlign:"center"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span></td>
+                <td style={{padding:"6px",textAlign:"right",color:"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{color:"#e24b4a",fontSize:10}}>유찰</span>:p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
+                <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
+                <td style={{padding:"6px",textAlign:"center"}}>{isYuchal?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.1)",color:"#e24b4a"}}>유찰</span>:<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span>}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>{setDetailModal(p);setDetailAi(p.ai_advice||"");setDetailAiLoading(false)}} style={{padding:"2px 8px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.25)",borderRadius:4,color:"#a8b4ff",cursor:"pointer"}}>상세</button></td>
               </tr>})}</tbody>
