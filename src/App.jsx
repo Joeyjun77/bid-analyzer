@@ -123,6 +123,12 @@ ${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
     if(mode==="post"&&r.actual!=null){
       const err=r.actual-p.adj;const errDir=err>0?"높게":"낮게";
       const matchedRec=r.matchedRecord||{};
+      const optAdj=p.optAdj!=null?p.optAdj:p.adj;
+      const optBid=p.optBid||p.bid;
+      const marginWon=matchedRec.bp?Number(matchedRec.bp)-optBid:null;
+      const marginPct=marginWon&&matchedRec.bp?marginWon/Number(matchedRec.bp)*100:null;
+      const epN=r.ep||r.ba||0;
+      const tierPct=epN<1e8?"1.8%":epN<3e8?"4.5%":epN<1e9?"8.8%":"12.0%";
       return`당신은 한국 공공조달 입찰 전문가 AI입니다. 이 입찰건은 이미 개찰이 완료되어 실제 결과가 확인되었습니다. 예측과 실제의 차이를 분석하고, 향후 유사건에 대한 교훈을 300자 이내로 정리해주세요.
 
 ${baseInfo}
@@ -130,15 +136,17 @@ ${baseInfo}
 ■ 실제 결과 (개찰 완료)
 - 실제 사정률: ${r.actual>=0?"+":""}${Number(r.actual).toFixed(4)}%
 - 예측 오차: ${err>=0?"+":""}${err.toFixed(4)}% (예측이 실제보다 ${Math.abs(err).toFixed(4)}% ${errDir} 예측)
+- 추천 사정률: ${(100+optAdj).toFixed(4)}% / 추천 투찰금액: ${optBid.toLocaleString()}원
 ${matchedRec.co?`- 1순위 업체: ${matchedRec.co}`:""}
 ${matchedRec.pc?`- 참여업체 수: ${matchedRec.pc}개사`:""}
 ${matchedRec.bp?`- 1순위 투찰금액: ${Number(matchedRec.bp).toLocaleString()}원`:""}
-${matchedRec.br1?`- 1순위 투찰율: ${Number(matchedRec.br1).toFixed(4)}%`:""}
+${marginWon!=null?`- 1순위 대비 마진: ${marginWon>=0?"+":""}${Math.round(marginWon).toLocaleString()}원 (${marginPct>=0?"+":""}${marginPct.toFixed(3)}%) → ${marginWon>=0?"낙찰 가능":"낙찰 불가"}`:""}
+- 금액대 기대 낙찰률: ${tierPct} (722건 백테스트)
 
 위 정보를 바탕으로:
 1. 예측 오차의 원인 분석 (기관 특성, 복수예가 추첨 변동성, 데이터 부족 등)
-2. 이 기관의 향후 입찰에 적용할 수 있는 교훈 한 가지
-3. 전략 보정 제안: 이 기관에서는 보수/균형/공격 중 어떤 접근이 유리했는지`}
+2. ${marginWon!=null&&marginWon<0&&Math.abs(marginPct)<0.5?"이 건은 0.5% 이내로 아깝게 놓친 건입니다. 다음 투찰 시 더 적극적 접근이 유리했을지 분석해주세요.":"이 기관의 향후 입찰에 적용할 수 있는 교훈 한 가지"}
+3. 전략 보정 제안: 이 기관에서는 추천 사정률을 더 낮출지/유지할지/높일지`}
 
     return`당신은 한국 공공조달 입찰 전문가 AI입니다. 다음 입찰건에 대해 맞춤형 투찰 전략을 200자 이내로 간결하게 조언해주세요.
 
@@ -850,6 +858,20 @@ ${baseInfo}
                   <div style={{marginTop:4,fontSize:10,color:C.txd}}>경쟁자 예상 투찰 위치 (투찰용 아님, 참고만)</div>
                 </div>
               </details>}
+              {/* 금액대별 기대 낙찰률 안내 */}
+              {ep&&(()=>{
+                const epN=Number(ep);
+                const tierInfo=epN<1e8?{tier:"1억 미만",pct:"1.8%",desc:"소규모 공사 — 경쟁 과열",color:"#e24b4a"}
+                  :epN<3e8?{tier:"1~3억",pct:"4.5%",desc:"표준 경쟁 구간",color:C.gold}
+                  :epN<1e9?{tier:"3~10억",pct:"8.8%",desc:"낙찰 유리 구간",color:"#5dca96"}
+                  :{tier:"10억 이상",pct:"12.0%",desc:"대형 공사 — 참여 자격 제한",color:"#5dca96"};
+                return<div style={{fontSize:10,color:C.txd,padding:"4px 8px",background:C.bg3,borderRadius:4,marginBottom:6}}>
+                  💡 {tierInfo.tier} 구간 · 기대 낙찰률 <span style={{color:tierInfo.color,fontWeight:600}}>{tierInfo.pct}</span> · {tierInfo.desc} <span style={{fontSize:9}}>(722건 백테스트)</span>
+                </div>})()}
+              {/* 이상치 매칭 경고 */}
+              {d.match_status==="matched"&&optErr!=null&&Math.abs(optErr)>5&&<div style={{padding:"6px 8px",background:"rgba(226,75,74,0.1)",borderRadius:4,marginBottom:6,fontSize:10,color:"#e24b4a"}}>
+                ⚠ 비정상 매칭 — 오차 {Math.abs(optErr).toFixed(1)}%p (수의계약/내역입찰/유찰 재공고 가능성)
+              </div>}
             </div>})()}
 
           {/* ★ 발주기관 1위 사정률 패턴 (소수점 2~4자리 선택) */}
@@ -1147,16 +1169,17 @@ ${baseInfo}
             </tr></thead>
             <tbody>{compList.slice(0,100).map(p=>{
               const optErr=(p.opt_adj!=null&&p.actual_adj_rate!=null)?Number(p.opt_adj)-Number(p.actual_adj_rate):null;
-              const errColor=optErr!=null?(Math.abs(optErr)<0.3?"#5dca96":Math.abs(optErr)<1?"#d4a834":"#e24b4a"):C.txd;
-              const canWin=p.opt_bid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(p.opt_bid)<=Number(p.actual_bid_amount)&&Number(p.opt_bid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
-              return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr}}>
+              const isAnomaly=optErr!=null&&Math.abs(optErr)>5;
+              const errColor=isAnomaly?"#e24b4a":optErr!=null?(Math.abs(optErr)<0.3?"#5dca96":Math.abs(optErr)<1?"#d4a834":"#e24b4a"):C.txd;
+              const canWin=!isAnomaly&&p.opt_bid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(p.opt_bid)<=Number(p.actual_bid_amount)&&Number(p.opt_bid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
+              return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:isAnomaly?0.5:1}}>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>{p.opt_adj!=null?(100+Number(p.opt_adj)).toFixed(4)+"%":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>{p.opt_bid?tc(Number(p.opt_bid)):p.pred_bid_amount?tc(Number(p.pred_bid_amount)):""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
-                <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{optErr!=null?optErr.toFixed(4):""}</td>
+                <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span></td>
                 <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>{setDetailModal(p);setDetailAi(p.ai_advice||"");setDetailAiLoading(false)}} style={{padding:"2px 8px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.25)",borderRadius:4,color:"#a8b4ff",cursor:"pointer"}}>상세</button></td>
