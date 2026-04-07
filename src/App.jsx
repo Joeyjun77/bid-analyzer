@@ -1155,6 +1155,15 @@ ${baseInfo}
             <span>유찰 숨김 ({predictions.filter(p=>p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)")).length}건)</span>
           </label>
         </div>
+        {/* 오차 색상 범례 */}
+        <div style={{display:"flex",gap:12,marginBottom:8,padding:"4px 8px",background:C.bg3,borderRadius:6,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:10,color:C.txd}}>오차 범례:</span>
+          <span style={{fontSize:10,color:"#5dca96"}}>● &lt;0.3% 우수</span>
+          <span style={{fontSize:10,color:"#d4a834"}}>● 0.3~1.0% 보통</span>
+          <span style={{fontSize:10,color:"#e24b4a"}}>● ≥1.0% 큰차이</span>
+          <span style={{fontSize:10,color:"#e24b4a"}}>⚠ &gt;5% 이상치</span>
+          <span style={{fontSize:10,color:C.txd}}>— 유찰</span>
+        </div>
         {compList.length>0?<div style={{overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
             <colgroup><col style={{width:"18%"}}/><col style={{width:"10%"}}/><col style={{width:"9%"}}/><col style={{width:"12%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
