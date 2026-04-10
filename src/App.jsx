@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS, SB_URL, hdrs } from "./lib/constants.js";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix } from "./lib/supabase.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi } from "./lib/utils.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis } from "./lib/supabase.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
@@ -49,7 +49,12 @@ export default function App(){
   const[predResults,setPredResults]=useState([]);
   const[predictions,setPredictions]=useState([]);
   const[scoringMap,setScoringMap]=useState({}); // Phase 5: ROI scoring (prediction_id → grade/win_prob/...)
-  const[gradeFilter,setGradeFilter]=useState("all"); // Phase 5: 등급 필터 (all/SA/SAB/notD)
+  const[biasMap,setBiasMapState]=useState({agency:{},at:{}}); // Phase 5.4: 편차 보정 맵
+  const[trendMap,setTrendMapState]=useState({}); // Phase 5.4: 추세 맵
+  const[claudeApiKey,setClaudeApiKey]=useState(()=>localStorage.getItem("claude_api_key")||""); // Phase 5.4: AI 키
+  const[aiAnalysisMap,setAiAnalysisMap]=useState({}); // 예측ID → AI 분석 결과
+  const[aiLoadingPredId,setAiLoadingPredId]=useState(null);
+  const[gradeFilter,setGradeFilter]=useState("all"); // Phase 5: 등급 필터
   const[compFilter,setCompFilter]=useState("all");
   const[predListShow,setPredListShow]=useState(50); // 리스트 표시 건수 (더보기)
   const[hideYuchal,setHideYuchal]=useState(true); // 유찰 건 숨김 (기본 ON)
@@ -274,6 +279,8 @@ ${baseInfo}
     try{const agStats=await sbFetchAgAssumedStats();setAgAss(agStats||{})}catch(e){setAgAss({})}
     try{const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm)}catch(e){setScoringMap({})}
     try{const mtx=await sbFetchRoiMatrix();if(mtx?.matrix)setWinProbMatrix(mtx.matrix)}catch(e){}
+    try{const bm=await sbFetchBiasMap();if(bm){setBiasMap(bm);setBiasMapState(bm)}}catch(e){}
+    try{const tm=await sbFetchTrendMap();if(tm){setTrendMap(tm);setTrendMapState(tm)}}catch(e){}
     setDbLoading(false)
   })()},[refreshStats]);
 
@@ -562,6 +569,18 @@ ${baseInfo}
           <div style={{fontSize:9,color:C.txd,marginTop:2}}>{c.s}</div>
         </div>)}
       </div>
+
+      {/* Phase 5.4: Claude API 키 설정 */}
+      {!claudeApiKey&&<div style={{background:"rgba(168,85,247,0.05)",border:"1px dashed rgba(168,85,247,0.4)",borderRadius:8,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:11,color:"#a855f7",fontWeight:600}}>🤖 Claude AI 활성화</span>
+        <input type="password" placeholder="sk-ant-api03-..." style={{flex:1,minWidth:200,padding:"6px 10px",fontSize:11,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,fontFamily:"monospace"}} 
+          onKeyDown={e=>{if(e.key==="Enter"){const v=e.target.value.trim();if(v.startsWith("sk-ant-")){setClaudeApiKey(v);localStorage.setItem("claude_api_key",v);setMsg({type:"ok",text:"Claude API 키 저장됨 — 상세 모달에서 AI 분석 사용 가능"})}else{setMsg({type:"err",text:"올바른 형식의 API 키가 아닙니다 (sk-ant-...)"})}}}}/>
+        <span style={{fontSize:9,color:C.txd}}>Enter로 저장 · 로컬에만 저장됨 · console.anthropic.com에서 발급</span>
+      </div>}
+      {claudeApiKey&&<div style={{background:"rgba(93,202,165,0.05)",border:"1px solid rgba(93,202,165,0.3)",borderRadius:6,padding:"6px 12px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:10}}>
+        <span style={{color:"#5dca96"}}>🤖 Claude AI 활성화됨 — 상세 모달에서 분석 사용 가능</span>
+        <button onClick={()=>{if(confirm("Claude API 키를 삭제하시겠습니까?")){setClaudeApiKey("");localStorage.removeItem("claude_api_key")}}} style={{padding:"2px 8px",fontSize:9,background:"transparent",border:"1px solid "+C.bdr,borderRadius:4,color:C.txd,cursor:"pointer"}}>제거</button>
+      </div>}
 
       {/* Phase 5.2: 만료 경고 카드 (낙찰결과 미업로드 유도) */}
       {compStats.expired>0&&<div style={{background:"linear-gradient(135deg, rgba(226,75,74,0.08), rgba(212,168,52,0.04))",border:"1px solid rgba(226,75,74,0.3)",borderRadius:8,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={()=>{setTab("predict");setCompFilter("expired")}}>
@@ -917,6 +936,91 @@ ${baseInfo}
                   <div style={{fontSize:10,color:gc,marginTop:6,paddingTop:6,borderTop:"1px solid "+C.bdr,fontWeight:500}}>{conclusion}</div>
                 </div>
               })()}
+            </div>
+          })()}
+
+          {/* Phase 5.4: 보정 적용 강화 예측 + AI 분석 */}
+          {(()=>{
+            const enhanced=getEnhancedAdj(d);
+            if(!enhanced)return null;
+            const baseAdj=enhanced.base;
+            const enhancedAdj=enhanced.enhanced;
+            const totalOffset=enhanced.biasOffset+enhanced.trendOffset;
+            const ba2=Number(d.ba||0);
+            const av2=Number(d.av||0);
+            const fr2=Number(d.pred_floor_rate||0);
+            // 강화 사정률 기반 새 투찰금액 계산
+            const enhancedXp=ba2*(1+enhancedAdj/100);
+            const enhancedBid=av2>0?Math.ceil(av2+(enhancedXp-av2)*(fr2/100)):Math.ceil(enhancedXp*(fr2/100));
+            const ai=aiAnalysisMap[d.id];
+            const aiLoading=aiLoadingPredId===d.id;
+            
+            return<div style={{marginBottom:14,padding:"12px 14px",background:"linear-gradient(135deg, rgba(168,85,247,0.08), rgba(93,202,165,0.04))",border:"1px solid rgba(168,85,247,0.35)",borderRadius:8}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                <span style={{fontSize:11,color:"#a855f7",fontWeight:600,letterSpacing:1}}>🧠 Phase 5.4 — AI 강화 예측</span>
+                {!ai&&!aiLoading&&claudeApiKey&&<button onClick={async()=>{
+                  try{setAiLoadingPredId(d.id);
+                    const ctx=buildAiContext(d,scoringMap,biasMap,trendMap,recs);
+                    const result=await callClaudeAi(ctx,claudeApiKey);
+                    await sbSaveAiAnalysis(d.id,d.pn_no,result);
+                    setAiAnalysisMap(prev=>({...prev,[d.id]:result}))
+                  }catch(e){alert("AI 분석 실패: "+e.message)}
+                  finally{setAiLoadingPredId(null)}
+                }} style={{padding:"4px 12px",fontSize:10,background:"rgba(168,85,247,0.15)",border:"1px solid rgba(168,85,247,0.4)",borderRadius:5,color:"#a855f7",cursor:"pointer",fontWeight:600}}>🤖 Claude AI 분석</button>}
+                {aiLoading&&<span style={{fontSize:10,color:"#a855f7"}}>AI 분석 중...</span>}
+                {!claudeApiKey&&<span style={{fontSize:9,color:C.txd}}>설정에서 Claude API 키를 등록하세요</span>}
+              </div>
+              
+              {/* 편차 + 추세 보정 결과 */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div style={{padding:"8px 10px",background:C.bg3,borderRadius:5}}>
+                  <div style={{fontSize:9,color:C.txd,marginBottom:2}}>기존 예측</div>
+                  <div style={{fontSize:14,fontWeight:600,color:C.txm,fontFamily:"monospace"}}>{baseAdj>=0?"+":""}{baseAdj.toFixed(4)}%</div>
+                </div>
+                <div style={{padding:"8px 10px",background:"rgba(93,202,165,0.08)",borderRadius:5,border:"1px solid rgba(93,202,165,0.3)"}}>
+                  <div style={{fontSize:9,color:"#5dca96",marginBottom:2}}>🎯 강화 예측 (보정 적용)</div>
+                  <div style={{fontSize:14,fontWeight:700,color:"#5dca96",fontFamily:"monospace"}}>{enhancedAdj>=0?"+":""}{enhancedAdj.toFixed(4)}%</div>
+                </div>
+              </div>
+              {totalOffset!==0&&<div style={{padding:"6px 10px",background:"rgba(0,0,0,0.2)",borderRadius:5,marginBottom:8}}>
+                <div style={{fontSize:9,color:C.txm,marginBottom:3}}>적용된 보정 ({totalOffset>=0?"+":""}{totalOffset.toFixed(4)}%p)</div>
+                {enhanced.explanation.map((e,i)=><div key={i} style={{fontSize:10,color:C.txt,marginBottom:2}}>• {e}</div>)}
+              </div>}
+              {totalOffset!==0&&<div style={{padding:"8px 10px",background:"rgba(212,168,52,0.05)",borderRadius:5,border:"1px solid rgba(212,168,52,0.25)",marginBottom:ai?10:0}}>
+                <div style={{fontSize:9,color:C.gold,marginBottom:3}}>💰 강화 추천 투찰금액</div>
+                <div style={{fontSize:15,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{tc(enhancedBid)}원</div>
+                <div style={{fontSize:9,color:C.txd,marginTop:3}}>(기존 {d.opt_bid?tc(Number(d.opt_bid)):"—"}원 대비 {d.opt_bid?(enhancedBid-Number(d.opt_bid)>=0?"+":"")+tc(enhancedBid-Number(d.opt_bid)):"—"}원)</div>
+              </div>}
+              
+              {/* AI 분석 결과 */}
+              {ai&&<div style={{marginTop:10,padding:"10px 12px",background:"rgba(168,85,247,0.08)",borderRadius:6,border:"1px solid rgba(168,85,247,0.3)"}}>
+                <div style={{fontSize:10,color:"#a855f7",fontWeight:600,marginBottom:6}}>🤖 Claude AI 종합 분석</div>
+                <div style={{fontSize:11,color:C.txt,lineHeight:1.6,marginBottom:8}}>{ai.ai_analysis}</div>
+                
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:8}}>
+                  {[
+                    {k:"safe",label:"🟢 안전",adj:ai.strategy_safe,prob:ai.prob_safe,color:"#5dca96"},
+                    {k:"balanced",label:"🟡 균형",adj:ai.strategy_balanced,prob:ai.prob_balanced,color:"#d4a834"},
+                    {k:"aggressive",label:"🔴 공격",adj:ai.strategy_aggressive,prob:ai.prob_aggressive,color:"#e24b4a"}
+                  ].map(s=>{
+                    const isRec=ai.recommended===s.k;
+                    return<div key={s.k} style={{padding:"6px 8px",background:isRec?s.color+"22":C.bg3,borderRadius:4,border:isRec?"2px solid "+s.color:"1px solid "+C.bdr,textAlign:"center"}}>
+                      <div style={{fontSize:9,color:s.color,fontWeight:isRec?700:500,marginBottom:2}}>{s.label}{isRec?" ★":""}</div>
+                      <div style={{fontSize:11,fontWeight:600,color:C.txt,fontFamily:"monospace"}}>{s.adj!=null?(s.adj>=0?"+":"")+Number(s.adj).toFixed(3)+"%":"—"}</div>
+                      <div style={{fontSize:9,color:C.txm,marginTop:2}}>확률 {s.prob!=null?(Number(s.prob)*100).toFixed(0)+"%":"—"}</div>
+                    </div>
+                  })}
+                </div>
+                
+                {ai.reasons&&Array.isArray(ai.reasons)&&ai.reasons.length>0&&<div style={{marginTop:6}}>
+                  <div style={{fontSize:9,color:C.txd,marginBottom:3}}>📌 결정 이유</div>
+                  {ai.reasons.map((r,i)=><div key={i} style={{fontSize:10,color:C.txt,marginBottom:2,paddingLeft:8}}>• {r}</div>)}
+                </div>}
+                {ai.warnings&&Array.isArray(ai.warnings)&&ai.warnings.length>0&&<div style={{marginTop:6}}>
+                  <div style={{fontSize:9,color:"#e24b4a",marginBottom:3}}>⚠️ 주의사항</div>
+                  {ai.warnings.map((w,i)=><div key={i} style={{fontSize:10,color:"#e24b4a",marginBottom:2,paddingLeft:8}}>• {w}</div>)}
+                </div>}
+              </div>}
             </div>
           })()}
 
@@ -1389,7 +1493,12 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{isYuchal?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.1)",color:"#e24b4a"}}>유찰</span>:isSuui?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(212,168,52,0.15)",color:"#d4a834"}}>수의</span>:<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span>}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"&&!isYuchal&&!isSuui?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
-                <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>{setDetailModal(p);setDetailAi(p.ai_advice||"");setDetailAiLoading(false)}} style={{padding:"2px 8px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.25)",borderRadius:4,color:"#a8b4ff",cursor:"pointer"}}>상세</button></td>
+                <td style={{padding:"6px",textAlign:"center"}}><button onClick={async()=>{setDetailModal(p);setDetailAi(p.ai_advice||"");setDetailAiLoading(false);
+                  // Phase 5.4: 저장된 AI 분석 자동 로드
+                  if(!aiAnalysisMap[p.id]){
+                    try{const ai=await sbFetchAiAnalysis(p.id);if(ai)setAiAnalysisMap(prev=>({...prev,[p.id]:ai}))}catch(e){}
+                  }
+                }} style={{padding:"2px 8px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.25)",borderRadius:4,color:"#a8b4ff",cursor:"pointer"}}>상세</button></td>
               </tr>})}</tbody>
           </table>
           {/* 더보기 + 건수 표시 */}
