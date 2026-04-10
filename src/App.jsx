@@ -94,8 +94,11 @@ export default function App(){
     try{localStorage.removeItem("bid_chat_msg_"+id)}catch(e){}
     if(chatSid===id){if(next.length>0){selectChat(next[0].id)}else{setChatSid("");setChatMsgs([])}}};
 
-  // ★ Phase 5.6: 통합 최종 추천 계산 (모달 + 예측 리스트 + 엑셀 다운로드 공통)
-  // 우선순위: AI 권장 → Enhanced 매트릭스 → opt_adj → pred_adj
+  // ★ Phase 6-A (2026-04-11): 추천 사정률 단순화 — opt_adj 단일 소스
+  // 화면의 "추천 사정률(100%)"은 오직 opt_adj (편향 보정된 통계 예측) 하나만 사용.
+  // AI 권장과 매트릭스는 참고용 (별도 탭에서 표시, 최종 추천에 영향 없음).
+  // 이유: 140건 백테스트상 opt_adj가 검증된 유일한 값.
+  // 4월 14일 개찰 이후 실제 1위 사정률(100%)과 이 값을 직접 비교하여 낙찰 여부 판정 가능.
   const getFinalRecommendation=useCallback((p)=>{
     if(!p)return{adj:null,bid:null,source:null};
     const ba=p.ba?Number(p.ba):0;
@@ -106,33 +109,18 @@ export default function App(){
       const xp=ba*(1+adj/100);
       return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100));
     };
-    // 1순위: AI 권장
-    const ai=aiAnalysisMap[p.id];
-    if(ai&&ai.recommended){
-      const recKey=ai.recommended;
-      const recAdj=recKey==="safe"?ai.strategy_safe:recKey==="balanced"?ai.strategy_balanced:ai.strategy_aggressive;
-      if(recAdj!=null){
-        const adjNum=Number(recAdj);
-        return{adj:adjNum,bid:calcBid(adjNum),source:"AI-"+(recKey==="safe"?"안전":recKey==="balanced"?"균형":"공격")};
-      }
-    }
-    // 2순위: Enhanced 매트릭스 (편차/추세 보정)
-    const enhanced=getEnhancedAdj(p);
-    if(enhanced&&enhanced.enhanced!=null){
-      return{adj:enhanced.enhanced,bid:calcBid(enhanced.enhanced),source:"매트릭스"};
-    }
-    // 3순위: opt_adj (DB 저장값)
+    // 1순위: opt_adj (편향 보정 + OPT_OFFSET 적용된 최종값)
     if(p.opt_adj!=null){
       const adjNum=Number(p.opt_adj);
-      return{adj:adjNum,bid:p.opt_bid?Number(p.opt_bid):calcBid(adjNum),source:"최적"};
+      return{adj:adjNum,bid:p.opt_bid?Number(p.opt_bid):calcBid(adjNum),source:"추천"};
     }
-    // 4순위: pred_adj_rate
+    // 2순위 fallback: pred_adj_rate (편향 보정 전 순수 예측)
     if(p.pred_adj_rate!=null){
       const adjNum=Number(p.pred_adj_rate);
-      return{adj:adjNum,bid:p.pred_bid_amount?Number(p.pred_bid_amount):calcBid(adjNum),source:"기본"};
+      return{adj:adjNum,bid:p.pred_bid_amount?Number(p.pred_bid_amount):calcBid(adjNum),source:"순수예측"};
     }
     return{adj:null,bid:null,source:null};
-  },[aiAnalysisMap]);
+  },[]);
 
   // AI 프롬프트 생성 (공통)
   const buildAiPrompt=(r,mode="initial")=>{
@@ -824,7 +812,7 @@ ${baseInfo}
           <div style={{padding:"0 14px 10px",overflow:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
               <thead><tr style={{background:C.bg3}}>
-                <th style={{padding:"5px 6px",textAlign:"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:10}}>투찰 사정률</th>
+                <th style={{padding:"5px 6px",textAlign:"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:10}}>사정률 조정(Δ)</th>
                 {["-0.5%","-0.3%","-0.1%","0.0%","+0.1%","+0.3%","+0.5%"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:10}}>{h}</th>)}
               </tr></thead>
               <tbody><tr>
@@ -904,12 +892,8 @@ ${baseInfo}
         const finalRec=getFinalRecommendation(d);
         const finalAdj=finalRec.adj;
         const finalBid=finalRec.bid;
-        const finalSource=finalRec.source==="AI-안전"?"AI 권장 (안전)":
-                          finalRec.source==="AI-균형"?"AI 권장 (균형)":
-                          finalRec.source==="AI-공격"?"AI 권장 (공격)":
-                          finalRec.source==="매트릭스"?"매트릭스 강화":
-                          finalRec.source==="최적"?"최적 투찰":
-                          finalRec.source==="기본"?"기본 예측":"—";
+        const finalSource=finalRec.source==="추천"?"통계 예측 + 편향 보정":
+                          finalRec.source==="순수예측"?"순수 통계 예측":"—";
         const fr2=Number(d.pred_floor_rate||0);
         const calcBid=(adj)=>{const xp=ba*(1+adj/100);return av>0?Math.ceil(av+(xp-av)*(fr2/100)):Math.ceil(xp*(fr2/100))};
         const fmtAdj=(adj)=>adj==null?"—":(100+Number(adj)).toFixed(4)+"%";
@@ -951,7 +935,7 @@ ${baseInfo}
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
               <div style={{padding:"12px 14px",background:"rgba(0,0,0,0.25)",borderRadius:8}}>
-                <div style={{fontSize:10,color:C.txm,marginBottom:4,fontWeight:600}}>🎯 추천 사정률</div>
+                <div style={{fontSize:10,color:C.txm,marginBottom:4,fontWeight:600}}>🎯 추천 사정률(100%)</div>
                 <div style={{fontSize:24,fontWeight:700,color:"#5dca96",fontFamily:"monospace",lineHeight:1.1}}>{fmtAdj(finalAdj)}</div>
               </div>
               <div style={{padding:"12px 14px",background:"rgba(0,0,0,0.25)",borderRadius:8}}>
@@ -991,14 +975,14 @@ ${baseInfo}
           {/* 탭 컨텐츠 */}
           {/* ───────── 상세 탭 ───────── */}
           {detailTab==="detail"&&<div>
-            {/* 예측 vs 실제 비교 테이블 */}
+            {/* 예측 vs 실제 비교 테이블 (pa는 편향 보정 전 순수 통계 예측값) */}
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
               <thead><tr style={{background:C.bg3}}>
-                {["항목","예측","실제","차이"].map((h,i)=><th key={i} style={{padding:"7px 8px",textAlign:i>=1?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>{h}</th>)}
+                {["항목","순수예측","실제","차이"].map((h,i)=><th key={i} style={{padding:"7px 8px",textAlign:i>=1?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>{h}</th>)}
               </tr></thead>
               <tbody>
                 <tr style={{borderBottom:"1px solid "+C.bdr}}>
-                  <td style={{padding:"6px 8px",color:C.txm}}>사정률 (100%)</td>
+                  <td style={{padding:"6px 8px",color:C.txm}}>사정률(100%)</td>
                   <td style={{padding:"6px 8px",textAlign:"right",color:"#5dca96",fontWeight:500,fontFamily:"monospace"}}>{pa!=null?(100+pa).toFixed(4)+"%":"—"}</td>
                   <td style={{padding:"6px 8px",textAlign:"right",color:C.gold,fontWeight:500,fontFamily:"monospace"}}>{aa!=null?(100+aa).toFixed(4)+"%":"—"}</td>
                   <td style={{padding:"6px 8px",textAlign:"right",color:errAbs!=null?(errAbs<0.3?"#5dca96":errAbs<1?"#d4a834":"#e24b4a"):C.txd,fontWeight:600,fontFamily:"monospace"}}>{err!=null?err.toFixed(4)+"%":"—"}</td>
@@ -1056,54 +1040,49 @@ ${baseInfo}
 
           {/* ───────── 전략옵션 탭 ───────── */}
           {detailTab==="strategy"&&<div>
-            {/* 3-way 전략: AI가 있으면 AI 값, 없으면 opt_adj 기준 ±0.1 조정 */}
+            {/* ★ Phase 6-A: 전략옵션은 오직 opt_adj 기준 ±0.1%p (AI 혼재 제거) */}
+            {/* AI 분석의 3전략 값은 "🤖 AI 분석" 탭에서만 표시 (참고용) */}
             {(()=>{
-              let safeAdj,balAdj,aggrAdj,safeBid,balBid,aggrBid,safeProb,balProb,aggrProb,recKey;
-              if(ai){
-                safeAdj=ai.strategy_safe!=null?Number(ai.strategy_safe):null;
-                balAdj=ai.strategy_balanced!=null?Number(ai.strategy_balanced):null;
-                aggrAdj=ai.strategy_aggressive!=null?Number(ai.strategy_aggressive):null;
-                safeProb=ai.prob_safe;balProb=ai.prob_balanced;aggrProb=ai.prob_aggressive;
-                recKey=ai.recommended;
-              } else {
-                // AI 없을 때: opt_adj를 기준으로 ±0.1%p 조정
-                // 공격 = 더 낮게 (낙찰 가능성↑, 하한선 밑 위험↑)
-                // 균형 = 시스템 추천 그대로
-                // 안전 = 더 높게 (하한선 여유↑, 경쟁자보다 높아질 위험↑)
-                const base=d.opt_adj!=null?Number(d.opt_adj):(d.pred_adj_rate!=null?Number(d.pred_adj_rate):null);
-                if(base!=null){
-                  aggrAdj=Math.round((base-0.10)*10000)/10000;
-                  balAdj=Math.round(base*10000)/10000;
-                  safeAdj=Math.round((base+0.10)*10000)/10000;
-                }
+              let safeAdj,balAdj,aggrAdj,safeBid,balBid,aggrBid;
+              // opt_adj 기준 고정:
+              // 공격 = opt_adj - 0.10 (낙찰 가능성↑, 하한선 밑 위험↑)
+              // 균형 = opt_adj 그대로 (= 리스트/메인의 "추천 사정률(100%)")
+              // 안전 = opt_adj + 0.10 (하한선 여유↑)
+              const base=d.opt_adj!=null?Number(d.opt_adj):(d.pred_adj_rate!=null?Number(d.pred_adj_rate):null);
+              if(base!=null){
+                aggrAdj=Math.round((base-0.10)*10000)/10000;
+                balAdj=Math.round(base*10000)/10000;
+                safeAdj=Math.round((base+0.10)*10000)/10000;
               }
               safeBid=safeAdj!=null?calcBid(safeAdj):null;
               balBid=balAdj!=null?calcBid(balAdj):null;
               aggrBid=aggrAdj!=null?calcBid(aggrAdj):null;
               const strategies=[
-                {k:"aggressive",label:"공격",icon:"🔴",adj:aggrAdj,bid:aggrBid,prob:aggrProb,color:"#e24b4a",desc:"낙찰가 최저 노림"},
-                {k:"balanced",label:"균형",icon:"🟡",adj:balAdj,bid:balBid,prob:balProb,color:"#d4a834",desc:"시스템 기본 추천"},
-                {k:"safe",label:"안전",icon:"🟢",adj:safeAdj,bid:safeBid,prob:safeProb,color:"#5dca96",desc:"하한선 여유 확보"}
+                {k:"aggressive",label:"공격",icon:"🔴",adj:aggrAdj,bid:aggrBid,color:"#e24b4a",desc:"낙찰가 최저 노림"},
+                {k:"balanced",label:"균형 (추천)",icon:"🟡",adj:balAdj,bid:balBid,color:"#d4a834",desc:"시스템 기본 추천 = 리스트 값"},
+                {k:"safe",label:"안전",icon:"🟢",adj:safeAdj,bid:safeBid,color:"#5dca96",desc:"하한선 여유 확보"}
               ];
               return<div>
-                <div style={{fontSize:12,color:C.txm,marginBottom:10}}>{ai?"🤖 Claude AI가 분석한 3가지 전략":"📊 시스템 기본 추천 ±0.1%p 조정 (AI 분석 전)"}</div>
+                <div style={{fontSize:12,color:C.txm,marginBottom:10}}>
+                  📊 추천 사정률(100%) 기준 ±0.1%p 시나리오
+                  <span style={{color:C.txd,fontSize:10,marginLeft:6}}>(사정률은 100% 기준 표기)</span>
+                </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
                   {strategies.map(s=>{
-                    const isRec=recKey===s.k||(!ai&&s.k==="balanced");
+                    const isRec=s.k==="balanced";
                     return<div key={s.k} style={{padding:"12px 10px",background:isRec?s.color+"20":C.bg3,borderRadius:8,border:isRec?"2px solid "+s.color:"1px solid "+C.bdr,textAlign:"center",position:"relative"}}>
-                      {isRec&&<div style={{position:"absolute",top:-9,left:"50%",transform:"translateX(-50%)",background:s.color,color:"#000",fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:3,letterSpacing:0.5}}>{ai?"AI 권장":"권장"}</div>}
+                      {isRec&&<div style={{position:"absolute",top:-9,left:"50%",transform:"translateX(-50%)",background:s.color,color:"#000",fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:3,letterSpacing:0.5}}>권장</div>}
                       <div style={{fontSize:11,color:s.color,fontWeight:700,marginBottom:8}}>{s.icon} {s.label}</div>
                       <div style={{fontSize:9,color:C.txd,marginBottom:6}}>{s.desc}</div>
                       <div style={{fontSize:15,fontWeight:700,color:C.txt,fontFamily:"monospace",marginBottom:4}}>{fmtAdj(s.adj)}</div>
                       {s.bid&&<div style={{fontSize:10,color:C.txm,fontFamily:"monospace",marginBottom:6}}>{tc(s.bid)}원</div>}
-                      {s.prob!=null&&<div style={{fontSize:10,color:s.color,fontWeight:600,padding:"3px 6px",background:s.color+"15",borderRadius:3,display:"inline-block"}}>낙찰확률 {(Number(s.prob)*100).toFixed(0)}%</div>}
                     </div>
                   })}
                 </div>
-                {/* AI 분석 권유 (AI 없는 경우) */}
-                {!ai&&<div style={{padding:"10px 12px",background:"rgba(168,85,247,0.06)",border:"1px solid rgba(168,85,247,0.25)",borderRadius:6,fontSize:11,color:"#c89dff",marginBottom:12,textAlign:"center"}}>
-                  💡 더 정밀한 전략은 <strong>AI 분석 탭</strong>에서 Claude AI 분석을 실행해보세요
-                </div>}
+                {/* AI 분석 안내 */}
+                <div style={{padding:"10px 12px",background:"rgba(168,85,247,0.06)",border:"1px solid rgba(168,85,247,0.25)",borderRadius:6,fontSize:11,color:"#c89dff",marginBottom:12,textAlign:"center"}}>
+                  💡 AI의 의견이 궁금하면 <strong>🤖 AI 분석 탭</strong>을 참고하세요 (최종 추천에 영향 없음)
+                </div>
                 {/* 경쟁 참고 (의미 명확화) */}
                 {d.rec_adj_p50!=null&&<div style={{padding:"10px 12px",background:C.bg3,borderRadius:6,fontSize:11}}>
                   <div style={{fontSize:10,color:C.txm,fontWeight:600,marginBottom:6}}>📋 경쟁자 예상 투찰 분포 (과거 낙찰자 통계)</div>
@@ -1336,9 +1315,9 @@ ${baseInfo}
               </button>
               {aiAdvice&&<div style={{fontSize:12,lineHeight:1.7,color:C.txt}} dangerouslySetInnerHTML={{__html:md2html(aiAdvice)}}/>}
             </div>
-            {/* 경쟁 참고 (접기) */}
+            {/* 경쟁 참고 (접기) — 사정률은 100% 기준 */}
             {manualRec&&<details style={{marginTop:6}}>
-              <summary style={{fontSize:10,color:C.txd,cursor:"pointer"}}>📋 경쟁 참고 (경쟁자 예상 투찰 범위)</summary>
+              <summary style={{fontSize:10,color:C.txd,cursor:"pointer"}}>📋 경쟁 참고 — 사정률(100%) 시나리오</summary>
               <div style={{padding:"6px 8px",background:C.bg,borderRadius:6,marginTop:4,fontSize:11,display:"grid",gridTemplateColumns:"auto 1fr 1fr",gap:"3px 8px"}}>
                 <span style={{color:C.txd}}>공격</span><span style={{fontFamily:"monospace"}}>{(100+manualRec.aggressive.adj).toFixed(4)}%</span><span style={{fontFamily:"monospace",textAlign:"right"}}>{tc(manualRec.aggressive.bid)}원</span>
                 <span style={{color:C.txd}}>균형</span><span style={{fontFamily:"monospace"}}>{(100+manualRec.balanced.adj).toFixed(4)}%</span><span style={{fontFamily:"monospace",textAlign:"right"}}>{tc(manualRec.balanced.bid)}원</span>
@@ -1411,16 +1390,16 @@ ${baseInfo}
                   "추정가격":p.ep||"",
                   "A값":p.av||"",
                   "낙찰하한율":p.pred_floor_rate||"",
-                  // ★ 최종 추천 (AI > Enhanced > opt_adj)
-                  "추천사정률":finalAdj!=null?(100+Number(finalAdj)).toFixed(4):"",
-                  "추천투찰금액":finalBid||"",
+                  // ★ Phase 6-A: 추천은 opt_adj 단일 소스
+                  "추천 사정률(100%)":finalAdj!=null?(100+Number(finalAdj)).toFixed(4):"",
+                  "추천 투찰금액":finalBid||"",
                   "추천근거":finalRec.source||"",
-                  // 조정 범위 (기본 예측)
-                  "기본예측사정률":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4):"",
-                  "기본예측투찰금액":p.pred_bid_amount||"",
+                  // 참고: 순수 통계 예측 (편향 보정 전)
+                  "순수예측 사정률(100%)":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4):"",
+                  "순수예측 투찰금액":p.pred_bid_amount||"",
                   "예측소스":p.pred_source||"",
                   // 입찰 후 결과
-                  "실제사정률":p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4):"",
+                  "실제 1위 사정률(100%)":p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4):"",
                   "오차(추천-실제)":finalAdj!=null&&p.actual_adj_rate!=null?(Number(finalAdj)-Number(p.actual_adj_rate)).toFixed(4):"",
                   "실제1위금액":p.actual_bid_amount||"",
                   "실제1위업체":p.actual_winner||"",
@@ -1479,10 +1458,10 @@ ${baseInfo}
               <th style={{padding:"7px 4px",textAlign:"center",color:"#a855f7",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>등급</th>
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
-              <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천사정률</th>
-              <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천투찰금액</th>
+              <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 사정률(100%)</th>
+              <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 투찰금액</th>
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
-              <th style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제사정률</th>
+              <th style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제 1위 사정률(100%)</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>오차</th>
               <SortTh label="상태" sortKey="match_status" current={predSort} setCurrent={setPredSort} align="center"/>
               <th style={{padding:"7px 4px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>낙찰</th>
@@ -1501,15 +1480,13 @@ ${baseInfo}
               const isSuui=!isYuchal&&p.match_status==="matched"&&p.actual_adj_rate==null&&p.actual_winner!=null&&p.actual_winner!=="";
               const sc=scoringMap[p.id];const grade=sc?.roi_grade||"D";const winProb=sc?.win_prob;
               const gradeColor={S:"#a855f7",A:"#5dca96",B:"#d4a834",C:"#a8b4ff",D:"#666680"}[grade];
-              // AI 권장 배지
-              const isAiRecommended=finalRec.source&&finalRec.source.startsWith("AI-");
+              // AI 권장은 이제 최종 추천에 영향 없음 (참고용 탭에서만 확인)
               return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:isAnomaly||isYuchal||isSuui?0.5:1}}>
                 <td style={{padding:"6px",textAlign:"center"}}><span title={sc?`${sc.strategy_label} · 낙찰확률 ${(winProb*100).toFixed(1)}%`:""} style={{display:"inline-block",fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:gradeColor+"22",color:gradeColor,border:"1px solid "+gradeColor+"55",minWidth:18}}>{grade}</span></td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}} title={finalRec.source?"근거: "+finalRec.source:""}>
                   {finalAdj!=null?(100+Number(finalAdj)).toFixed(4)+"%":""}
-                  {isAiRecommended&&<span style={{marginLeft:4,fontSize:8,padding:"1px 4px",borderRadius:2,background:"rgba(168,85,247,0.2)",color:"#c89dff",fontWeight:700}}>AI</span>}
                 </td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>{finalBid?tc(Number(finalBid)):""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11}}>{p.open_date||""}</td>
