@@ -392,57 +392,76 @@ export function recommendAssumedAdj({at,agName,ba,ep,av,pc,isWomenBiz},ts,as,agA
   }}
 
 
-// ============ Phase 5: ROI 통합 점수 시스템 ============
-// 기관 × 금액대 매트릭스 (1085건 검증, 2026-04-09 기준)
+// ============ Phase 5.1: ROI 통합 점수 시스템 (개선판) ============
+// 셀 구조: {p: 확률, n: 표본수} — shrinkage 적용
+// 1,085건 검증 데이터 기반 (2026-04-10)
 export const WIN_PROB_MATRIX={
-  "LH":{S:0.182,M:0.000,L:0.318},
-  "한전":{S:0.048,M:0.212,L:0.500},
-  "군시설":{S:0.014,M:0.188,L:0.000},
-  "지자체":{S:0.045,M:0.061,L:0.095},
-  "교육청":{S:0.022,M:0.080,L:0.000},
-  "조달청":{S:0.000,M:0.083,L:0.050},
-  "수자원공사":{S:0.000,M:0.000,L:0.000}
+  "LH":       {S:{p:0.1818,n:11}, M:{p:0.0000,n:3},  L:{p:0.3182,n:22}},
+  "한전":     {S:{p:0.0476,n:42}, M:{p:0.2121,n:33}, L:{p:0.5000,n:2}},
+  "군시설":   {S:{p:0.0135,n:148},M:{p:0.1875,n:16}, L:{p:0.0000,n:1}},
+  "지자체":   {S:{p:0.0445,n:449},M:{p:0.0606,n:99}, L:{p:0.0952,n:21}},
+  "교육청":   {S:{p:0.0217,n:138},M:{p:0.0800,n:25}, L:{p:0.0000,n:12}},
+  "조달청":   {S:{p:0.0000,n:10}, M:{p:0.0833,n:12}, L:{p:0.0500,n:20}},
+  "수자원공사":{S:{p:0.0000,n:18}, M:{p:0.0000,n:0},  L:{p:0.0000,n:2}}
 };
+
+// Shrinkage 상수: 표본 K건 이하는 전역 평균으로 수렴
+export const SHRINKAGE_K=10;
+export const GLOBAL_MEAN=0.0544;
+
+// 무효 공고 키워드 (공고명에 포함 시 D등급 강제)
+export const INVALID_KEYWORDS=["취소","중지","재공고","정정","연기"];
 
 // 금액대 분류
 export const tierOf=(amt)=>{const a=Number(amt)||0;return a<3e8?"S":a<1e9?"M":"L"};
 
-// Phase 5-A: 기본 ROI 점수 (기관×금액 매트릭스)
+// Phase 5.1: Shrinkage 적용 베이스 확률
+// - 표본 많을수록 셀 원본값
+// - 표본 적을수록 전역 평균(5.44%)으로 수렴
 export const calcRoiBase=(at,amt)=>{
   const tier=tierOf(amt);
-  return(WIN_PROB_MATRIX[at]&&WIN_PROB_MATRIX[at][tier])||0.04
+  const cell=WIN_PROB_MATRIX[at]&&WIN_PROB_MATRIX[at][tier];
+  if(!cell)return GLOBAL_MEAN;
+  const{p,n}=cell;
+  return(p*n+GLOBAL_MEAN*SHRINKAGE_K)/(n+SHRINKAGE_K)
 };
 
-// Phase 5-B: 통합 점수 (6신호 결합)
+// Phase 5.1: 통합 점수 (골드존/경쟁 보정 제거, 취소 차단 추가)
 export const calcRoiV2=(p)=>{
+  const pn=p.pn||"";
+  // 0. 무효 공고 조기 차단 (대괄호 표기만)
+  const isInvalid=INVALID_KEYWORDS.some(k=>pn.includes("["+k+"]"));
+  if(isInvalid){
+    return{
+      winProb:0,expectedMargin:0,expectedValue:0,
+      grade:"D",strategy:"무효 공고 (취소/중지/재공고)",
+      riskScore:1,factors:{invalid:true,reason:"취소/중지 키워드"}
+    }
+  }
+
   const at=p.at||"지자체";
   const amt=Number(p.ep||p.ba||0);
   const tier=tierOf(amt);
-  const pc=Number(p.actual_participant_count||p.pc||0);
   const od=p.open_date||p.od;
-  const fr=Number(p.pred_floor_rate||p.fr||90);
 
-  // 1. 베이스 확률 (기관×금액)
+  // 1. 베이스 확률 (shrinkage 포함)
   let winProb=calcRoiBase(at,amt);
 
-  // 2. 경쟁강도 보정 (1500명 미만이면 +30%)
-  if(pc>0&&pc<1500)winProb*=1.3;
-  else if(pc>=3000)winProb*=1.1; // 3000+는 약간 +
-  
-  // 3. 시점 보정 (화/수/목)
+  // 2. 요일 보정 (유일하게 통계 검증된 신호)
+  //    검증: 화/수/목 6.6% vs 월/금 3.5%
   if(od){const dow=new Date(od).getDay();if(dow>=2&&dow<=4)winProb*=1.1}
 
-  // 4. 신호 결합 보너스 (골드존)
-  const isGold=amt>=1e9&&(at==="LH"||at==="한전");
-  if(isGold)winProb*=1.5;
+  // ❌ 경쟁강도 보정 제거 — 검증 결과 역효과 (<1500명 5.0% vs ≥1500명 5.8%)
+  // ❌ 골드존 보너스 제거 — 매트릭스 베이스에 이미 반영됨 (이중계산 방지)
 
-  // 5. 회피존 강제 차단
+  // 3. 회피존 차단 (유지)
   const isAvoid=at==="수자원공사"||(at==="교육청"&&tier==="L")||(at==="조달청"&&tier==="S");
   if(isAvoid)winProb=0.001;
 
-  winProb=Math.min(0.95,Math.max(0,winProb));
+  // max 60%로 상한 (표본 극단값 방어)
+  winProb=Math.min(0.60,Math.max(0,winProb));
 
-  // 기대 마진 (기관×금액 평균에서 추정, 양수만)
+  // 기대 마진 (기관×금액 평균)
   const marginMap={
     "LH":{S:200000,M:0,L:0},
     "한전":{S:100000,M:500000,L:8666668},
@@ -455,11 +474,11 @@ export const calcRoiV2=(p)=>{
   const expectedMargin=(marginMap[at]&&marginMap[at][tier])||100000;
   const expectedValue=Math.round(winProb*expectedMargin);
 
-  // 등급 산정
+  // 4. 등급 산정 (기준 재조정: S 0.20 / A 0.12 / B 0.07 / C 0.03)
   let grade="D",strategy="제외 권장",riskScore=1-winProb;
-  if(winProb>=0.25&&expectedMargin>=10000000){grade="S";strategy="반드시 투찰"}
-  else if(winProb>=0.15||expectedMargin>=5000000){grade="A";strategy="우선 투찰"}
-  else if(winProb>=0.07&&expectedMargin>=1000000){grade="B";strategy="선택 투찰"}
+  if(winProb>=0.20){grade="S";strategy="반드시 투찰"}
+  else if(winProb>=0.12){grade="A";strategy="우선 투찰"}
+  else if(winProb>=0.07){grade="B";strategy="선택 투찰"}
   else if(winProb>=0.03){grade="C";strategy="여력시 투찰"}
 
   return{
@@ -469,7 +488,7 @@ export const calcRoiV2=(p)=>{
     grade,
     strategy,
     riskScore:Math.round(riskScore*10000)/10000,
-    factors:{tier,pc,isGold,isAvoid,baseProb:calcRoiBase(at,amt)}
+    factors:{tier,isAvoid,baseProb:calcRoiBase(at,amt),version:"5.1"}
   }
 };
 
