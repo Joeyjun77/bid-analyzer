@@ -929,7 +929,7 @@ ${baseInfo}
             </div>
           })()}
 
-          {/* Phase 5.4: 보정 적용 강화 예측 + AI 분석 */}
+          {/* Phase 5.4: AI 강화 예측 + 3-way 전략 (재설계) */}
           {(()=>{
             const enhanced=getEnhancedAdj(d);
             if(!enhanced)return null;
@@ -939,15 +939,22 @@ ${baseInfo}
             const ba2=Number(d.ba||0);
             const av2=Number(d.av||0);
             const fr2=Number(d.pred_floor_rate||0);
-            // 강화 사정률 기반 새 투찰금액 계산
-            const enhancedXp=ba2*(1+enhancedAdj/100);
-            const enhancedBid=av2>0?Math.ceil(av2+(enhancedXp-av2)*(fr2/100)):Math.ceil(enhancedXp*(fr2/100));
+            // 사정률 → 투찰금액 계산 헬퍼
+            const calcBid=(adj)=>{
+              const xp=ba2*(1+adj/100);
+              return av2>0?Math.ceil(av2+(xp-av2)*(fr2/100)):Math.ceil(xp*(fr2/100))
+            };
+            // 사정률 → 100% 기준 표기 헬퍼 (예: -0.0847 → "99.9153%")
+            const fmtAdj=(adj)=>adj==null?"—":(100+Number(adj)).toFixed(4)+"%";
+            const enhancedBid=calcBid(enhancedAdj);
+            const baseBid=Number(d.opt_bid||calcBid(baseAdj));
             const ai=aiAnalysisMap[d.id];
             const aiLoading=aiLoadingPredId===d.id;
             
-            return<div style={{marginBottom:14,padding:"12px 14px",background:"linear-gradient(135deg, rgba(168,85,247,0.08), rgba(93,202,165,0.04))",border:"1px solid rgba(168,85,247,0.35)",borderRadius:8}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                <span style={{fontSize:11,color:"#a855f7",fontWeight:600,letterSpacing:1}}>🧠 Phase 5.4 — AI 강화 예측</span>
+            return<div style={{marginBottom:14,padding:"14px 16px",background:"linear-gradient(135deg, rgba(168,85,247,0.06), rgba(93,202,165,0.03))",border:"1px solid rgba(168,85,247,0.3)",borderRadius:10}}>
+              {/* 헤더 */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,paddingBottom:10,borderBottom:"1px solid rgba(168,85,247,0.2)"}}>
+                <span style={{fontSize:12,color:"#a855f7",fontWeight:700,letterSpacing:0.5}}>🧠 AI 강화 예측</span>
                 {!ai&&!aiLoading&&<button onClick={async()=>{
                   try{setAiLoadingPredId(d.id);
                     const ctx=buildAiContext(d,scoringMap,biasMap,trendMap,recs);
@@ -956,58 +963,63 @@ ${baseInfo}
                     setAiAnalysisMap(prev=>({...prev,[d.id]:result}))
                   }catch(e){alert("AI 분석 실패: "+e.message)}
                   finally{setAiLoadingPredId(null)}
-                }} style={{padding:"4px 12px",fontSize:10,background:"rgba(168,85,247,0.15)",border:"1px solid rgba(168,85,247,0.4)",borderRadius:5,color:"#a855f7",cursor:"pointer",fontWeight:600}}>🤖 Claude AI 분석</button>}
-                {aiLoading&&<span style={{fontSize:10,color:"#a855f7"}}>AI 분석 중...</span>}
+                }} style={{padding:"5px 14px",fontSize:11,background:"rgba(168,85,247,0.18)",border:"1px solid rgba(168,85,247,0.5)",borderRadius:6,color:"#c89dff",cursor:"pointer",fontWeight:600}}>🤖 Claude AI 분석</button>}
+                {aiLoading&&<span style={{fontSize:10,color:"#a855f7",fontStyle:"italic"}}>AI 분석 중...</span>}
               </div>
-              
-              {/* 편차 + 추세 보정 결과 */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-                <div style={{padding:"8px 10px",background:C.bg3,borderRadius:5}}>
-                  <div style={{fontSize:9,color:C.txd,marginBottom:2}}>기존 예측</div>
-                  <div style={{fontSize:14,fontWeight:600,color:C.txm,fontFamily:"monospace"}}>{baseAdj>=0?"+":""}{baseAdj.toFixed(4)}%</div>
+
+              {/* 메인 지표: 추천 사정률 + 추천 투찰금액 (큰 카드 1개로 단순화) */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:ai?12:0}}>
+                <div style={{padding:"12px 14px",background:"rgba(93,202,165,0.08)",borderRadius:8,border:"1px solid rgba(93,202,165,0.35)"}}>
+                  <div style={{fontSize:10,color:"#5dca96",marginBottom:4,fontWeight:600}}>🎯 추천 사정률</div>
+                  <div style={{fontSize:20,fontWeight:700,color:"#5dca96",fontFamily:"monospace",lineHeight:1.1}}>{fmtAdj(enhancedAdj)}</div>
+                  {totalOffset!==0&&<div style={{fontSize:9,color:C.txd,marginTop:5}}>기존 {fmtAdj(baseAdj)} 대비 {totalOffset>=0?"+":""}{totalOffset.toFixed(4)}%p 보정</div>}
                 </div>
-                <div style={{padding:"8px 10px",background:"rgba(93,202,165,0.08)",borderRadius:5,border:"1px solid rgba(93,202,165,0.3)"}}>
-                  <div style={{fontSize:9,color:"#5dca96",marginBottom:2}}>🎯 강화 예측 (보정 적용)</div>
-                  <div style={{fontSize:14,fontWeight:700,color:"#5dca96",fontFamily:"monospace"}}>{enhancedAdj>=0?"+":""}{enhancedAdj.toFixed(4)}%</div>
+                <div style={{padding:"12px 14px",background:"rgba(212,168,52,0.08)",borderRadius:8,border:"1px solid rgba(212,168,52,0.35)"}}>
+                  <div style={{fontSize:10,color:C.gold,marginBottom:4,fontWeight:600}}>💰 추천 투찰금액</div>
+                  <div style={{fontSize:20,fontWeight:700,color:C.gold,fontFamily:"monospace",lineHeight:1.1}}>{tc(enhancedBid)}원</div>
+                  {totalOffset!==0&&baseBid>0&&<div style={{fontSize:9,color:C.txd,marginTop:5}}>기존 대비 {enhancedBid-baseBid>=0?"+":""}{tc(enhancedBid-baseBid)}원</div>}
                 </div>
               </div>
-              {totalOffset!==0&&<div style={{padding:"6px 10px",background:"rgba(0,0,0,0.2)",borderRadius:5,marginBottom:8}}>
-                <div style={{fontSize:9,color:C.txm,marginBottom:3}}>적용된 보정 ({totalOffset>=0?"+":""}{totalOffset.toFixed(4)}%p)</div>
-                {enhanced.explanation.map((e,i)=><div key={i} style={{fontSize:10,color:C.txt,marginBottom:2}}>• {e}</div>)}
-              </div>}
-              {totalOffset!==0&&<div style={{padding:"8px 10px",background:"rgba(212,168,52,0.05)",borderRadius:5,border:"1px solid rgba(212,168,52,0.25)",marginBottom:ai?10:0}}>
-                <div style={{fontSize:9,color:C.gold,marginBottom:3}}>💰 강화 추천 투찰금액</div>
-                <div style={{fontSize:15,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{tc(enhancedBid)}원</div>
-                <div style={{fontSize:9,color:C.txd,marginTop:3}}>(기존 {d.opt_bid?tc(Number(d.opt_bid)):"—"}원 대비 {d.opt_bid?(enhancedBid-Number(d.opt_bid)>=0?"+":"")+tc(enhancedBid-Number(d.opt_bid)):"—"}원)</div>
+
+              {/* 보정 내역 (접기 가능한 작은 영역) */}
+              {totalOffset!==0&&enhanced.explanation.length>0&&<div style={{marginTop:10,padding:"6px 10px",background:"rgba(0,0,0,0.15)",borderRadius:5,fontSize:9,color:C.txm}}>
+                📊 {enhanced.explanation.join(" · ")}
               </div>}
               
               {/* AI 분석 결과 */}
-              {ai&&<div style={{marginTop:10,padding:"10px 12px",background:"rgba(168,85,247,0.08)",borderRadius:6,border:"1px solid rgba(168,85,247,0.3)"}}>
-                <div style={{fontSize:10,color:"#a855f7",fontWeight:600,marginBottom:6}}>🤖 Claude AI 종합 분석</div>
-                <div style={{fontSize:11,color:C.txt,lineHeight:1.6,marginBottom:8}}>{ai.ai_analysis}</div>
+              {ai&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid rgba(168,85,247,0.2)"}}>
+                <div style={{fontSize:11,color:"#c89dff",fontWeight:600,marginBottom:8}}>🤖 Claude AI 종합 분석</div>
+                <div style={{fontSize:11,color:C.txt,lineHeight:1.7,marginBottom:12,padding:"10px 12px",background:"rgba(168,85,247,0.05)",borderRadius:6,borderLeft:"3px solid #a855f7"}}>{ai.ai_analysis}</div>
                 
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:8}}>
+                {/* 3-way 전략 카드 — 사정률 100% 기준 표기 */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
                   {[
-                    {k:"safe",label:"🟢 안전",adj:ai.strategy_safe,prob:ai.prob_safe,color:"#5dca96"},
-                    {k:"balanced",label:"🟡 균형",adj:ai.strategy_balanced,prob:ai.prob_balanced,color:"#d4a834"},
-                    {k:"aggressive",label:"🔴 공격",adj:ai.strategy_aggressive,prob:ai.prob_aggressive,color:"#e24b4a"}
+                    {k:"safe",label:"안전",icon:"🟢",adj:ai.strategy_safe,prob:ai.prob_safe,color:"#5dca96"},
+                    {k:"balanced",label:"균형",icon:"🟡",adj:ai.strategy_balanced,prob:ai.prob_balanced,color:"#d4a834"},
+                    {k:"aggressive",label:"공격",icon:"🔴",adj:ai.strategy_aggressive,prob:ai.prob_aggressive,color:"#e24b4a"}
                   ].map(s=>{
                     const isRec=ai.recommended===s.k;
-                    return<div key={s.k} style={{padding:"6px 8px",background:isRec?s.color+"22":C.bg3,borderRadius:4,border:isRec?"2px solid "+s.color:"1px solid "+C.bdr,textAlign:"center"}}>
-                      <div style={{fontSize:9,color:s.color,fontWeight:isRec?700:500,marginBottom:2}}>{s.label}{isRec?" ★":""}</div>
-                      <div style={{fontSize:11,fontWeight:600,color:C.txt,fontFamily:"monospace"}}>{s.adj!=null?(s.adj>=0?"+":"")+Number(s.adj).toFixed(3)+"%":"—"}</div>
-                      <div style={{fontSize:9,color:C.txm,marginTop:2}}>확률 {s.prob!=null?(Number(s.prob)*100).toFixed(0)+"%":"—"}</div>
+                    const sBid=s.adj!=null?calcBid(Number(s.adj)):null;
+                    return<div key={s.k} style={{padding:"10px 8px",background:isRec?s.color+"1a":C.bg3,borderRadius:6,border:isRec?"2px solid "+s.color:"1px solid "+C.bdr,textAlign:"center",position:"relative"}}>
+                      {isRec&&<div style={{position:"absolute",top:-8,left:"50%",transform:"translateX(-50%)",background:s.color,color:"#000",fontSize:8,fontWeight:700,padding:"1px 6px",borderRadius:3,letterSpacing:0.5}}>권장</div>}
+                      <div style={{fontSize:10,color:s.color,fontWeight:700,marginBottom:6}}>{s.icon} {s.label}</div>
+                      <div style={{fontSize:13,fontWeight:700,color:C.txt,fontFamily:"monospace",marginBottom:3}}>{fmtAdj(s.adj)}</div>
+                      {sBid&&<div style={{fontSize:9,color:C.txm,fontFamily:"monospace",marginBottom:4}}>{tc(sBid)}원</div>}
+                      <div style={{fontSize:9,color:s.color,fontWeight:600}}>낙찰확률 {s.prob!=null?(Number(s.prob)*100).toFixed(0)+"%":"—"}</div>
                     </div>
                   })}
                 </div>
                 
-                {ai.reasons&&Array.isArray(ai.reasons)&&ai.reasons.length>0&&<div style={{marginTop:6}}>
-                  <div style={{fontSize:9,color:C.txd,marginBottom:3}}>📌 결정 이유</div>
-                  {ai.reasons.map((r,i)=><div key={i} style={{fontSize:10,color:C.txt,marginBottom:2,paddingLeft:8}}>• {r}</div>)}
-                </div>}
-                {ai.warnings&&Array.isArray(ai.warnings)&&ai.warnings.length>0&&<div style={{marginTop:6}}>
-                  <div style={{fontSize:9,color:"#e24b4a",marginBottom:3}}>⚠️ 주의사항</div>
-                  {ai.warnings.map((w,i)=><div key={i} style={{fontSize:10,color:"#e24b4a",marginBottom:2,paddingLeft:8}}>• {w}</div>)}
+                {/* 결정 이유 + 주의사항 */}
+                {((ai.reasons&&ai.reasons.length>0)||(ai.warnings&&ai.warnings.length>0))&&<div style={{display:"grid",gridTemplateColumns:ai.warnings&&ai.warnings.length>0?"1fr 1fr":"1fr",gap:8}}>
+                  {ai.reasons&&ai.reasons.length>0&&<div style={{padding:"8px 10px",background:"rgba(93,202,165,0.05)",borderRadius:5,border:"1px solid rgba(93,202,165,0.2)"}}>
+                    <div style={{fontSize:9,color:"#5dca96",fontWeight:600,marginBottom:4}}>📌 결정 이유</div>
+                    {ai.reasons.map((r,i)=><div key={i} style={{fontSize:10,color:C.txt,marginBottom:3,lineHeight:1.5}}>• {r}</div>)}
+                  </div>}
+                  {ai.warnings&&ai.warnings.length>0&&<div style={{padding:"8px 10px",background:"rgba(226,75,74,0.05)",borderRadius:5,border:"1px solid rgba(226,75,74,0.2)"}}>
+                    <div style={{fontSize:9,color:"#e24b4a",fontWeight:600,marginBottom:4}}>⚠️ 주의사항</div>
+                    {ai.warnings.map((w,i)=><div key={i} style={{fontSize:10,color:C.txt,marginBottom:3,lineHeight:1.5}}>• {w}</div>)}
+                  </div>}
                 </div>}
               </div>}
             </div>
