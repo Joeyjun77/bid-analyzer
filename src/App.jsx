@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS, SB_URL, hdrs } from "./lib/constants.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring } from "./lib/supabase.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
@@ -48,6 +48,8 @@ export default function App(){
   const[hideAbnormal,setHideAbnormal]=useState(false); // D-1: 비정상 데이터 필터
   const[predResults,setPredResults]=useState([]);
   const[predictions,setPredictions]=useState([]);
+  const[scoringMap,setScoringMap]=useState({}); // Phase 5: ROI scoring (prediction_id → grade/win_prob/...)
+  const[gradeFilter,setGradeFilter]=useState("all"); // Phase 5: 등급 필터 (all/SA/SAB/notD)
   const[compFilter,setCompFilter]=useState("all");
   const[predListShow,setPredListShow]=useState(50); // 리스트 표시 건수 (더보기)
   const[hideYuchal,setHideYuchal]=useState(true); // 유찰 건 숨김 (기본 ON)
@@ -240,14 +242,16 @@ ${baseInfo}
     try{const preds=await sbFetchPredictions();setPredictions(preds||[]);return preds}catch(e){return predictions}},[predictions]);
   // ★ 전체 데이터 새로고침 (새로고침 버튼용)
   const refreshAll=useCallback(async()=>{
-    try{const[rows,preds,dets,agStats]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails(),sbFetchAgAssumedStats()]);
+    try{const[rows,preds,dets,agStats,scoring]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails(),sbFetchAgAssumedStats(),sbFetchScoring()]);
       setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));
       setPredictions(preds||[]);setBidDetails(dets||[]);setAgAss(agStats||{});
+      // scoring map 구성
+      const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm);
       // 자동 매칭 시도
       const matched=await sbMatchPredictions(preds,rows);
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds)}
       return{records:rows.length,predictions:(preds||[]).length,details:(dets||[]).length,matched}
-    }catch(e){return null}},[refreshStats]);
+    }catch(e){return null}},[refreshStats]);;
 
   // DB 로드
   useEffect(()=>{(async()=>{
@@ -268,6 +272,7 @@ ${baseInfo}
     }catch(e){setPredictions([])}
     try{const dets=await sbFetchDetails();setBidDetails(dets||[])}catch(e){setBidDetails([])}
     try{const agStats=await sbFetchAgAssumedStats();setAgAss(agStats||{})}catch(e){setAgAss({})}
+    try{const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm)}catch(e){setScoringMap({})}
     setDbLoading(false)
   })()},[refreshStats]);
 
@@ -426,7 +431,9 @@ ${baseInfo}
   const compList=useMemo(()=>{const p=predictions||[];let list;if(compFilter==="matched")list=p.filter(x=>x.match_status==="matched");else if(compFilter==="pending")list=p.filter(x=>x.match_status==="pending");else list=p;
     if(hideYuchal)list=list.filter(x=>!(x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)")));
     if(hideSuui)list=list.filter(x=>{const y=x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)");return y||!(x.match_status==="matched"&&x.actual_adj_rate==null&&x.actual_winner!=null&&x.actual_winner!=="")});
-    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,predSort,hideYuchal,hideSuui]);
+    // Phase 5: 등급 필터
+    if(gradeFilter!=="all"){list=list.filter(x=>{const g=scoringMap[x.id]?.roi_grade||"D";if(gradeFilter==="SA")return g==="S"||g==="A";if(gradeFilter==="SAB")return g==="S"||g==="A"||g==="B";if(gradeFilter==="notD")return g!=="D";return true})}
+    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,predSort,hideYuchal,hideSuui,gradeFilter,scoringMap]);
 
   // 스타일
   const btnS=(act,c)=>({padding:"4px 12px",fontSize:11,fontWeight:act?600:400,background:act?c+"22":"#1a1a30",color:act?c:"#888",border:"1px solid "+(act?c+"44":"#252540"),borderRadius:5,cursor:"pointer"});
@@ -531,6 +538,33 @@ ${baseInfo}
           <div style={{fontSize:9,color:C.txd,marginTop:2}}>{c.s}</div>
         </div>)}
       </div>
+
+      {/* Phase 5: ROI 추천 카드 */}
+      {(()=>{const counts={S:0,A:0,B:0,C:0,D:0};let evSum=0;let pendingSA=0;
+        predictions.forEach(p=>{const sc=scoringMap[p.id];if(!sc)return;const g=sc.roi_grade||"D";counts[g]=(counts[g]||0)+1;evSum+=Number(sc.expected_value)||0;if(p.match_status==="pending"&&(g==="S"||g==="A"))pendingSA++});
+        const totalScored=Object.values(counts).reduce((a,b)=>a+b,0);if(totalScored===0)return null;
+        return<div style={{background:"linear-gradient(135deg, rgba(168,85,247,0.1), rgba(93,202,165,0.05))",border:"1px solid rgba(168,85,247,0.3)",borderRadius:10,padding:"14px 16px",marginBottom:16,cursor:"pointer"}} onClick={()=>{setTab("predict");setGradeFilter("SA")}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:13,fontWeight:600,color:"#a855f7",letterSpacing:1}}>🎯 ROI 추천 — 투찰 우선순위</span>
+              {pendingSA>0&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:10,background:"#a855f7",color:"#fff",fontWeight:600}}>대기 S/A {pendingSA}건 →</span>}
+            </div>
+            <span style={{fontSize:9,color:C.txd}}>전체 {totalScored}건 점수화 완료 · 검증 낙찰률 S 30% / A 17%</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(6, 1fr)",gap:8}}>
+            {[{g:"S",label:"반드시",c:"#a855f7"},{g:"A",label:"우선",c:"#5dca96"},{g:"B",label:"선택",c:"#d4a834"},{g:"C",label:"여력",c:"#a8b4ff"},{g:"D",label:"제외",c:"#666680"}].map(x=>
+              <div key={x.g} style={{padding:"8px 6px",background:C.bg3,borderRadius:5,textAlign:"center",border:"1px solid "+x.c+"33"}}>
+                <div style={{fontSize:9,color:C.txd,marginBottom:2}}>{x.label}</div>
+                <div style={{fontSize:16,fontWeight:700,color:x.c,fontFamily:"monospace"}}>{x.g} {counts[x.g]}</div>
+              </div>
+            )}
+            <div style={{padding:"8px 6px",background:C.bg3,borderRadius:5,textAlign:"center",border:"1px solid #5dca9633"}}>
+              <div style={{fontSize:9,color:C.txd,marginBottom:2}}>총 기대값</div>
+              <div style={{fontSize:13,fontWeight:600,color:"#5dca96",fontFamily:"monospace"}}>{tc(Math.round(evSum))}원</div>
+            </div>
+          </div>
+        </div>
+      })()}
 
       {/* 복수예가 상세 데이터 */}
       {bidDetails.length>0&&<div style={{marginBottom:16}}>
@@ -753,6 +787,39 @@ ${baseInfo}
             </div>
             <div style={{fontSize:20,color:C.txd,cursor:"pointer",lineHeight:1,padding:"0 4px",flexShrink:0}} onClick={()=>{setDetailModal(null);setDetailAi("")}}>×</div>
           </div>
+
+          {/* Phase 5: ROI 전략 분석 카드 */}
+          {(()=>{const sc=scoringMap[d.id];if(!sc)return null;
+            const grade=sc.roi_grade;const wp=Number(sc.win_prob);const em=Number(sc.expected_margin);const ev=Number(sc.expected_value);
+            const gc={S:"#a855f7",A:"#5dca96",B:"#d4a834",C:"#a8b4ff",D:"#666680"}[grade];
+            const gradeDesc={S:"반드시 투찰 (최우선)",A:"우선 투찰 (강력 추천)",B:"선택 투찰 (양호)",C:"여력시 투찰 (보통)",D:"제외 권장 (효율 낮음)"}[grade];
+            return<div style={{marginBottom:14,padding:"12px 14px",background:"linear-gradient(135deg, "+gc+"15, "+gc+"05)",border:"1px solid "+gc+"55",borderRadius:8}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:11,color:gc,fontWeight:600,letterSpacing:1}}>🎯 ROI 전략 분석</span>
+                  <span style={{display:"inline-block",fontSize:14,fontWeight:700,padding:"3px 10px",borderRadius:5,background:gc+"33",color:gc,border:"1px solid "+gc+"77"}}>{grade}</span>
+                  <span style={{fontSize:11,color:C.txt}}>{gradeDesc}</span>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:10,marginTop:6}}>
+                <div style={{padding:"8px 10px",background:C.bg3,borderRadius:5}}>
+                  <div style={{fontSize:9,color:C.txd,marginBottom:2}}>낙찰 확률</div>
+                  <div style={{fontSize:16,fontWeight:600,color:gc,fontFamily:"monospace"}}>{(wp*100).toFixed(1)}%</div>
+                </div>
+                <div style={{padding:"8px 10px",background:C.bg3,borderRadius:5}}>
+                  <div style={{fontSize:9,color:C.txd,marginBottom:2}}>기대 마진</div>
+                  <div style={{fontSize:16,fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{tc(em)}원</div>
+                </div>
+                <div style={{padding:"8px 10px",background:C.bg3,borderRadius:5}}>
+                  <div style={{fontSize:9,color:C.txd,marginBottom:2}}>기대값 (확률×마진)</div>
+                  <div style={{fontSize:16,fontWeight:600,color:"#5dca96",fontFamily:"monospace"}}>{tc(ev)}원</div>
+                </div>
+              </div>
+              <div style={{fontSize:10,color:C.txd,marginTop:8,lineHeight:1.5}}>
+                💡 <strong style={{color:C.txt}}>{sc.strategy_label}</strong> · 6개 신호 결합 (기관×금액 매트릭스 + 경쟁강도 + 시점 + 골드존 + 회피존 필터)
+              </div>
+            </div>
+          })()}
 
           {/* 예측 vs 실제 비교 테이블 */}
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
@@ -1161,6 +1228,16 @@ ${baseInfo}
             <span>수의 숨김 ({predictions.filter(p=>{const y=p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)");return !y&&p.match_status==="matched"&&p.actual_adj_rate==null&&p.actual_winner!=null&&p.actual_winner!==""}).length}건)</span>
           </label>
         </div>
+        {/* Phase 5: ROI 등급 필터 + 등급별 통계 */}
+        <div style={{display:"flex",gap:6,marginBottom:8,alignItems:"center",flexWrap:"wrap",padding:"6px 8px",background:"linear-gradient(90deg, rgba(168,85,247,0.05), rgba(93,202,165,0.05))",borderRadius:6,border:"1px solid "+C.bdr}}>
+          <span style={{fontSize:10,color:C.txm,fontWeight:600,marginRight:4}}>🎯 ROI 등급:</span>
+          {(()=>{const counts={S:0,A:0,B:0,C:0,D:0};predictions.forEach(p=>{const g=scoringMap[p.id]?.roi_grade||"D";counts[g]=(counts[g]||0)+1});return null})()}
+          <button onClick={()=>{setGradeFilter("all");setPredListShow(50)}} style={btnS(gradeFilter==="all","#a8b4ff")}>전체</button>
+          <button onClick={()=>{setGradeFilter("SA");setPredListShow(50)}} style={btnS(gradeFilter==="SA","#a855f7")}>S+A만 ({predictions.filter(p=>{const g=scoringMap[p.id]?.roi_grade;return g==="S"||g==="A"}).length})</button>
+          <button onClick={()=>{setGradeFilter("SAB");setPredListShow(50)}} style={btnS(gradeFilter==="SAB","#5dca96")}>S+A+B ({predictions.filter(p=>{const g=scoringMap[p.id]?.roi_grade;return g==="S"||g==="A"||g==="B"}).length})</button>
+          <button onClick={()=>{setGradeFilter("notD");setPredListShow(50)}} style={btnS(gradeFilter==="notD","#d4a834")}>D 제외 ({predictions.filter(p=>(scoringMap[p.id]?.roi_grade||"D")!=="D").length})</button>
+          <span style={{fontSize:9,color:C.txd,marginLeft:8}}>S(반드시) · A(우선) · B(선택) · C(여력) · D(제외)</span>
+        </div>
         {/* 오차 색상 범례 */}
         <div style={{display:"flex",gap:12,marginBottom:8,padding:"4px 8px",background:C.bg3,borderRadius:6,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:10,color:C.txd}}>오차 범례:</span>
@@ -1172,12 +1249,14 @@ ${baseInfo}
         </div>
         {compList.length>0?<div style={{overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"18%"}}/><col style={{width:"10%"}}/><col style={{width:"9%"}}/><col style={{width:"12%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
+            <colgroup><col style={{width:"4%"}}/><col style={{width:"16%"}}/><col style={{width:"10%"}}/><col style={{width:"9%"}}/><col style={{width:"11%"}}/><col style={{width:"7%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
             <thead>
-              <tr><th colSpan={5} style={{padding:"4px 6px",fontSize:10,color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>투찰 전 추천</th>
+              <tr><th colSpan={1} style={{padding:"4px 6px",fontSize:10,color:"#a855f7",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"center",letterSpacing:1}}>ROI</th>
+                <th colSpan={5} style={{padding:"4px 6px",fontSize:10,color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>투찰 전 추천</th>
                 <th colSpan={3} style={{padding:"4px 6px",fontSize:10,color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>입찰 후 결과</th>
                 <th colSpan={2} style={{padding:"4px 6px",fontSize:10,borderBottom:"1px solid "+C.bdr+"44"}}></th></tr>
               <tr style={{background:C.bg3}}>
+              <th style={{padding:"7px 4px",textAlign:"center",color:"#a855f7",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>등급</th>
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천사정률</th>
@@ -1197,7 +1276,10 @@ ${baseInfo}
               const isYuchal=p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)");
               // 수의계약: 매칭됐지만 actual_adj_rate NULL이고 유찰 아님 (복수예가 메커니즘 미적용)
               const isSuui=!isYuchal&&p.match_status==="matched"&&p.actual_adj_rate==null&&p.actual_winner!=null&&p.actual_winner!=="";
+              const sc=scoringMap[p.id];const grade=sc?.roi_grade||"D";const winProb=sc?.win_prob;
+              const gradeColor={S:"#a855f7",A:"#5dca96",B:"#d4a834",C:"#a8b4ff",D:"#666680"}[grade];
               return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:isAnomaly||isYuchal||isSuui?0.5:1}}>
+                <td style={{padding:"6px",textAlign:"center"}}><span title={sc?`${sc.strategy_label} · 낙찰확률 ${(winProb*100).toFixed(1)}%`:""} style={{display:"inline-block",fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:gradeColor+"22",color:gradeColor,border:"1px solid "+gradeColor+"55",minWidth:18}}>{grade}</span></td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>{p.opt_adj!=null?(100+Number(p.opt_adj)).toFixed(4)+"%":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
