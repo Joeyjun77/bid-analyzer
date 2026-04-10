@@ -51,7 +51,7 @@ export default function App(){
   const[scoringMap,setScoringMap]=useState({}); // Phase 5: ROI scoring (prediction_id → grade/win_prob/...)
   const[biasMap,setBiasMapState]=useState({agency:{},at:{}}); // Phase 5.4: 편차 보정 맵
   const[trendMap,setTrendMapState]=useState({}); // Phase 5.4: 추세 맵
-  const[claudeApiKey,setClaudeApiKey]=useState(()=>localStorage.getItem("claude_api_key")||""); // Phase 5.4: AI 키
+  const[claudeApiKey,setClaudeApiKey]=useState(""); // Phase 5.4-B: Edge Function 프록시 사용, 레거시 호환 유지
   const[aiAnalysisMap,setAiAnalysisMap]=useState({}); // 예측ID → AI 분석 결과
   const[aiLoadingPredId,setAiLoadingPredId]=useState(null);
   const[gradeFilter,setGradeFilter]=useState("all"); // Phase 5: 등급 필터
@@ -570,17 +570,7 @@ ${baseInfo}
         </div>)}
       </div>
 
-      {/* Phase 5.4: Claude API 키 설정 */}
-      {!claudeApiKey&&<div style={{background:"rgba(168,85,247,0.05)",border:"1px dashed rgba(168,85,247,0.4)",borderRadius:8,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <span style={{fontSize:11,color:"#a855f7",fontWeight:600}}>🤖 Claude AI 활성화</span>
-        <input type="password" placeholder="sk-ant-api03-..." style={{flex:1,minWidth:200,padding:"6px 10px",fontSize:11,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,fontFamily:"monospace"}} 
-          onKeyDown={e=>{if(e.key==="Enter"){const v=e.target.value.trim();if(v.startsWith("sk-ant-")){setClaudeApiKey(v);localStorage.setItem("claude_api_key",v);setMsg({type:"ok",text:"Claude API 키 저장됨 — 상세 모달에서 AI 분석 사용 가능"})}else{setMsg({type:"err",text:"올바른 형식의 API 키가 아닙니다 (sk-ant-...)"})}}}}/>
-        <span style={{fontSize:9,color:C.txd}}>Enter로 저장 · 로컬에만 저장됨 · console.anthropic.com에서 발급</span>
-      </div>}
-      {claudeApiKey&&<div style={{background:"rgba(93,202,165,0.05)",border:"1px solid rgba(93,202,165,0.3)",borderRadius:6,padding:"6px 12px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:10}}>
-        <span style={{color:"#5dca96"}}>🤖 Claude AI 활성화됨 — 상세 모달에서 분석 사용 가능</span>
-        <button onClick={()=>{if(confirm("Claude API 키를 삭제하시겠습니까?")){setClaudeApiKey("");localStorage.removeItem("claude_api_key")}}} style={{padding:"2px 8px",fontSize:9,background:"transparent",border:"1px solid "+C.bdr,borderRadius:4,color:C.txd,cursor:"pointer"}}>제거</button>
-      </div>}
+      {/* Phase 5.4-B: Claude AI는 Supabase Edge Function 프록시 경유 — 키 입력 불필요 */}
 
       {/* Phase 5.2: 만료 경고 카드 (낙찰결과 미업로드 유도) */}
       {compStats.expired>0&&<div style={{background:"linear-gradient(135deg, rgba(226,75,74,0.08), rgba(212,168,52,0.04))",border:"1px solid rgba(226,75,74,0.3)",borderRadius:8,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={()=>{setTab("predict");setCompFilter("expired")}}>
@@ -958,17 +948,16 @@ ${baseInfo}
             return<div style={{marginBottom:14,padding:"12px 14px",background:"linear-gradient(135deg, rgba(168,85,247,0.08), rgba(93,202,165,0.04))",border:"1px solid rgba(168,85,247,0.35)",borderRadius:8}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                 <span style={{fontSize:11,color:"#a855f7",fontWeight:600,letterSpacing:1}}>🧠 Phase 5.4 — AI 강화 예측</span>
-                {!ai&&!aiLoading&&claudeApiKey&&<button onClick={async()=>{
+                {!ai&&!aiLoading&&<button onClick={async()=>{
                   try{setAiLoadingPredId(d.id);
                     const ctx=buildAiContext(d,scoringMap,biasMap,trendMap,recs);
-                    const result=await callClaudeAi(ctx,claudeApiKey);
+                    const result=await callClaudeAi(ctx,null);
                     await sbSaveAiAnalysis(d.id,d.pn_no,result);
                     setAiAnalysisMap(prev=>({...prev,[d.id]:result}))
                   }catch(e){alert("AI 분석 실패: "+e.message)}
                   finally{setAiLoadingPredId(null)}
                 }} style={{padding:"4px 12px",fontSize:10,background:"rgba(168,85,247,0.15)",border:"1px solid rgba(168,85,247,0.4)",borderRadius:5,color:"#a855f7",cursor:"pointer",fontWeight:600}}>🤖 Claude AI 분석</button>}
                 {aiLoading&&<span style={{fontSize:10,color:"#a855f7"}}>AI 분석 중...</span>}
-                {!claudeApiKey&&<span style={{fontSize:9,color:C.txd}}>설정에서 Claude API 키를 등록하세요</span>}
               </div>
               
               {/* 편차 + 추세 보정 결과 */}
