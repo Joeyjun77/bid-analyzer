@@ -1,51 +1,50 @@
 import * as XLSX from "xlsx";
 import { CHO } from "./constants.js";
 
-// ─── 낙찰하한율 (Phase 5.5 정정: 실제 데이터 기반) ──────────────────────
-// 구기준: 별표5=87.745%(3억미만), 별표4=86.745%(3억이상) ← 산식기준 88/100
-// 신기준: 2026 개정
-//   3억 미만 (별표5): 89.745% (90/100 기준)
-//   3억~100억: 88.745% (구간별)
-//   100억 이상: 87.495%
-// ⚠️ 중요: 이전 버전의 90.25는 잘못된 값, 실제는 89.745
+// ─── 낙찰하한율 (2026 기관별 개정 반영) ──────────────────────
+// ─── 낙찰하한율 (2026 기관별 개정 반영) ──────────────────────
+// 구기준: 산식기준 88/100 기반
+// 신기준: 조달청계열 → 90/100, 지자체/교육청 → 88/100 유지 (구간만 변경)
+// 시행일: 기관별 상이 (cutoffDate 참조)
 const RATE_TABLE={
-  // ── 조달청 (시행 2026.01.30) ──
+  // ── 조달청 (시행 2026.01.30) ── 별표5/6: 3억미만은 90/100 기준(90.25%)
   "조달청":{cutoff:"2026-01-30",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:86.745},{min:0,max:3e8,rate:87.745}],
-    new:[{min:1e10,max:1e11,rate:87.495},{min:5e9,max:1e10,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:88.745},{min:0,max:3e8,rate:89.745}]},
-  // ── 지자체 (행정안전부 기준, 시행 2025.07.01) ──
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
+  // ── 지자체 (행정안전부 기준, 시행 2025.07.01) ── 3억미만: 88/100→90/100 별표전환
   "지자체":{cutoff:"2025-07-01",
-    old:[{min:1e10,max:3e11,rate:79.995},{min:5e9,max:1e10,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:4e8,max:1e9,rate:86.745},{min:0,max:4e8,rate:87.745}],
-    new:[{min:1e10,max:3e11,rate:81.995},{min:5e9,max:1e10,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:4e8,max:1e9,rate:88.745},{min:0,max:4e8,rate:89.745}]},
-  // ── 교육청 ──
+    old:[{min:1e10,max:3e11,rate:79.995},{min:5e9,max:1e10,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:4e8,max:1e9,rate:87.745},{min:3e8,max:4e8,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:1e10,max:3e11,rate:81.995},{min:5e9,max:1e10,rate:87.495},{min:3e9,max:5e9,rate:88.745},{min:1e9,max:3e9,rate:88.745},{min:4e8,max:1e9,rate:89.745},{min:3e8,max:4e8,rate:89.745},{min:0,max:3e8,rate:90.25}]},
+  // ── 교육청 (행정안전부 기준 준용) ──
   "교육청":{cutoff:"2025-07-01",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:4e8,max:1e9,rate:86.745},{min:0,max:4e8,rate:87.745}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:4e8,max:1e9,rate:88.745},{min:0,max:4e8,rate:89.745}]},
-  // ── 한전 ──
+    old:[{min:5e9,max:1e11,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:4e8,max:1e9,rate:87.745},{min:3e8,max:4e8,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:3e9,max:5e9,rate:88.745},{min:1e9,max:3e9,rate:88.745},{min:4e8,max:1e9,rate:89.745},{min:3e8,max:4e8,rate:89.745},{min:0,max:3e8,rate:90.25}]},
+  // ── 한전 (한국전력공사) ──
   "한전":{cutoff:"2026-01-30",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:86.745},{min:0,max:3e8,rate:87.745}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:88.745},{min:0,max:3e8,rate:89.745}]},
-  // ── LH ──
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
+  // ── LH (한국토지주택공사, 시행 2026.02.01) ──
   "LH":{cutoff:"2026-02-01",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:86.745},{min:0,max:3e8,rate:87.745}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:88.745},{min:0,max:3e8,rate:89.745}]},
-  // ── 군시설 ──
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
+  // ── 군시설 (시행 2026.01.19, 자체훈령/계약예규 상이 가능) ──
   "군시설":{cutoff:"2026-01-19",
-    old:[{min:5e9,max:1e11,rate:83.495},{min:1e9,max:5e9,rate:84.745},{min:3e8,max:1e9,rate:84.745},{min:0,max:3e8,rate:85.745}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:88.745},{min:0,max:3e8,rate:89.745}]},
-  // ── 수자원공사 ──
+    old:[{min:5e9,max:1e11,rate:83.495},{min:1e9,max:5e9,rate:84.745},{min:3e8,max:1e9,rate:85.745},{min:0,max:3e8,rate:86.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
+  // ── 수자원공사 (시행 2026.02.27) ──
   "수자원공사":{cutoff:"2026-02-27",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:86.745},{min:0,max:3e8,rate:87.745}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:88.745},{min:0,max:3e8,rate:89.745}]}
+    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]}
 };
 export function getFloorRate(at,ep,isNew){const tbl=RATE_TABLE[at]||RATE_TABLE["조달청"];const rules=isNew?tbl.new:tbl.old;for(const r of rules){if(ep>=r.min&&ep<r.max)return r.rate}return rules[rules.length-1].rate}
 export function getCutoffDate(at){return(RATE_TABLE[at]||RATE_TABLE["조달청"]).cutoff}
 export function isNewEra(at,od){if(!od)return false;return od>=getCutoffDate(at)}
-// 여성기업/사회적기업/장애인기업 가산 (Phase 5.5: 기본 false, UI에서 선택)
-// 실제 적용 시 약 0.25%p 하향
+// 여성기업/사회적기업/장애인기업 가산: 경영상태 취득점수 10% 가산 → 낙찰하한율 하향
+// 별표5(3억미만): 경영상태 5점 만점×10%=0.5점 여유 → 입찰가격 84.5점 기준 → 90.00% (90.25%-0.25%p)
+// 별표3/4(3억이상): 경영상태 5점(별표4) 또는 15점(별표3)×10% → 0.5~1.5점 여유 → ~0.25%p 하향
+// 실전에서 공통적으로 약 0.25%p 하향 효과
 export function womenBizAdj(baseRate,isWomenBiz){return isWomenBiz?Math.round((baseRate-0.25)*1000)/1000:baseRate}
-// Phase 5.5: isWomenBiz 기본값 false (이전에는 undefined라서 womenBizAdj에서 안전했지만 명시화)
-export function eraFR(at,ep,od,isWomenBiz){return womenBizAdj(getFloorRate(at,ep||0,isNewEra(at,od)),isWomenBiz===true)}
+export function eraFR(at,ep,od,isWomenBiz){return womenBizAdj(getFloorRate(at,ep||0,isNewEra(at,od)),isWomenBiz)}
 // ─── 유틸 ──────────────────────────────────────────────────
 export function clsAg(n){if(!n)return"조달청";const s=n.trim();if(/조달청/.test(s))return"조달청";if(/교육/.test(s))return"교육청";if(/한국전력|한전/.test(s))return"한전";if(/LH|주택공사|토지주택/.test(s))return"LH";if(/군|사단|국방|해군|공군|육군|해병/.test(s))return"군시설";if(/수자원/.test(s))return"수자원공사";return"지자체"}
 export function clean(v){if(v==null)return"";return String(v).replace(/[\u0000\u2800-\u2BFF\uE000-\uF8FF]/g,"").replace(/\s+/g," ").trim()}
@@ -212,23 +211,15 @@ export function predictV5({at,agName,ba,ep,av,isWomenBiz},ts,as,details){
   const effStd=Math.max(std,noiseFloor); // 최소한 노이즈 바닥 이상
   const ci70={low:rnd4(ref.med-effStd*0.52),high:rnd4(ref.med+effStd*0.52)};
   const ci90={low:rnd4(ref.med-effStd*1.28),high:rnd4(ref.med+effStd*1.28)};
-  // ★ Phase 5.5 최종 (2026-04-10 긴급 수정)
-  // 
-  // 수학적 진단 결과:
-  // - 매트릭스 사정률 예측 노이즈 표준편차 0.77% (지자체 65건 기준)
-  // - 낙찰자는 89.745% 법정 하한을 정확히 맞추려고 시도
-  // - 개별 건 낙찰률 상한 ~2% (노이즈 한계)
-  // 
-  // 전략: 매트릭스 중앙값 그대로 사용 + 안전 마진 +0.10%p
-  // - 오프셋 제거 (구 환경 87.745% 기반 -0.15는 신 환경에서 역효과)
-  // - 낙찰자 평균이 시스템보다 0.31%p 높지만, 전체 140건 시뮬레이션에서
-  //   +0.10 마진이 최적 (wins=3, pct=2.1%)
-  const OPT_OFFSET={"지자체":0.00,"군시설":0.00,"교육청":0.00,"한전":0.00,"LH":0.00,"조달청":0.00,"수자원공사":0.00};
-  const off=OPT_OFFSET[at]||0.00;
-  // Phase 5.5: 안전 마진 +0.10%p (140건 백테스트 최적)
-  // 법정 하한선 밑으로 빠지는 것 방지 + 낙찰자 투찰률 P25와 비슷
-  const SAFETY_MARGIN=0.10;
-  const optAdj=rnd4(ref.med+off+SAFETY_MARGIN);const optXp=calcXp(ref.med+off+SAFETY_MARGIN);const optBid=calcBid(ref.med+off+SAFETY_MARGIN);
+  // ★ 최적 투찰: 기관별 차별 오프셋 (190건 백테스트 기반, B안 낙찰률 16.2%)
+  // 안정(30건+): 지자체 -0.15, 군시설 -0.15
+  // 참고(10~29건): 교육청 -0.2
+  // 불안정(<10건): 한전 +0.1 (음수 bias 보정), 나머지 -0.1 기본
+  // ★ 기관별 오프셋 (722건 백테스트 기반, 2026-04-07 재교정)
+  // 군시설: -0.15→0.0 (낙찰 2→3건, 탈락 61→51건 감소)
+  const OPT_OFFSET={"지자체":-0.15,"군시설":0.0,"교육청":-0.2,"한전":0.1,"LH":-0.1,"조달청":-0.1,"수자원공사":-0.1};
+  const off=OPT_OFFSET[at]||-0.1;
+  const optAdj=rnd4(ref.med+off);const optXp=calcXp(ref.med+off);const optBid=calcBid(ref.med+off);
   return{scenarios,fr,src,bidRateRec,bidByRate,
     adjAvg:rnd4(ref.avg),adjStd:rnd4(ref.std),
     adj:rnd4(ref.med),xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:rnd4(ref.avg),
