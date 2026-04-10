@@ -623,10 +623,9 @@ export function buildAiContext(prediction,scoringMap,biasMap,trendMap,records){
   }
 }
 
-// Claude API 호출 (사용자 API 키 필요)
+// Claude API 호출 — Phase 5.4-B: Supabase Edge Function 프록시 경유 (브라우저 키 불필요)
+// apiKey 파라미터는 호환성을 위해 남겨두지만 사용하지 않음
 export async function callClaudeAi(context,apiKey){
-  if(!apiKey)throw new Error("Claude API 키가 필요합니다");
-  
   const prompt=`당신은 한국 공공조달 입찰 전문가입니다. 다음 공고를 분석하여 최적 사정률을 JSON으로 응답해주세요.
 
 [공고 정보]
@@ -664,26 +663,27 @@ ${JSON.stringify(context.추세,null,2)}
 - aggressive: 낙찰자 분포 P75 (공격, 높은 낙찰률·높은 마진)
 - recommended: 발주기관 패턴 + 추세를 고려한 최적 선택`;
 
-  const res=await fetch("https://api.anthropic.com/v1/messages",{
+  // Edge Function 프록시로 호출 (API 키는 서버에만 있음)
+  const PROXY_URL=(typeof window!=="undefined"&&window.__CLAUDE_PROXY_URL__)
+    ||"https://sadunejfkstxbxogzutl.supabase.co/functions/v1/claude-proxy";
+  
+  const res=await fetch(PROXY_URL,{
     method:"POST",
-    headers:{
-      "Content-Type":"application/json",
-      "x-api-key":apiKey,
-      "anthropic-version":"2023-06-01",
-      "anthropic-dangerous-direct-browser-access":"true"
-    },
+    headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
+      prompt:prompt,
       model:"claude-sonnet-4-5",
-      max_tokens:1500,
-      messages:[{role:"user",content:prompt}]
+      max_tokens:1500
     })
   });
+  
   if(!res.ok){
     const err=await res.text();
-    throw new Error("Claude API 오류: "+res.status+" "+err.slice(0,200))
+    throw new Error("Claude 프록시 오류: "+res.status+" "+err.slice(0,300))
   }
   const data=await res.json();
-  const text=data.content?.[0]?.text||"";
+  if(data.error)throw new Error(data.error+(data.detail?" - "+data.detail:""));
+  const text=data.text||"";
   
   // JSON 파싱 (마크다운 코드 펜스 제거)
   const cleaned=text.replace(/```json|```/g,"").trim();
