@@ -93,6 +93,47 @@ export default function App(){
   const deleteChat=(id)=>{const next=chatSessions.filter(s=>s.id!==id);saveSessions(next);
     try{localStorage.removeItem("bid_chat_msg_"+id)}catch(e){}
     if(chatSid===id){if(next.length>0){selectChat(next[0].id)}else{setChatSid("");setChatMsgs([])}}};
+
+  // ★ Phase 5.6: 통합 최종 추천 계산 (모달 + 예측 리스트 + 엑셀 다운로드 공통)
+  // 우선순위: AI 권장 → Enhanced 매트릭스 → opt_adj → pred_adj
+  const getFinalRecommendation=useCallback((p)=>{
+    if(!p)return{adj:null,bid:null,source:null};
+    const ba=p.ba?Number(p.ba):0;
+    const av=p.av?Number(p.av):0;
+    const fr=Number(p.pred_floor_rate||0);
+    const calcBid=(adj)=>{
+      if(!ba||!fr)return null;
+      const xp=ba*(1+adj/100);
+      return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100));
+    };
+    // 1순위: AI 권장
+    const ai=aiAnalysisMap[p.id];
+    if(ai&&ai.recommended){
+      const recKey=ai.recommended;
+      const recAdj=recKey==="safe"?ai.strategy_safe:recKey==="balanced"?ai.strategy_balanced:ai.strategy_aggressive;
+      if(recAdj!=null){
+        const adjNum=Number(recAdj);
+        return{adj:adjNum,bid:calcBid(adjNum),source:"AI-"+(recKey==="safe"?"안전":recKey==="balanced"?"균형":"공격")};
+      }
+    }
+    // 2순위: Enhanced 매트릭스 (편차/추세 보정)
+    const enhanced=getEnhancedAdj(p);
+    if(enhanced&&enhanced.enhanced!=null){
+      return{adj:enhanced.enhanced,bid:calcBid(enhanced.enhanced),source:"매트릭스"};
+    }
+    // 3순위: opt_adj (DB 저장값)
+    if(p.opt_adj!=null){
+      const adjNum=Number(p.opt_adj);
+      return{adj:adjNum,bid:p.opt_bid?Number(p.opt_bid):calcBid(adjNum),source:"최적"};
+    }
+    // 4순위: pred_adj_rate
+    if(p.pred_adj_rate!=null){
+      const adjNum=Number(p.pred_adj_rate);
+      return{adj:adjNum,bid:p.pred_bid_amount?Number(p.pred_bid_amount):calcBid(adjNum),source:"기본"};
+    }
+    return{adj:null,bid:null,source:null};
+  },[aiAnalysisMap]);
+
   // AI 프롬프트 생성 (공통)
   const buildAiPrompt=(r,mode="initial")=>{
     const p=r.pred;if(!p)return null;
@@ -859,29 +900,23 @@ ${baseInfo}
         const ba=d.ba?Number(d.ba):null;
         const ep=d.ep?Number(d.ep):null;
         const av=d.av?Number(d.av):0;
-        // ★ 최종 추천 사정률 & 투찰금액 (우선순위: AI 강화 > opt_bid > pred_bid)
-        const enhanced=getEnhancedAdj(d);
+        // ★ Phase 5.6: 통합 최종 추천 (예측 리스트와 동일 로직 사용)
+        const finalRec=getFinalRecommendation(d);
+        const finalAdj=finalRec.adj;
+        const finalBid=finalRec.bid;
+        const finalSource=finalRec.source==="AI-안전"?"AI 권장 (안전)":
+                          finalRec.source==="AI-균형"?"AI 권장 (균형)":
+                          finalRec.source==="AI-공격"?"AI 권장 (공격)":
+                          finalRec.source==="매트릭스"?"매트릭스 강화":
+                          finalRec.source==="최적"?"최적 투찰":
+                          finalRec.source==="기본"?"기본 예측":"—";
         const fr2=Number(d.pred_floor_rate||0);
         const calcBid=(adj)=>{const xp=ba*(1+adj/100);return av>0?Math.ceil(av+(xp-av)*(fr2/100)):Math.ceil(xp*(fr2/100))};
         const fmtAdj=(adj)=>adj==null?"—":(100+Number(adj)).toFixed(4)+"%";
-        // AI 분석 우선, 없으면 opt_bid, 없으면 pred_bid
         const ai=aiAnalysisMap[d.id];
         const aiLoading=aiLoadingPredId===d.id;
-        let finalAdj, finalBid, finalSource;
-        if(ai&&ai.recommended){
-          const recKey=ai.recommended;
-          const recAdj=recKey==="safe"?ai.strategy_safe:recKey==="balanced"?ai.strategy_balanced:ai.strategy_aggressive;
-          if(recAdj!=null){finalAdj=Number(recAdj);finalBid=calcBid(finalAdj);finalSource="AI 권장 ("+(recKey==="safe"?"안전":recKey==="balanced"?"균형":"공격")+")"}
-        }
-        if(finalAdj==null&&enhanced){
-          finalAdj=enhanced.enhanced;finalBid=calcBid(finalAdj);finalSource="매트릭스 강화"
-        }
-        if(finalAdj==null&&d.opt_adj!=null){
-          finalAdj=Number(d.opt_adj);finalBid=d.opt_bid?Number(d.opt_bid):calcBid(finalAdj);finalSource="최적 투찰"
-        }
-        if(finalAdj==null&&pa!=null){
-          finalAdj=pa;finalBid=pb||calcBid(finalAdj);finalSource="기본 예측"
-        }
+        // Enhanced (전략 탭용)
+        const enhanced=getEnhancedAdj(d);
         // 등급
         const sc=scoringMap[d.id];
         const grade=sc?sc.roi_grade:null;
@@ -1021,7 +1056,7 @@ ${baseInfo}
 
           {/* ───────── 전략옵션 탭 ───────── */}
           {detailTab==="strategy"&&<div>
-            {/* 3-way 전략: AI가 있으면 AI 값, 없으면 매트릭스 기본값 사용 */}
+            {/* 3-way 전략: AI가 있으면 AI 값, 없으면 opt_adj 기준 ±0.1 조정 */}
             {(()=>{
               let safeAdj,balAdj,aggrAdj,safeBid,balBid,aggrBid,safeProb,balProb,aggrProb,recKey;
               if(ai){
@@ -1031,26 +1066,32 @@ ${baseInfo}
                 safeProb=ai.prob_safe;balProb=ai.prob_balanced;aggrProb=ai.prob_aggressive;
                 recKey=ai.recommended;
               } else {
-                // 매트릭스 기본값: p25/p50/p75
-                aggrAdj=d.rec_adj_p25!=null?Number(d.rec_adj_p25):null;
-                balAdj=d.rec_adj_p50!=null?Number(d.rec_adj_p50):(d.opt_adj!=null?Number(d.opt_adj):null);
-                safeAdj=d.rec_adj_p75!=null?Number(d.rec_adj_p75):null;
+                // AI 없을 때: opt_adj를 기준으로 ±0.1%p 조정
+                // 공격 = 더 낮게 (낙찰 가능성↑, 하한선 밑 위험↑)
+                // 균형 = 시스템 추천 그대로
+                // 안전 = 더 높게 (하한선 여유↑, 경쟁자보다 높아질 위험↑)
+                const base=d.opt_adj!=null?Number(d.opt_adj):(d.pred_adj_rate!=null?Number(d.pred_adj_rate):null);
+                if(base!=null){
+                  aggrAdj=Math.round((base-0.10)*10000)/10000;
+                  balAdj=Math.round(base*10000)/10000;
+                  safeAdj=Math.round((base+0.10)*10000)/10000;
+                }
               }
               safeBid=safeAdj!=null?calcBid(safeAdj):null;
               balBid=balAdj!=null?calcBid(balAdj):null;
               aggrBid=aggrAdj!=null?calcBid(aggrAdj):null;
               const strategies=[
-                {k:"safe",label:"안전",icon:"🟢",adj:safeAdj,bid:safeBid,prob:safeProb,color:"#5dca96",desc:"하한선 여유 확보"},
-                {k:"balanced",label:"균형",icon:"🟡",adj:balAdj,bid:balBid,prob:balProb,color:"#d4a834",desc:"매트릭스 중앙값"},
-                {k:"aggressive",label:"공격",icon:"🔴",adj:aggrAdj,bid:aggrBid,prob:aggrProb,color:"#e24b4a",desc:"낙찰 최저가 노림"}
+                {k:"aggressive",label:"공격",icon:"🔴",adj:aggrAdj,bid:aggrBid,prob:aggrProb,color:"#e24b4a",desc:"낙찰가 최저 노림"},
+                {k:"balanced",label:"균형",icon:"🟡",adj:balAdj,bid:balBid,prob:balProb,color:"#d4a834",desc:"시스템 기본 추천"},
+                {k:"safe",label:"안전",icon:"🟢",adj:safeAdj,bid:safeBid,prob:safeProb,color:"#5dca96",desc:"하한선 여유 확보"}
               ];
               return<div>
-                <div style={{fontSize:12,color:C.txm,marginBottom:10}}>{ai?"🤖 Claude AI가 분석한 3가지 전략":"📊 매트릭스 기반 3가지 전략"}</div>
+                <div style={{fontSize:12,color:C.txm,marginBottom:10}}>{ai?"🤖 Claude AI가 분석한 3가지 전략":"📊 시스템 기본 추천 ±0.1%p 조정 (AI 분석 전)"}</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
                   {strategies.map(s=>{
-                    const isRec=recKey===s.k;
+                    const isRec=recKey===s.k||(!ai&&s.k==="balanced");
                     return<div key={s.k} style={{padding:"12px 10px",background:isRec?s.color+"20":C.bg3,borderRadius:8,border:isRec?"2px solid "+s.color:"1px solid "+C.bdr,textAlign:"center",position:"relative"}}>
-                      {isRec&&<div style={{position:"absolute",top:-9,left:"50%",transform:"translateX(-50%)",background:s.color,color:"#000",fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:3,letterSpacing:0.5}}>AI 권장</div>}
+                      {isRec&&<div style={{position:"absolute",top:-9,left:"50%",transform:"translateX(-50%)",background:s.color,color:"#000",fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:3,letterSpacing:0.5}}>{ai?"AI 권장":"권장"}</div>}
                       <div style={{fontSize:11,color:s.color,fontWeight:700,marginBottom:8}}>{s.icon} {s.label}</div>
                       <div style={{fontSize:9,color:C.txd,marginBottom:6}}>{s.desc}</div>
                       <div style={{fontSize:15,fontWeight:700,color:C.txt,fontFamily:"monospace",marginBottom:4}}>{fmtAdj(s.adj)}</div>
@@ -1059,14 +1100,19 @@ ${baseInfo}
                     </div>
                   })}
                 </div>
-                {/* 경쟁 참고 */}
+                {/* AI 분석 권유 (AI 없는 경우) */}
+                {!ai&&<div style={{padding:"10px 12px",background:"rgba(168,85,247,0.06)",border:"1px solid rgba(168,85,247,0.25)",borderRadius:6,fontSize:11,color:"#c89dff",marginBottom:12,textAlign:"center"}}>
+                  💡 더 정밀한 전략은 <strong>AI 분석 탭</strong>에서 Claude AI 분석을 실행해보세요
+                </div>}
+                {/* 경쟁 참고 (의미 명확화) */}
                 {d.rec_adj_p50!=null&&<div style={{padding:"10px 12px",background:C.bg3,borderRadius:6,fontSize:11}}>
-                  <div style={{fontSize:10,color:C.txm,fontWeight:600,marginBottom:6}}>📋 경쟁자 예상 투찰 범위 (참고)</div>
+                  <div style={{fontSize:10,color:C.txm,fontWeight:600,marginBottom:6}}>📋 경쟁자 예상 투찰 분포 (과거 낙찰자 통계)</div>
                   <div style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr",gap:"4px 10px"}}>
-                    <span style={{color:C.txd}}>공격적 (P25)</span><span style={{fontFamily:"monospace"}}>{d.rec_adj_p25!=null?(100+Number(d.rec_adj_p25)).toFixed(4)+"%":"—"}</span><span style={{fontFamily:"monospace",textAlign:"right",color:C.txm}}>{d.rec_bid_p25?tc(Number(d.rec_bid_p25))+"원":"—"}</span>
-                    <span style={{color:C.txd}}>균형 (P50)</span><span style={{fontFamily:"monospace"}}>{(100+Number(d.rec_adj_p50)).toFixed(4)+"%"}</span><span style={{fontFamily:"monospace",textAlign:"right",color:C.txm}}>{d.rec_bid_p50?tc(Number(d.rec_bid_p50))+"원":"—"}</span>
-                    <span style={{color:C.txd}}>보수적 (P75)</span><span style={{fontFamily:"monospace"}}>{d.rec_adj_p75!=null?(100+Number(d.rec_adj_p75)).toFixed(4)+"%":"—"}</span><span style={{fontFamily:"monospace",textAlign:"right",color:C.txm}}>{d.rec_bid_p75?tc(Number(d.rec_bid_p75))+"원":"—"}</span>
+                    <span style={{color:C.txd}}>하위 25% (P25)</span><span style={{fontFamily:"monospace"}}>{d.rec_adj_p25!=null?(100+Number(d.rec_adj_p25)).toFixed(4)+"%":"—"}</span><span style={{fontFamily:"monospace",textAlign:"right",color:C.txm}}>{d.rec_bid_p25?tc(Number(d.rec_bid_p25))+"원":"—"}</span>
+                    <span style={{color:C.txd}}>중앙값 (P50)</span><span style={{fontFamily:"monospace"}}>{(100+Number(d.rec_adj_p50)).toFixed(4)+"%"}</span><span style={{fontFamily:"monospace",textAlign:"right",color:C.txm}}>{d.rec_bid_p50?tc(Number(d.rec_bid_p50))+"원":"—"}</span>
+                    <span style={{color:C.txd}}>상위 25% (P75)</span><span style={{fontFamily:"monospace"}}>{d.rec_adj_p75!=null?(100+Number(d.rec_adj_p75)).toFixed(4)+"%":"—"}</span><span style={{fontFamily:"monospace",textAlign:"right",color:C.txm}}>{d.rec_bid_p75?tc(Number(d.rec_bid_p75))+"원":"—"}</span>
                   </div>
+                  <div style={{fontSize:9,color:C.txd,marginTop:6}}>※ 과거 낙찰자들의 실제 투찰 분포 (투찰 전략 아님, 참고만)</div>
                 </div>}
               </div>
             })()}
@@ -1351,7 +1397,9 @@ ${baseInfo}
             <button onClick={()=>{
               const wb=XLSX.utils.book_new();
               const data=compList.map(p=>{
-                const optWin=p.opt_bid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(p.opt_bid)<=Number(p.actual_bid_amount)&&Number(p.opt_bid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
+                const finalRec=getFinalRecommendation(p);
+                const finalAdj=finalRec.adj;const finalBid=finalRec.bid;
+                const optWin=finalBid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(finalBid)<=Number(p.actual_bid_amount)&&Number(finalBid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
                 return{
                   "공고명":p.pn||"",
                   "공고번호":p.pn_no||"",
@@ -1363,16 +1411,17 @@ ${baseInfo}
                   "추정가격":p.ep||"",
                   "A값":p.av||"",
                   "낙찰하한율":p.pred_floor_rate||"",
-                  // ★ 추천 투찰 (메인)
-                  "추천사정률":p.opt_adj!=null?(100+Number(p.opt_adj)).toFixed(4):"",
-                  "추천투찰금액":p.opt_bid||"",
-                  // 조정 범위
-                  "안전사정률(예측)":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4):"",
-                  "안전투찰금액":p.pred_bid_amount||"",
-                  "예측근거":p.pred_source||"",
+                  // ★ 최종 추천 (AI > Enhanced > opt_adj)
+                  "추천사정률":finalAdj!=null?(100+Number(finalAdj)).toFixed(4):"",
+                  "추천투찰금액":finalBid||"",
+                  "추천근거":finalRec.source||"",
+                  // 조정 범위 (기본 예측)
+                  "기본예측사정률":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4):"",
+                  "기본예측투찰금액":p.pred_bid_amount||"",
+                  "예측소스":p.pred_source||"",
                   // 입찰 후 결과
                   "실제사정률":p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4):"",
-                  "오차(추천-실제)":p.opt_adj!=null&&p.actual_adj_rate!=null?(Number(p.opt_adj)-Number(p.actual_adj_rate)).toFixed(4):"",
+                  "오차(추천-실제)":finalAdj!=null&&p.actual_adj_rate!=null?(Number(finalAdj)-Number(p.actual_adj_rate)).toFixed(4):"",
                   "실제1위금액":p.actual_bid_amount||"",
                   "실제1위업체":p.actual_winner||"",
                   "참여업체수":p.actual_participant_count||"",
@@ -1440,21 +1489,29 @@ ${baseInfo}
               <th style={{padding:"7px 4px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}></th>
             </tr></thead>
             <tbody>{compList.slice(0,predListShow).map(p=>{
-              const optErr=(p.opt_adj!=null&&p.actual_adj_rate!=null)?Number(p.opt_adj)-Number(p.actual_adj_rate):null;
+              // Phase 5.6: 통합 최종 추천 (모달과 동일 로직: AI > Enhanced > opt_adj > pred)
+              const finalRec=getFinalRecommendation(p);
+              const finalAdj=finalRec.adj;const finalBid=finalRec.bid;
+              const optErr=(finalAdj!=null&&p.actual_adj_rate!=null)?Number(finalAdj)-Number(p.actual_adj_rate):null;
               const isAnomaly=optErr!=null&&Math.abs(optErr)>5;
               const errColor=isAnomaly?"#e24b4a":optErr!=null?(Math.abs(optErr)<0.3?"#5dca96":Math.abs(optErr)<1?"#d4a834":"#e24b4a"):C.txd;
-              const canWin=!isAnomaly&&p.opt_bid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(p.opt_bid)<=Number(p.actual_bid_amount)&&Number(p.opt_bid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
+              const canWin=!isAnomaly&&finalBid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(finalBid)<=Number(p.actual_bid_amount)&&Number(finalBid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
               const isYuchal=p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)");
               // 수의계약: 매칭됐지만 actual_adj_rate NULL이고 유찰 아님 (복수예가 메커니즘 미적용)
               const isSuui=!isYuchal&&p.match_status==="matched"&&p.actual_adj_rate==null&&p.actual_winner!=null&&p.actual_winner!=="";
               const sc=scoringMap[p.id];const grade=sc?.roi_grade||"D";const winProb=sc?.win_prob;
               const gradeColor={S:"#a855f7",A:"#5dca96",B:"#d4a834",C:"#a8b4ff",D:"#666680"}[grade];
+              // AI 권장 배지
+              const isAiRecommended=finalRec.source&&finalRec.source.startsWith("AI-");
               return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:isAnomaly||isYuchal||isSuui?0.5:1}}>
                 <td style={{padding:"6px",textAlign:"center"}}><span title={sc?`${sc.strategy_label} · 낙찰확률 ${(winProb*100).toFixed(1)}%`:""} style={{display:"inline-block",fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:gradeColor+"22",color:gradeColor,border:"1px solid "+gradeColor+"55",minWidth:18}}>{grade}</span></td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>{p.opt_adj!=null?(100+Number(p.opt_adj)).toFixed(4)+"%":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":""}</td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>{p.opt_bid?tc(Number(p.opt_bid)):p.pred_bid_amount?tc(Number(p.pred_bid_amount)):""}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}} title={finalRec.source?"근거: "+finalRec.source:""}>
+                  {finalAdj!=null?(100+Number(finalAdj)).toFixed(4)+"%":""}
+                  {isAiRecommended&&<span style={{marginLeft:4,fontSize:8,padding:"1px 4px",borderRadius:2,background:"rgba(168,85,247,0.2)",color:"#c89dff",fontWeight:700}}>AI</span>}
+                </td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>{finalBid?tc(Number(finalBid)):""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
