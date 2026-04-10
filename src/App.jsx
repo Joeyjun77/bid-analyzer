@@ -61,7 +61,7 @@ export default function App(){
   const[hideSuui,setHideSuui]=useState(true); // 수의계약 건 숨김 (기본 ON)
   const[bidDetails,setBidDetails]=useState([]);
   const[agAss,setAgAss]=useState({});
-  const[isWomenBiz,setIsWomenBiz]=useState(true); // 여성기업 가산 (기본 ON)
+  const[isWomenBiz,setIsWomenBiz]=useState(false); // Phase 5.6: 기본 OFF - 일반기업 기준(89.745%)이 시장 표준. 여성기업 가산은 적격심사 시 적용되는 옵션이며, 시장 87.5%가 일반기업 기준으로 투찰. 여성기업 공격 모드를 원할 때만 ON.
   const[simResult,setSimResult]=useState(null);
   const[expandedDetail,setExpandedDetail]=useState(null);
   const[simSlider,setSimSlider]=useState(0); // Phase 3: 투찰 시뮬레이터 사정률 슬라이더
@@ -1264,11 +1264,11 @@ ${baseInfo}
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,padding:"8px 14px",background:isWomenBiz?"rgba(93,202,150,0.06)":"rgba(255,255,255,0.02)",border:"1px solid "+(isWomenBiz?"rgba(93,202,150,0.25)":C.bdr),borderRadius:8}}>
         <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:12,color:isWomenBiz?"#5dca96":C.txm}} onClick={()=>setIsWomenBiz(!isWomenBiz)}>
           <span style={{width:16,height:16,borderRadius:3,border:"1.5px solid "+(isWomenBiz?"#5dca96":C.txd),background:isWomenBiz?"#5dca96":"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#fff",fontWeight:700,flexShrink:0}}>{isWomenBiz?"✓":""}</span>
-          여성기업 가산 적용
+          여성기업 공격모드
         </label>
         <span style={{fontSize:10,color:C.txd}}>|</span>
-        <span style={{fontSize:10,color:C.txm}}>경영상태 10% 가산 → 낙찰하한율 <span style={{color:isWomenBiz?"#5dca96":C.txd,fontWeight:600}}>{isWomenBiz?"-0.25%p 적용중":"미적용"}</span></span>
-        <span style={{fontSize:10,color:C.txd,marginLeft:"auto"}}>별표5 기준 · 시공비율 10% 이상(단독 포함)</span>
+        <span style={{fontSize:10,color:C.txm}}>투찰하한율 <span style={{color:isWomenBiz?"#5dca96":C.txt,fontWeight:600,fontFamily:"monospace"}}>{isWomenBiz?"89.495%":"89.745%"}</span> · {isWomenBiz?"공격적 저가 -0.25%p":"일반기업 기준 (시장 표준 87.5%)"}</span>
+        <span style={{fontSize:10,color:C.txd,marginLeft:"auto"}} title="여성기업 가산은 적격심사 시 경영상태 점수에 10% 가산됩니다. 일반기업이 투찰하는 하한선(89.745%)보다 0.25%p 낮게 투찰해도 적격심사 통과가 가능하므로, 낙찰 가능성을 높이는 '공격 모드'로 활용할 수 있습니다. 단, 이 모드를 사용하려면 (1) 공공구매종합정보망 등록 여성기업 (2) 시공비율 30% 이상 (3) 전기/통신/소방 3억~10억 구간 조건 충족 필요.">ⓘ 조건 확인 필수</span>
       </div>
 
       {/* 상단: 파일 업로드 + 수동 시뮬레이션 토글 */}
