@@ -61,7 +61,7 @@ export default function App(){
   const[hideSuui,setHideSuui]=useState(true); // 수의계약 건 숨김 (기본 ON)
   const[bidDetails,setBidDetails]=useState([]);
   const[agAss,setAgAss]=useState({});
-  const[isWomenBiz,setIsWomenBiz]=useState(false); // Phase 5.6: 기본 OFF - 일반기업 기준(89.745%)이 시장 표준. 여성기업 가산은 적격심사 시 적용되는 옵션이며, 시장 87.5%가 일반기업 기준으로 투찰. 여성기업 공격 모드를 원할 때만 ON.
+  const[isWomenBiz,setIsWomenBiz]=useState(true); // Phase 5.6: 기본 ON - 사용자가 여성기업 확인. 경영상태 10% 가산 → 낙찰하한율 0.25%p 하향 적용 가능
   const[simResult,setSimResult]=useState(null);
   const[expandedDetail,setExpandedDetail]=useState(null);
   const[simSlider,setSimSlider]=useState(0); // Phase 3: 투찰 시뮬레이터 사정률 슬라이더
