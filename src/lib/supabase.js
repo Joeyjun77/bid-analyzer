@@ -123,3 +123,49 @@ export async function sbFetchScoring(){
     return all
   }catch(e){return[]}
 }
+
+// Phase 5.2: 신규 예측 자동 scoring upsert
+export async function sbUpsertScoring(predictionId,scoringData){
+  if(!predictionId||!scoringData)return false;
+  try{
+    const body=JSON.stringify([{
+      prediction_id:predictionId,
+      win_prob:scoringData.winProb,
+      expected_margin:scoringData.expectedMargin,
+      expected_value:scoringData.expectedValue,
+      roi_grade:scoringData.grade,
+      strategy_label:scoringData.strategy,
+      risk_score:scoringData.riskScore,
+      factors:scoringData.factors||{}
+    }]);
+    const res=await fetch(SB_URL+"/rest/v1/bid_scoring?on_conflict=prediction_id",{
+      method:"POST",
+      headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},
+      body
+    });
+    return res.ok
+  }catch(e){return false}
+}
+
+// Phase 5.2: 여러 scoring을 배치로 upsert
+export async function sbBatchUpsertScoring(scoringRows){
+  if(!Array.isArray(scoringRows)||scoringRows.length===0)return 0;
+  try{
+    const body=JSON.stringify(scoringRows.map(r=>({
+      prediction_id:r.prediction_id,
+      win_prob:r.winProb,
+      expected_margin:r.expectedMargin,
+      expected_value:r.expectedValue,
+      roi_grade:r.grade,
+      strategy_label:r.strategy,
+      risk_score:r.riskScore,
+      factors:r.factors||{}
+    })));
+    const res=await fetch(SB_URL+"/rest/v1/bid_scoring?on_conflict=prediction_id",{
+      method:"POST",
+      headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},
+      body
+    });
+    return res.ok?scoringRows.length:0
+  }catch(e){return 0}
+}

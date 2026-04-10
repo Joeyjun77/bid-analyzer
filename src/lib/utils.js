@@ -406,7 +406,7 @@ export const WIN_PROB_MATRIX={
 };
 
 // Shrinkage 상수: 표본 K건 이하는 전역 평균으로 수렴
-export const SHRINKAGE_K=10;
+export const SHRINKAGE_K=5;
 export const GLOBAL_MEAN=0.0544;
 
 // 무효 공고 키워드 (공고명에 포함 시 D등급 강제)
