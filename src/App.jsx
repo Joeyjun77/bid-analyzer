@@ -70,6 +70,7 @@ export default function App(){
   const[batchAi,setBatchAi]=useState({});const[batchAiLoading,setBatchAiLoading]=useState(null);const[expandedBatch,setExpandedBatch]=useState(null); // 일괄 AI
   const[predSel,setPredSel]=useState({}); // 예측 내역 선택 삭제
   const[detailModal,setDetailModal]=useState(null); // 상세 모달 (prediction 객체)
+  const[detailTab,setDetailTab]=useState("detail"); // Phase 5.6: 상세 모달 탭 (detail|strategy|ai|pattern|info)
   const[detailAi,setDetailAi]=useState("");const[detailAiLoading,setDetailAiLoading]=useState(false); // 모달 AI
   const[showSim,setShowSim]=useState(false); // 수동 시뮬레이션 토글
   // ★ AI 챗봇 (localStorage 세션 관리)
@@ -842,373 +843,272 @@ ${baseInfo}
     {/* ═══ 예측 탭 (개편: 시뮬레이션 분리 + 통합 리스트 + 상세 모달) ═══ */}
     {tab==="predict"&&<div>
 
-      {/* ★ 상세 모달 (보강) */}
+      {/* ★ 상세 모달 — Phase 5.6 탭 기반 재설계 */}
       {detailModal&&(()=>{
-        const d=detailModal;const pa=d.pred_adj_rate!=null?Number(d.pred_adj_rate):null;
+        const d=detailModal;
+        const pa=d.pred_adj_rate!=null?Number(d.pred_adj_rate):null;
         const aa=d.actual_adj_rate!=null?Number(d.actual_adj_rate):null;
-        const pb=d.pred_bid_amount?Number(d.pred_bid_amount):null;const ab=d.actual_bid_amount?Number(d.actual_bid_amount):null;
-        const pxp=d.pred_expected_price?Number(d.pred_expected_price):null;const axp=d.actual_expected_price?Number(d.actual_expected_price):null;
-        const pBR=pb&&pxp&&pxp>0?pb/pxp*100:null;const aBR=ab&&axp&&axp>0?ab/axp*100:null;
+        const pb=d.pred_bid_amount?Number(d.pred_bid_amount):null;
+        const ab=d.actual_bid_amount?Number(d.actual_bid_amount):null;
+        const pxp=d.pred_expected_price?Number(d.pred_expected_price):null;
+        const axp=d.actual_expected_price?Number(d.actual_expected_price):null;
+        const pBR=pb&&pxp&&pxp>0?pb/pxp*100:null;
+        const aBR=ab&&axp&&axp>0?ab/axp*100:null;
         const err=d.adj_rate_error!=null?Number(d.adj_rate_error):null;
         const errAbs=err!=null?Math.abs(err):null;
-        const ba=d.ba?Number(d.ba):null;const ep=d.ep?Number(d.ep):null;const av=d.av?Number(d.av):0;
-        return<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.6)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{setDetailModal(null);setDetailAi("");setDetailAiLoading(false)}}>
-        <div onClick={e=>e.stopPropagation()} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:12,padding:"20px 24px",maxWidth:620,width:"100%",maxHeight:"85vh",overflowY:"auto"}}>
+        const ba=d.ba?Number(d.ba):null;
+        const ep=d.ep?Number(d.ep):null;
+        const av=d.av?Number(d.av):0;
+        // ★ 최종 추천 사정률 & 투찰금액 (우선순위: AI 강화 > opt_bid > pred_bid)
+        const enhanced=getEnhancedAdj(d);
+        const fr2=Number(d.pred_floor_rate||0);
+        const calcBid=(adj)=>{const xp=ba*(1+adj/100);return av>0?Math.ceil(av+(xp-av)*(fr2/100)):Math.ceil(xp*(fr2/100))};
+        const fmtAdj=(adj)=>adj==null?"—":(100+Number(adj)).toFixed(4)+"%";
+        // AI 분석 우선, 없으면 opt_bid, 없으면 pred_bid
+        const ai=aiAnalysisMap[d.id];
+        const aiLoading=aiLoadingPredId===d.id;
+        let finalAdj, finalBid, finalSource;
+        if(ai&&ai.recommended){
+          const recKey=ai.recommended;
+          const recAdj=recKey==="safe"?ai.strategy_safe:recKey==="balanced"?ai.strategy_balanced:ai.strategy_aggressive;
+          if(recAdj!=null){finalAdj=Number(recAdj);finalBid=calcBid(finalAdj);finalSource="AI 권장 ("+(recKey==="safe"?"안전":recKey==="balanced"?"균형":"공격")+")"}
+        }
+        if(finalAdj==null&&enhanced){
+          finalAdj=enhanced.enhanced;finalBid=calcBid(finalAdj);finalSource="매트릭스 강화"
+        }
+        if(finalAdj==null&&d.opt_adj!=null){
+          finalAdj=Number(d.opt_adj);finalBid=d.opt_bid?Number(d.opt_bid):calcBid(finalAdj);finalSource="최적 투찰"
+        }
+        if(finalAdj==null&&pa!=null){
+          finalAdj=pa;finalBid=pb||calcBid(finalAdj);finalSource="기본 예측"
+        }
+        // 등급
+        const sc=scoringMap[d.id];
+        const grade=sc?sc.roi_grade:null;
+        const gc=grade?{S:"#a855f7",A:"#5dca96",B:"#d4a834",C:"#a8b4ff",D:"#666680"}[grade]:C.txm;
+        const gradeDesc=grade?{S:"반드시 투찰",A:"우선 투찰",B:"선택 투찰",C:"여력시 투찰",D:"제외 권장"}[grade]:"";
+        const winProb=sc?Number(sc.win_prob):null;
+        // 매칭 결과 판정
+        const floorLine=axp?(av>0?av+(axp-av)*(fr2/100):axp*(fr2/100)):null;
+        const matchResult=d.match_status==="matched"&&ab&&finalBid?
+          (finalBid>ab?"higher":(floorLine&&finalBid<floorLine?"invalid":"win")):null;
+
+        return<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.7)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{setDetailModal(null);setDetailAi("");setDetailAiLoading(false);setDetailTab("detail")}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:12,padding:"20px 24px",maxWidth:680,width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
           {/* 헤더 */}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:15,fontWeight:600,color:C.txt,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={d.pn}>{d.pn}</div>
               <div style={{fontSize:12,color:C.txm,marginTop:3}}>{d.ag} ({d.at}) · {d.open_date||"개찰일 미정"} · <span style={{padding:"2px 6px",borderRadius:4,fontSize:10,background:d.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:d.match_status==="matched"?"#5dca96":"#e24b4a"}}>{d.match_status==="matched"?"매칭":"대기"}</span></div>
             </div>
-            <div style={{fontSize:20,color:C.txd,cursor:"pointer",lineHeight:1,padding:"0 4px",flexShrink:0}} onClick={()=>{setDetailModal(null);setDetailAi("")}}>×</div>
+            <div style={{fontSize:20,color:C.txd,cursor:"pointer",lineHeight:1,padding:"0 4px",flexShrink:0}} onClick={()=>{setDetailModal(null);setDetailAi("");setDetailTab("detail")}}>×</div>
           </div>
 
-          {/* Phase 5: ROI 전략 분석 카드 */}
-          {(()=>{const sc=scoringMap[d.id];if(!sc)return null;
-            const grade=sc.roi_grade;const wp=Number(sc.win_prob);const em=Number(sc.expected_margin);const ev=Number(sc.expected_value);
-            const gc={S:"#a855f7",A:"#5dca96",B:"#d4a834",C:"#a8b4ff",D:"#666680"}[grade];
-            const gradeDesc={S:"반드시 투찰 (최우선)",A:"우선 투찰 (강력 추천)",B:"선택 투찰 (양호)",C:"여력시 투찰 (보통)",D:"제외 권장 (효율 낮음)"}[grade];
-            return<div style={{marginBottom:14,padding:"12px 14px",background:"linear-gradient(135deg, "+gc+"15, "+gc+"05)",border:"1px solid "+gc+"55",borderRadius:8}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <span style={{fontSize:11,color:gc,fontWeight:600,letterSpacing:1}}>🎯 ROI 전략 분석</span>
-                  <span style={{display:"inline-block",fontSize:14,fontWeight:700,padding:"3px 10px",borderRadius:5,background:gc+"33",color:gc,border:"1px solid "+gc+"77"}}>{grade}</span>
-                  <span style={{fontSize:11,color:C.txt}}>{gradeDesc}</span>
-                </div>
+          {/* ★★★ 메인: 최종 추천 (1개, 크게) ★★★ */}
+          <div style={{marginBottom:14,padding:"16px 18px",background:"linear-gradient(135deg, rgba(212,168,52,0.10), rgba(93,202,165,0.06))",border:"2px solid rgba(212,168,52,0.45)",borderRadius:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:12,color:C.gold,fontWeight:700,letterSpacing:0.5}}>⭐ 최종 추천 투찰</span>
+                {grade&&<span style={{display:"inline-block",fontSize:12,fontWeight:700,padding:"2px 9px",borderRadius:4,background:gc+"33",color:gc,border:"1px solid "+gc+"77"}}>{grade}</span>}
+                {grade&&<span style={{fontSize:10,color:C.txm}}>{gradeDesc}</span>}
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:10,marginTop:6}}>
-                <div style={{padding:"8px 10px",background:C.bg3,borderRadius:5}}>
-                  <div style={{fontSize:9,color:C.txd,marginBottom:2}}>낙찰 확률</div>
-                  <div style={{fontSize:16,fontWeight:600,color:gc,fontFamily:"monospace"}}>{(wp*100).toFixed(1)}%</div>
-                </div>
-                <div style={{padding:"8px 10px",background:C.bg3,borderRadius:5}}>
-                  <div style={{fontSize:9,color:C.txd,marginBottom:2}}>기대 마진</div>
-                  <div style={{fontSize:16,fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{tc(em)}원</div>
-                </div>
-                <div style={{padding:"8px 10px",background:C.bg3,borderRadius:5}}>
-                  <div style={{fontSize:9,color:C.txd,marginBottom:2}}>기대값 (확률×마진)</div>
-                  <div style={{fontSize:16,fontWeight:600,color:"#5dca96",fontFamily:"monospace"}}>{tc(ev)}원</div>
-                </div>
-              </div>
-              <div style={{fontSize:10,color:C.txd,marginTop:8,lineHeight:1.5}}>
-                💡 <strong style={{color:C.txt}}>{sc.strategy_label}</strong> · 6개 신호 결합 (기관×금액 매트릭스 + 경쟁강도 + 시점 + 골드존 + 회피존 필터)
-              </div>
-              {/* Phase 5.3: 등급 이유 자연어 설명 */}
-              {(()=>{
-                const at=d.at||"기타";
-                const amt=Number(d.ep||d.ba||0);
-                const tier=amt<3e8?"S":amt<1e9?"M":"L";
-                const tierLabel={S:"3억 미만",M:"3~10억",L:"10억 이상"}[tier];
-                const od=d.open_date;
-                const dow=od?["일","월","화","수","목","금","토"][new Date(od).getDay()]:null;
-                const isPeakDay=dow&&["화","수","목"].includes(dow);
-                const isInvalid=(d.pn||"").match(/\[(취소|중지|재공고|정정|연기)\]/);
-                const isAvoid=at==="수자원공사"||(at==="교육청"&&tier==="L")||(at==="조달청"&&tier==="S");
-                
-                let reasons=[];
-                if(isInvalid){reasons.push(`⚠️ 공고에 "${isInvalid[1]}" 표시 → D등급 강제`)}
-                else if(isAvoid){reasons.push(`⚠️ ${at}-${tier} 회피존 → 강제 차단`)}
-                else{
-                  reasons.push(`📊 ${at}-${tierLabel} 매트릭스 베이스 확률 적용`);
-                  if(isPeakDay)reasons.push(`📅 ${dow}요일 개찰 → +10% 보정 (검증: 화/수/목 6.6% vs 월/금 3.5%)`);
-                }
-                
-                let conclusion="";
-                if(grade==="S")conclusion=`✨ 비슷한 조건의 과거 공고에서 평균 30%+ 낙찰. 강력 추천.`;
-                else if(grade==="A")conclusion=`✓ 안정적 낙찰 패턴. 우선 검토 추천.`;
-                else if(grade==="B")conclusion=`◯ 평균 이상 가능성. 여력 있을 때 투찰.`;
-                else if(grade==="C")conclusion=`△ 평균 수준. 다른 우선순위 건이 없을 때만.`;
-                else if(grade==="D")conclusion=`✗ 시간 대비 효율 낮음. 다른 건에 집중 권장.`;
-                
-                return<div style={{marginTop:10,padding:"10px 12px",background:"rgba(0,0,0,0.2)",borderRadius:6,borderLeft:"3px solid "+gc}}>
-                  <div style={{fontSize:10,color:C.txm,fontWeight:600,marginBottom:6}}>🤖 등급 산정 이유</div>
-                  {reasons.map((r,i)=><div key={i} style={{fontSize:10,color:C.txt,marginBottom:3,lineHeight:1.5}}>{r}</div>)}
-                  <div style={{fontSize:10,color:gc,marginTop:6,paddingTop:6,borderTop:"1px solid "+C.bdr,fontWeight:500}}>{conclusion}</div>
-                </div>
-              })()}
+              {winProb!=null&&<span style={{fontSize:11,color:gc,fontWeight:600}}>낙찰확률 {(winProb*100).toFixed(1)}%</span>}
             </div>
-          })()}
-
-          {/* Phase 5.4: AI 강화 예측 + 3-way 전략 (재설계) */}
-          {(()=>{
-            const enhanced=getEnhancedAdj(d);
-            if(!enhanced)return null;
-            const baseAdj=enhanced.base;
-            const enhancedAdj=enhanced.enhanced;
-            const totalOffset=enhanced.biasOffset+enhanced.trendOffset;
-            const ba2=Number(d.ba||0);
-            const av2=Number(d.av||0);
-            const fr2=Number(d.pred_floor_rate||0);
-            // 사정률 → 투찰금액 계산 헬퍼
-            const calcBid=(adj)=>{
-              const xp=ba2*(1+adj/100);
-              return av2>0?Math.ceil(av2+(xp-av2)*(fr2/100)):Math.ceil(xp*(fr2/100))
-            };
-            // 사정률 → 100% 기준 표기 헬퍼 (예: -0.0847 → "99.9153%")
-            const fmtAdj=(adj)=>adj==null?"—":(100+Number(adj)).toFixed(4)+"%";
-            const enhancedBid=calcBid(enhancedAdj);
-            const baseBid=Number(d.opt_bid||calcBid(baseAdj));
-            const ai=aiAnalysisMap[d.id];
-            const aiLoading=aiLoadingPredId===d.id;
-            
-            return<div style={{marginBottom:14,padding:"14px 16px",background:"linear-gradient(135deg, rgba(168,85,247,0.06), rgba(93,202,165,0.03))",border:"1px solid rgba(168,85,247,0.3)",borderRadius:10}}>
-              {/* 헤더 */}
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,paddingBottom:10,borderBottom:"1px solid rgba(168,85,247,0.2)"}}>
-                <span style={{fontSize:12,color:"#a855f7",fontWeight:700,letterSpacing:0.5}}>🧠 AI 강화 예측</span>
-                {!ai&&!aiLoading&&<button onClick={async()=>{
-                  try{setAiLoadingPredId(d.id);
-                    const ctx=buildAiContext(d,scoringMap,biasMap,trendMap,recs);
-                    const result=await callClaudeAi(ctx,null);
-                    await sbSaveAiAnalysis(d.id,d.pn_no,result);
-                    setAiAnalysisMap(prev=>({...prev,[d.id]:result}))
-                  }catch(e){alert("AI 분석 실패: "+e.message)}
-                  finally{setAiLoadingPredId(null)}
-                }} style={{padding:"5px 14px",fontSize:11,background:"rgba(168,85,247,0.18)",border:"1px solid rgba(168,85,247,0.5)",borderRadius:6,color:"#c89dff",cursor:"pointer",fontWeight:600}}>🤖 Claude AI 분석</button>}
-                {aiLoading&&<span style={{fontSize:10,color:"#a855f7",fontStyle:"italic"}}>AI 분석 중...</span>}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+              <div style={{padding:"12px 14px",background:"rgba(0,0,0,0.25)",borderRadius:8}}>
+                <div style={{fontSize:10,color:C.txm,marginBottom:4,fontWeight:600}}>🎯 추천 사정률</div>
+                <div style={{fontSize:24,fontWeight:700,color:"#5dca96",fontFamily:"monospace",lineHeight:1.1}}>{fmtAdj(finalAdj)}</div>
               </div>
-
-              {/* 메인 지표: 추천 사정률 + 추천 투찰금액 (큰 카드 1개로 단순화) */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:ai?12:0}}>
-                <div style={{padding:"12px 14px",background:"rgba(93,202,165,0.08)",borderRadius:8,border:"1px solid rgba(93,202,165,0.35)"}}>
-                  <div style={{fontSize:10,color:"#5dca96",marginBottom:4,fontWeight:600}}>🎯 추천 사정률</div>
-                  <div style={{fontSize:20,fontWeight:700,color:"#5dca96",fontFamily:"monospace",lineHeight:1.1}}>{fmtAdj(enhancedAdj)}</div>
-                  {totalOffset!==0&&<div style={{fontSize:9,color:C.txd,marginTop:5}}>기존 {fmtAdj(baseAdj)} 대비 {totalOffset>=0?"+":""}{totalOffset.toFixed(4)}%p 보정</div>}
-                </div>
-                <div style={{padding:"12px 14px",background:"rgba(212,168,52,0.08)",borderRadius:8,border:"1px solid rgba(212,168,52,0.35)"}}>
-                  <div style={{fontSize:10,color:C.gold,marginBottom:4,fontWeight:600}}>💰 추천 투찰금액</div>
-                  <div style={{fontSize:20,fontWeight:700,color:C.gold,fontFamily:"monospace",lineHeight:1.1}}>{tc(enhancedBid)}원</div>
-                  {totalOffset!==0&&baseBid>0&&<div style={{fontSize:9,color:C.txd,marginTop:5}}>기존 대비 {enhancedBid-baseBid>=0?"+":""}{tc(enhancedBid-baseBid)}원</div>}
-                </div>
+              <div style={{padding:"12px 14px",background:"rgba(0,0,0,0.25)",borderRadius:8}}>
+                <div style={{fontSize:10,color:C.txm,marginBottom:4,fontWeight:600}}>💰 추천 투찰금액</div>
+                <div style={{fontSize:24,fontWeight:700,color:C.gold,fontFamily:"monospace",lineHeight:1.1}}>{finalBid?tc(finalBid)+"원":"—"}</div>
               </div>
+            </div>
+            <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:10,color:C.txd}}>
+              <span>근거: <span style={{color:C.txm}}>{finalSource||"—"}</span></span>
+              {d.pred_floor_rate&&<span>낙찰하한율 <span style={{color:C.txm,fontFamily:"monospace"}}>{d.pred_floor_rate}%</span></span>}
+            </div>
+            {/* 매칭된 경우 결과 표시 */}
+            {matchResult&&<div style={{marginTop:10,padding:"8px 12px",borderRadius:6,fontSize:11,
+              background:matchResult==="win"?"rgba(93,202,165,0.12)":matchResult==="invalid"?"rgba(226,75,74,0.12)":"rgba(212,168,52,0.12)",
+              border:"1px solid "+(matchResult==="win"?"rgba(93,202,165,0.35)":matchResult==="invalid"?"rgba(226,75,74,0.35)":"rgba(212,168,52,0.35)")}}>
+              {matchResult==="win"&&<span style={{color:"#5dca96"}}>✓ 낙찰 가능 — 실제 1위 {tc(ab)}원 대비 {tc(ab-finalBid)}원 낮음</span>}
+              {matchResult==="higher"&&<span style={{color:"#d4a834"}}>✗ 낙찰자보다 높음 — 실제 1위 {tc(ab)}원 대비 {tc(finalBid-ab)}원 초과</span>}
+              {matchResult==="invalid"&&<span style={{color:"#e24b4a"}}>⚠ 법정 하한선 밑 — {tc(Math.round(floorLine-finalBid))}원 부족 (무효 위험)</span>}
+            </div>}
+          </div>
 
-              {/* 보정 내역 (접기 가능한 작은 영역) */}
-              {totalOffset!==0&&enhanced.explanation.length>0&&<div style={{marginTop:10,padding:"6px 10px",background:"rgba(0,0,0,0.15)",borderRadius:5,fontSize:9,color:C.txm}}>
-                📊 {enhanced.explanation.join(" · ")}
-              </div>}
-              
-              {/* AI 분석 결과 */}
-              {ai&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid rgba(168,85,247,0.2)"}}>
-                <div style={{fontSize:11,color:"#c89dff",fontWeight:600,marginBottom:8}}>🤖 Claude AI 종합 분석</div>
-                <div style={{fontSize:11,color:C.txt,lineHeight:1.7,marginBottom:12,padding:"10px 12px",background:"rgba(168,85,247,0.05)",borderRadius:6,borderLeft:"3px solid #a855f7"}}>{ai.ai_analysis}</div>
-                
-                {/* 3-way 전략 카드 — 사정률 100% 기준 표기 */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
-                  {[
-                    {k:"safe",label:"안전",icon:"🟢",adj:ai.strategy_safe,prob:ai.prob_safe,color:"#5dca96"},
-                    {k:"balanced",label:"균형",icon:"🟡",adj:ai.strategy_balanced,prob:ai.prob_balanced,color:"#d4a834"},
-                    {k:"aggressive",label:"공격",icon:"🔴",adj:ai.strategy_aggressive,prob:ai.prob_aggressive,color:"#e24b4a"}
-                  ].map(s=>{
-                    const isRec=ai.recommended===s.k;
-                    const sBid=s.adj!=null?calcBid(Number(s.adj)):null;
-                    return<div key={s.k} style={{padding:"10px 8px",background:isRec?s.color+"1a":C.bg3,borderRadius:6,border:isRec?"2px solid "+s.color:"1px solid "+C.bdr,textAlign:"center",position:"relative"}}>
-                      {isRec&&<div style={{position:"absolute",top:-8,left:"50%",transform:"translateX(-50%)",background:s.color,color:"#000",fontSize:8,fontWeight:700,padding:"1px 6px",borderRadius:3,letterSpacing:0.5}}>권장</div>}
-                      <div style={{fontSize:10,color:s.color,fontWeight:700,marginBottom:6}}>{s.icon} {s.label}</div>
-                      <div style={{fontSize:13,fontWeight:700,color:C.txt,fontFamily:"monospace",marginBottom:3}}>{fmtAdj(s.adj)}</div>
-                      {sBid&&<div style={{fontSize:9,color:C.txm,fontFamily:"monospace",marginBottom:4}}>{tc(sBid)}원</div>}
-                      <div style={{fontSize:9,color:s.color,fontWeight:600}}>낙찰확률 {s.prob!=null?(Number(s.prob)*100).toFixed(0)+"%":"—"}</div>
+          {/* 탭 네비게이션 */}
+          <div style={{display:"flex",gap:2,borderBottom:"1px solid "+C.bdr,marginBottom:14}}>
+            {[
+              {k:"detail",label:"📊 상세"},
+              {k:"strategy",label:"🎯 전략옵션"},
+              {k:"ai",label:"🤖 AI 분석"},
+              {k:"pattern",label:"📈 기관패턴"},
+              {k:"info",label:"ℹ️ 기본정보"}
+            ].map(t=><button key={t.k} onClick={()=>setDetailTab(t.k)} style={{
+              padding:"8px 12px",fontSize:11,background:"none",border:"none",cursor:"pointer",
+              color:detailTab===t.k?C.gold:C.txm,fontWeight:detailTab===t.k?600:400,
+              borderBottom:detailTab===t.k?"2px solid "+C.gold:"2px solid transparent",
+              marginBottom:-1}}>{t.label}</button>)}
+          </div>
+
+          {/* 탭 컨텐츠 */}
+          {/* ───────── 상세 탭 ───────── */}
+          {detailTab==="detail"&&<div>
+            {/* 예측 vs 실제 비교 테이블 */}
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
+              <thead><tr style={{background:C.bg3}}>
+                {["항목","예측","실제","차이"].map((h,i)=><th key={i} style={{padding:"7px 8px",textAlign:i>=1?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                <tr style={{borderBottom:"1px solid "+C.bdr}}>
+                  <td style={{padding:"6px 8px",color:C.txm}}>사정률 (100%)</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",color:"#5dca96",fontWeight:500,fontFamily:"monospace"}}>{pa!=null?(100+pa).toFixed(4)+"%":"—"}</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",color:C.gold,fontWeight:500,fontFamily:"monospace"}}>{aa!=null?(100+aa).toFixed(4)+"%":"—"}</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",color:errAbs!=null?(errAbs<0.3?"#5dca96":errAbs<1?"#d4a834":"#e24b4a"):C.txd,fontWeight:600,fontFamily:"monospace"}}>{err!=null?err.toFixed(4)+"%":"—"}</td>
+                </tr>
+                <tr style={{borderBottom:"1px solid "+C.bdr}}>
+                  <td style={{padding:"6px 8px",color:C.txm}}>예정가격</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{pxp?tc(pxp):"—"}</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{axp?tc(axp):"—"}</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace",fontSize:11}}>{pxp&&axp?tc(Math.round(pxp-axp)):""}</td>
+                </tr>
+                <tr style={{borderBottom:"1px solid "+C.bdr}}>
+                  <td style={{padding:"6px 8px",color:C.txm}}>투찰금액 (1순위)</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace",color:C.gold,fontWeight:600}}>{pb?tc(pb):"—"}</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{ab?tc(ab):"—"}</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace",fontSize:11}}>{pb&&ab?tc(Math.round(pb-ab)):""}</td>
+                </tr>
+                <tr style={{borderBottom:"1px solid "+C.bdr}}>
+                  <td style={{padding:"6px 8px",color:C.txm}}>투찰율</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",color:"#85b7eb",fontFamily:"monospace"}}>{pBR!=null?pBR.toFixed(4)+"%":"—"}</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",color:"#85b7eb",fontFamily:"monospace"}}>{aBR!=null?aBR.toFixed(4)+"%":"—"}</td>
+                  <td style={{padding:"6px 8px",textAlign:"right",fontSize:11,fontFamily:"monospace"}}>{pBR!=null&&aBR!=null?(pBR-aBR).toFixed(4)+"%":""}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* ROI 등급 산정 이유 */}
+            {sc&&(()=>{
+              const em=Number(sc.expected_margin);const ev=Number(sc.expected_value);
+              const at=d.at||"기타";const amt=Number(d.ep||d.ba||0);
+              const tier=amt<3e8?"S":amt<1e9?"M":"L";
+              const tierLabel={S:"3억 미만",M:"3~10억",L:"10억 이상"}[tier];
+              const od=d.open_date;
+              const dow=od?["일","월","화","수","목","금","토"][new Date(od).getDay()]:null;
+              const isPeakDay=dow&&["화","수","목"].includes(dow);
+              const isInvalid=(d.pn||"").match(/\[(취소|중지|재공고|정정|연기)\]/);
+              const isAvoid=at==="수자원공사"||(at==="교육청"&&tier==="L")||(at==="조달청"&&tier==="S");
+              let reasons=[];
+              if(isInvalid){reasons.push(`⚠️ 공고에 "${isInvalid[1]}" 표시 → D등급 강제`)}
+              else if(isAvoid){reasons.push(`⚠️ ${at}-${tier} 회피존 → 강제 차단`)}
+              else{
+                reasons.push(`📊 ${at}-${tierLabel} 매트릭스 베이스 확률 적용`);
+                if(isPeakDay)reasons.push(`📅 ${dow}요일 개찰 → +10% 보정`);
+              }
+              return<div style={{padding:"12px 14px",background:C.bg3,borderRadius:8}}>
+                <div style={{fontSize:11,color:C.txm,fontWeight:600,marginBottom:8}}>🎯 ROI 등급 산정 이유</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                  <div style={{fontSize:11,color:C.txm}}>기대 마진: <span style={{color:C.gold,fontFamily:"monospace",fontWeight:600}}>{tc(em)}원</span></div>
+                  <div style={{fontSize:11,color:C.txm}}>기대값: <span style={{color:"#5dca96",fontFamily:"monospace",fontWeight:600}}>{tc(ev)}원</span></div>
+                </div>
+                {reasons.map((r,i)=><div key={i} style={{fontSize:10,color:C.txt,marginBottom:3,lineHeight:1.5}}>{r}</div>)}
+                <div style={{fontSize:10,color:C.txd,marginTop:8,paddingTop:8,borderTop:"1px solid "+C.bdr}}>💡 <strong style={{color:C.txm}}>{sc.strategy_label}</strong> · 6개 신호 결합 (매트릭스+경쟁강도+시점+골드존+회피존)</div>
+              </div>
+            })()}
+          </div>}
+
+          {/* ───────── 전략옵션 탭 ───────── */}
+          {detailTab==="strategy"&&<div>
+            {/* 3-way 전략: AI가 있으면 AI 값, 없으면 매트릭스 기본값 사용 */}
+            {(()=>{
+              let safeAdj,balAdj,aggrAdj,safeBid,balBid,aggrBid,safeProb,balProb,aggrProb,recKey;
+              if(ai){
+                safeAdj=ai.strategy_safe!=null?Number(ai.strategy_safe):null;
+                balAdj=ai.strategy_balanced!=null?Number(ai.strategy_balanced):null;
+                aggrAdj=ai.strategy_aggressive!=null?Number(ai.strategy_aggressive):null;
+                safeProb=ai.prob_safe;balProb=ai.prob_balanced;aggrProb=ai.prob_aggressive;
+                recKey=ai.recommended;
+              } else {
+                // 매트릭스 기본값: p25/p50/p75
+                aggrAdj=d.rec_adj_p25!=null?Number(d.rec_adj_p25):null;
+                balAdj=d.rec_adj_p50!=null?Number(d.rec_adj_p50):(d.opt_adj!=null?Number(d.opt_adj):null);
+                safeAdj=d.rec_adj_p75!=null?Number(d.rec_adj_p75):null;
+              }
+              safeBid=safeAdj!=null?calcBid(safeAdj):null;
+              balBid=balAdj!=null?calcBid(balAdj):null;
+              aggrBid=aggrAdj!=null?calcBid(aggrAdj):null;
+              const strategies=[
+                {k:"safe",label:"안전",icon:"🟢",adj:safeAdj,bid:safeBid,prob:safeProb,color:"#5dca96",desc:"하한선 여유 확보"},
+                {k:"balanced",label:"균형",icon:"🟡",adj:balAdj,bid:balBid,prob:balProb,color:"#d4a834",desc:"매트릭스 중앙값"},
+                {k:"aggressive",label:"공격",icon:"🔴",adj:aggrAdj,bid:aggrBid,prob:aggrProb,color:"#e24b4a",desc:"낙찰 최저가 노림"}
+              ];
+              return<div>
+                <div style={{fontSize:12,color:C.txm,marginBottom:10}}>{ai?"🤖 Claude AI가 분석한 3가지 전략":"📊 매트릭스 기반 3가지 전략"}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+                  {strategies.map(s=>{
+                    const isRec=recKey===s.k;
+                    return<div key={s.k} style={{padding:"12px 10px",background:isRec?s.color+"20":C.bg3,borderRadius:8,border:isRec?"2px solid "+s.color:"1px solid "+C.bdr,textAlign:"center",position:"relative"}}>
+                      {isRec&&<div style={{position:"absolute",top:-9,left:"50%",transform:"translateX(-50%)",background:s.color,color:"#000",fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:3,letterSpacing:0.5}}>AI 권장</div>}
+                      <div style={{fontSize:11,color:s.color,fontWeight:700,marginBottom:8}}>{s.icon} {s.label}</div>
+                      <div style={{fontSize:9,color:C.txd,marginBottom:6}}>{s.desc}</div>
+                      <div style={{fontSize:15,fontWeight:700,color:C.txt,fontFamily:"monospace",marginBottom:4}}>{fmtAdj(s.adj)}</div>
+                      {s.bid&&<div style={{fontSize:10,color:C.txm,fontFamily:"monospace",marginBottom:6}}>{tc(s.bid)}원</div>}
+                      {s.prob!=null&&<div style={{fontSize:10,color:s.color,fontWeight:600,padding:"3px 6px",background:s.color+"15",borderRadius:3,display:"inline-block"}}>낙찰확률 {(Number(s.prob)*100).toFixed(0)}%</div>}
                     </div>
                   })}
                 </div>
-                
-                {/* 결정 이유 + 주의사항 */}
-                {((ai.reasons&&ai.reasons.length>0)||(ai.warnings&&ai.warnings.length>0))&&<div style={{display:"grid",gridTemplateColumns:ai.warnings&&ai.warnings.length>0?"1fr 1fr":"1fr",gap:8}}>
-                  {ai.reasons&&ai.reasons.length>0&&<div style={{padding:"8px 10px",background:"rgba(93,202,165,0.05)",borderRadius:5,border:"1px solid rgba(93,202,165,0.2)"}}>
-                    <div style={{fontSize:9,color:"#5dca96",fontWeight:600,marginBottom:4}}>📌 결정 이유</div>
-                    {ai.reasons.map((r,i)=><div key={i} style={{fontSize:10,color:C.txt,marginBottom:3,lineHeight:1.5}}>• {r}</div>)}
-                  </div>}
-                  {ai.warnings&&ai.warnings.length>0&&<div style={{padding:"8px 10px",background:"rgba(226,75,74,0.05)",borderRadius:5,border:"1px solid rgba(226,75,74,0.2)"}}>
-                    <div style={{fontSize:9,color:"#e24b4a",fontWeight:600,marginBottom:4}}>⚠️ 주의사항</div>
-                    {ai.warnings.map((w,i)=><div key={i} style={{fontSize:10,color:C.txt,marginBottom:3,lineHeight:1.5}}>• {w}</div>)}
-                  </div>}
+                {/* 경쟁 참고 */}
+                {d.rec_adj_p50!=null&&<div style={{padding:"10px 12px",background:C.bg3,borderRadius:6,fontSize:11}}>
+                  <div style={{fontSize:10,color:C.txm,fontWeight:600,marginBottom:6}}>📋 경쟁자 예상 투찰 범위 (참고)</div>
+                  <div style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr",gap:"4px 10px"}}>
+                    <span style={{color:C.txd}}>공격적 (P25)</span><span style={{fontFamily:"monospace"}}>{d.rec_adj_p25!=null?(100+Number(d.rec_adj_p25)).toFixed(4)+"%":"—"}</span><span style={{fontFamily:"monospace",textAlign:"right",color:C.txm}}>{d.rec_bid_p25?tc(Number(d.rec_bid_p25))+"원":"—"}</span>
+                    <span style={{color:C.txd}}>균형 (P50)</span><span style={{fontFamily:"monospace"}}>{(100+Number(d.rec_adj_p50)).toFixed(4)+"%"}</span><span style={{fontFamily:"monospace",textAlign:"right",color:C.txm}}>{d.rec_bid_p50?tc(Number(d.rec_bid_p50))+"원":"—"}</span>
+                    <span style={{color:C.txd}}>보수적 (P75)</span><span style={{fontFamily:"monospace"}}>{d.rec_adj_p75!=null?(100+Number(d.rec_adj_p75)).toFixed(4)+"%":"—"}</span><span style={{fontFamily:"monospace",textAlign:"right",color:C.txm}}>{d.rec_bid_p75?tc(Number(d.rec_bid_p75))+"원":"—"}</span>
+                  </div>
                 </div>}
-              </div>}
+              </div>
+            })()}
+          </div>}
+
+          {/* ───────── AI 분석 탭 ───────── */}
+          {detailTab==="ai"&&<div>
+            {/* Claude AI 분석 실행/재실행 버튼 */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontSize:12,color:"#a855f7",fontWeight:700}}>🧠 Claude AI 강화 예측</div>
+              <button disabled={aiLoading} onClick={async()=>{
+                try{setAiLoadingPredId(d.id);
+                  const ctx=buildAiContext(d,scoringMap,biasMap,trendMap,recs);
+                  const result=await callClaudeAi(ctx,null);
+                  await sbSaveAiAnalysis(d.id,d.pn_no,result);
+                  setAiAnalysisMap(prev=>({...prev,[d.id]:result}))
+                }catch(e){alert("AI 분석 실패: "+e.message)}
+                finally{setAiLoadingPredId(null)}
+              }} style={{padding:"6px 14px",fontSize:11,background:"rgba(168,85,247,0.18)",border:"1px solid rgba(168,85,247,0.5)",borderRadius:6,color:"#c89dff",cursor:aiLoading?"default":"pointer",fontWeight:600}}>
+                {aiLoading?"분석 중...":ai?"🔄 재분석":"🤖 Claude AI 분석"}
+              </button>
             </div>
-          })()}
-
-          {/* 예측 vs 실제 비교 테이블 */}
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
-            <thead><tr style={{background:C.bg3}}>
-              {["항목","예측","실제","차이"].map((h,i)=><th key={i} style={{padding:"7px 8px",textAlign:i>=1?"right":"left",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              <tr style={{borderBottom:"1px solid "+C.bdr}}>
-                <td style={{padding:"6px 8px",color:C.txm}}>사정률 (100%)</td>
-                <td style={{padding:"6px 8px",textAlign:"right",color:"#5dca96",fontWeight:500}}>{pa!=null?(100+pa).toFixed(4)+"%":"—"}</td>
-                <td style={{padding:"6px 8px",textAlign:"right",color:C.gold,fontWeight:500}}>{aa!=null?(100+aa).toFixed(4)+"%":"—"}</td>
-                <td style={{padding:"6px 8px",textAlign:"right",color:errAbs!=null?(errAbs<0.3?"#5dca96":errAbs<1?"#d4a834":"#e24b4a"):C.txd,fontWeight:600}}>{err!=null?err.toFixed(4)+"%":"—"}</td>
-              </tr>
-              <tr style={{borderBottom:"1px solid "+C.bdr}}>
-                <td style={{padding:"6px 8px",color:C.txm}}>예정가격</td>
-                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{pxp?tc(pxp):"—"}</td>
-                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{axp?tc(axp):"—"}</td>
-                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace",fontSize:11}}>{pxp&&axp?tc(Math.round(pxp-axp)):""}</td>
-              </tr>
-              <tr style={{borderBottom:"1px solid "+C.bdr}}>
-                <td style={{padding:"6px 8px",color:C.txm}}>투찰금액 (1순위)</td>
-                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace",color:C.gold,fontWeight:600}}>{pb?tc(pb):"—"}</td>
-                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{ab?tc(ab):"—"}</td>
-                <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace",fontSize:11}}>{pb&&ab?tc(Math.round(pb-ab)):""}</td>
-              </tr>
-              <tr style={{borderBottom:"1px solid "+C.bdr}}>
-                <td style={{padding:"6px 8px",color:C.txm}}>투찰율</td>
-                <td style={{padding:"6px 8px",textAlign:"right",color:"#85b7eb"}}>{pBR!=null?pBR.toFixed(4)+"%":"—"}</td>
-                <td style={{padding:"6px 8px",textAlign:"right",color:"#85b7eb"}}>{aBR!=null?aBR.toFixed(4)+"%":"—"}</td>
-                <td style={{padding:"6px 8px",textAlign:"right",fontSize:11}}>{pBR!=null&&aBR!=null?(pBR-aBR).toFixed(4)+"%":""}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          {/* 입찰 기본 정보 */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,fontSize:12,color:C.txm,marginBottom:14,padding:"10px",background:C.bg3,borderRadius:6}}>
-            <div>기초금액: <span style={{color:C.txt,fontFamily:"monospace"}}>{ba?tc(ba):"-"}</span></div>
-            <div>추정가격: <span style={{color:C.txt,fontFamily:"monospace"}}>{ep?tc(ep):"-"}</span></div>
-            <div>A값: <span style={{color:C.txt,fontFamily:"monospace"}}>{av?tc(av):"없음"}</span></div>
-            <div>낙찰하한율: <span style={{color:C.txt}}>{d.pred_floor_rate||"—"}%</span></div>
-            <div>공고번호: <span style={{color:C.txt}}>{d.pn_no||"—"}</span></div>
-            {d.actual_participant_count&&<div>참여업체: <span style={{color:C.txt}}>{d.actual_participant_count}개사</span></div>}
-            <div style={{gridColumn:"1/4"}}>근거: <span style={{color:C.txt}}>{d.pred_source||"—"}</span></div>
-            {d.actual_winner&&<div style={{gridColumn:"1/4"}}>1순위: <span style={{color:"#5dca96",fontWeight:500}}>{d.actual_winner}</span></div>}
-          </div>
-
-          {/* ★ 추천 투찰 (통합) */}
-          {(d.opt_bid||d.pred_bid_amount)&&(()=>{
-            const oa=d.opt_adj!=null?Number(d.opt_adj):pa;
-            const ob=d.opt_bid?Number(d.opt_bid):(pb||0);
-            const oXp=ba?(ba*(1+oa/100)):null;const oBR=ob&&oXp?ob/oXp*100:null;
-            const safeAdj=pa;const safeBid=pb||0;
-            const aggrAdj=oa!=null?oa-0.05:null;
-            const aggrBid=aggrAdj!=null?(av>0?Math.ceil(av+(ba*(1+aggrAdj/100)-av)*(Number(d.pred_floor_rate)/100)):Math.ceil(ba*(1+aggrAdj/100)*(Number(d.pred_floor_rate)/100))):null;
-            const floorBid=pxp?pxp*Number(d.pred_floor_rate)/100:null;
-            const optErr=(oa!=null&&aa!=null)?oa-aa:null;
-            return<div style={{borderTop:"1px solid "+C.bdr,paddingTop:12,marginBottom:10}}>
-              {/* 예측 분석 */}
-              <div style={{padding:"8px 10px",background:C.bg3,borderRadius:6,marginBottom:8,fontSize:12}}>
-                <div style={{fontSize:11,fontWeight:500,color:C.txm,marginBottom:4}}>📊 예측 분석</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
-                  <div>예상 예정가격: <span style={{color:"#5dca96",fontFamily:"monospace"}}>{pxp?tc(pxp):"—"}원</span></div>
-                  <div>예측 사정률: <span style={{color:"#5dca96",fontFamily:"monospace"}}>{pa!=null?(100+pa).toFixed(4)+"%":"—"}</span></div>
-                  <div>적용 하한율: <span style={{fontFamily:"monospace"}}>{d.pred_floor_rate||"—"}%</span></div>
-                  <div>신뢰구간(70%): <span style={{fontSize:10,color:C.txm}}>{d.pred_source?"근거: "+d.pred_source.substring(0,30):""}</span></div>
-                </div>
-              </div>
-              {/* ★ 추천 투찰금액 (메인) */}
-              <div style={{padding:"12px 14px",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.3)",borderRadius:8,marginBottom:8}}>
-                <div style={{fontSize:13,fontWeight:600,color:C.gold,marginBottom:8}}>★ 추천 투찰</div>
-                <div style={{textAlign:"center",marginBottom:8}}>
-                  <div style={{fontSize:11,color:C.txd}}>추천 사정률</div>
-                  <div style={{fontSize:20,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{oa!=null?(100+oa).toFixed(4)+"%":"—"}</div>
-                  <div style={{fontSize:11,color:C.txd,marginTop:2}}>추천 투찰금액</div>
-                  <div style={{fontSize:18,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{tc(ob)}원</div>
-                  {oBR&&<div style={{fontSize:11,color:"#85b7eb",marginTop:2}}>투찰율 {oBR.toFixed(4)}%</div>}
-                </div>
-                {/* 조정 범위 */}
-                <div style={{background:C.bg,borderRadius:6,padding:"8px 10px",fontSize:11}}>
-                  <div style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr",gap:"4px 10px",alignItems:"center"}}>
-                    <span style={{color:"#e24b4a",fontSize:10}}>적극적</span>
-                    <span style={{fontFamily:"monospace",color:C.txt}}>{aggrAdj!=null?(100+aggrAdj).toFixed(4)+"%":"—"}</span>
-                    <span style={{fontFamily:"monospace",color:C.txm,textAlign:"right"}}>{aggrBid?tc(aggrBid)+"원":"—"}</span>
-                    <span style={{color:C.gold,fontSize:10,fontWeight:600}}>● 기본</span>
-                    <span style={{fontFamily:"monospace",color:C.gold,fontWeight:600}}>{oa!=null?(100+oa).toFixed(4)+"%":"—"}</span>
-                    <span style={{fontFamily:"monospace",color:C.gold,fontWeight:600,textAlign:"right"}}>{tc(ob)}원</span>
-                    <span style={{color:"#5dca96",fontSize:10}}>안전</span>
-                    <span style={{fontFamily:"monospace",color:C.txt}}>{pa!=null?(100+pa).toFixed(4)+"%":"—"}</span>
-                    <span style={{fontFamily:"monospace",color:C.txm,textAlign:"right"}}>{safeBid?tc(safeBid)+"원":"—"}</span>
-                  </div>
-                </div>
-                {/* 매칭 결과 */}
-                {d.match_status==="matched"&&ab&&<div style={{marginTop:8,padding:"6px 8px",background:ob<=ab?"rgba(93,202,165,0.08)":"rgba(226,75,74,0.08)",borderRadius:4,fontSize:11}}>
-                  {ob<=ab&&ob>=(floorBid||0)?<span style={{color:"#5dca96"}}>✓ 낙찰 가능 — 실제 1위 {tc(ab)}원 대비 {tc(ab-ob)}원 마진</span>
-                    :<span style={{color:"#e24b4a"}}>✗ 낙찰 불가 — 실제 1위 {tc(ab)}원 대비 {tc(ob-ab)}원 초과</span>}
+            {/* AI 분석 결과 */}
+            {ai?<div>
+              <div style={{fontSize:11,color:C.txt,lineHeight:1.7,marginBottom:12,padding:"12px 14px",background:"rgba(168,85,247,0.06)",borderRadius:6,borderLeft:"3px solid #a855f7"}}>{ai.ai_analysis}</div>
+              {/* 결정 이유 + 주의사항 */}
+              {((ai.reasons&&ai.reasons.length>0)||(ai.warnings&&ai.warnings.length>0))&&<div style={{display:"grid",gridTemplateColumns:ai.warnings&&ai.warnings.length>0?"1fr 1fr":"1fr",gap:10,marginBottom:12}}>
+                {ai.reasons&&ai.reasons.length>0&&<div style={{padding:"10px 12px",background:"rgba(93,202,165,0.05)",borderRadius:6,border:"1px solid rgba(93,202,165,0.2)"}}>
+                  <div style={{fontSize:10,color:"#5dca96",fontWeight:600,marginBottom:6}}>📌 결정 이유</div>
+                  {ai.reasons.map((r,i)=><div key={i} style={{fontSize:11,color:C.txt,marginBottom:4,lineHeight:1.5}}>• {r}</div>)}
                 </div>}
-                {d.match_status==="matched"&&optErr!=null&&<div style={{marginTop:4,fontSize:10,color:C.txd}}>추천-실제 오차: <span style={{color:Math.abs(optErr)<0.5?"#5dca96":"#e24b4a",fontWeight:600}}>{optErr>0?"+":""}{optErr.toFixed(4)}%p</span></div>}
-              </div>
-              {/* 경쟁 참고 (접기) */}
-              {d.rec_adj_p50!=null&&<details style={{marginBottom:8}}>
-                <summary style={{fontSize:11,color:C.txd,cursor:"pointer",padding:"4px 0"}}>📋 경쟁 참고 (경쟁자 예상 투찰 범위)</summary>
-                <div style={{padding:"8px 10px",background:C.bg3,borderRadius:6,marginTop:4,fontSize:11}}>
-                  <div style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr",gap:"3px 10px"}}>
-                    <span style={{color:C.txd}}>공격적</span><span style={{fontFamily:"monospace"}}>{d.rec_adj_p25!=null?(100+Number(d.rec_adj_p25)).toFixed(4)+"%":"—"}</span><span style={{fontFamily:"monospace",textAlign:"right"}}>{d.rec_bid_p25?tc(Number(d.rec_bid_p25))+"원":"—"}</span>
-                    <span style={{color:C.txd}}>균형</span><span style={{fontFamily:"monospace"}}>{(100+Number(d.rec_adj_p50)).toFixed(4)+"%"}</span><span style={{fontFamily:"monospace",textAlign:"right"}}>{d.rec_bid_p50?tc(Number(d.rec_bid_p50))+"원":"—"}</span>
-                    <span style={{color:C.txd}}>보수적</span><span style={{fontFamily:"monospace"}}>{d.rec_adj_p75!=null?(100+Number(d.rec_adj_p75)).toFixed(4)+"%":"—"}</span><span style={{fontFamily:"monospace",textAlign:"right"}}>{d.rec_bid_p75?tc(Number(d.rec_bid_p75))+"원":"—"}</span>
-                  </div>
-                  <div style={{marginTop:4,fontSize:10,color:C.txd}}>경쟁자 예상 투찰 위치 (투찰용 아님, 참고만)</div>
-                </div>
-              </details>}
-              {/* 금액대별 기대 낙찰률 안내 */}
-              {ep&&(()=>{
-                const epN=Number(ep);
-                const tierInfo=epN<1e8?{tier:"1억 미만",pct:"1.8%",desc:"소규모 공사 — 경쟁 과열",color:"#e24b4a"}
-                  :epN<3e8?{tier:"1~3억",pct:"4.5%",desc:"표준 경쟁 구간",color:C.gold}
-                  :epN<1e9?{tier:"3~10억",pct:"8.8%",desc:"낙찰 유리 구간",color:"#5dca96"}
-                  :{tier:"10억 이상",pct:"12.0%",desc:"대형 공사 — 참여 자격 제한",color:"#5dca96"};
-                return<div style={{fontSize:10,color:C.txd,padding:"4px 8px",background:C.bg3,borderRadius:4,marginBottom:6}}>
-                  💡 {tierInfo.tier} 구간 · 기대 낙찰률 <span style={{color:tierInfo.color,fontWeight:600}}>{tierInfo.pct}</span> · {tierInfo.desc} <span style={{fontSize:9}}>(722건 백테스트)</span>
-                </div>})()}
-              {/* 이상치 매칭 경고 */}
-              {d.match_status==="matched"&&optErr!=null&&Math.abs(optErr)>5&&<div style={{padding:"6px 8px",background:"rgba(226,75,74,0.1)",borderRadius:4,marginBottom:6,fontSize:10,color:"#e24b4a"}}>
-                ⚠ 비정상 매칭 — 오차 {Math.abs(optErr).toFixed(1)}%p (수의계약/내역입찰/유찰 재공고 가능성)
+                {ai.warnings&&ai.warnings.length>0&&<div style={{padding:"10px 12px",background:"rgba(226,75,74,0.05)",borderRadius:6,border:"1px solid rgba(226,75,74,0.2)"}}>
+                  <div style={{fontSize:10,color:"#e24b4a",fontWeight:600,marginBottom:6}}>⚠️ 주의사항</div>
+                  {ai.warnings.map((w,i)=><div key={i} style={{fontSize:11,color:C.txt,marginBottom:4,lineHeight:1.5}}>• {w}</div>)}
+                </div>}
               </div>}
-            </div>})()}
-
-          {/* ★ 발주기관 1위 사정률 패턴 (소수점 2~4자리 선택) */}
-          {(()=>{
-            const agRecs=recs.filter(r=>r.ag===d.ag&&r.br1&&Number(r.br1)>=95&&Number(r.br1)<=105&&r.co&&r.co!=="유찰"&&r.co!=="유찰(무)");
-            if(agRecs.length<3)return null;
-            const dec=adjPatDec;
-            const mul=Math.pow(10,dec);
-            const freqMap={};
-            for(const r of agRecs){
-              const adj=Math.round((Number(r.br1)-100)*mul)/mul;
-              freqMap[adj]=(freqMap[adj]||0)+1;
-            }
-            const allSorted=Object.entries(freqMap).map(([k,v])=>({adj:Number(k),cnt:v})).sort((a,b)=>b.cnt-a.cnt);
-            // 중복 2회 이상인 것만 표시, 최소 10개 ~ 최대 30개
-            const multi=allSorted.filter(s=>s.cnt>=2);
-            const showList=multi.length>=10?multi.slice(0,30):allSorted.slice(0,Math.max(10,multi.length));
-            if(showList.length===0)return null;
-            const maxCnt=showList[0].cnt;
-            const total=agRecs.length;
-            const top3Pct=Math.round((showList.slice(0,3).reduce((s,x)=>s+x.cnt,0))/total*100);
-            const topAdj=showList[0].adj;
-            return<div style={{borderTop:"1px solid "+C.bdr,paddingTop:12,marginBottom:14}}>
+            </div>:!aiLoading&&<div style={{fontSize:11,color:C.txd,padding:"20px",textAlign:"center",background:C.bg3,borderRadius:6}}>Claude AI 분석 버튼을 클릭하면 이 공고에 대한 맞춤 전략을 분석합니다</div>}
+            
+            {/* AI 전략 어드바이저 (레거시) */}
+            <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+C.bdr}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <div style={{fontSize:13,fontWeight:500,color:"#85b7eb"}}>📊 {d.ag} — 1위 사정률 패턴 ({total}건)</div>
-                <div style={{display:"flex",gap:3}}>
-                  {[2,3,4].map(v=><button key={v} onClick={()=>setAdjPatDec(v)}
-                    style={{padding:"2px 7px",fontSize:10,borderRadius:3,cursor:"pointer",
-                      background:dec===v?"rgba(133,183,235,0.25)":"transparent",
-                      border:dec===v?"1px solid #85b7eb":"1px solid "+C.bdr,
-                      color:dec===v?"#85b7eb":C.txm}}>{v}자리</button>)}
-                </div>
-              </div>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                <thead><tr style={{background:C.bg3}}>
-                  <th style={{padding:"4px 6px",textAlign:"center",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"8%"}}>순위</th>
-                  <th style={{padding:"4px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"30%"}}>사정률</th>
-                  <th style={{padding:"4px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"12%"}}>횟수</th>
-                  <th style={{padding:"4px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"12%"}}>비율</th>
-                  <th style={{padding:"4px 6px",textAlign:"left",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"38%"}}></th>
-                </tr></thead>
-                <tbody>{showList.map((s,i)=>{
-                  const pct=Math.round(s.cnt/total*1000)/10;
-                  const barW=Math.max(Math.round(s.cnt/maxCnt*100),2);
-                  const isTop=i===0;
-                  return<tr key={i} style={{borderBottom:"1px solid "+C.bdr+"44"}}>
-                    <td style={{padding:"3px 6px",textAlign:"center",color:isTop?"#85b7eb":C.txm,fontWeight:isTop?600:400}}>{i+1}</td>
-                    <td style={{padding:"3px 6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:isTop?"#85b7eb":C.txt,fontWeight:isTop?600:400}}>{(100+s.adj).toFixed(dec)}% <span style={{color:C.txd,fontSize:9}}>({s.adj>=0?"+":""}{s.adj.toFixed(dec)})</span></td>
-                    <td style={{padding:"3px 6px",textAlign:"right",color:C.txt,fontWeight:s.cnt>=3?600:400}}>{s.cnt}회</td>
-                    <td style={{padding:"3px 6px",textAlign:"right",color:C.txm}}>{pct}%</td>
-                    <td style={{padding:"3px 6px"}}><div style={{height:10,borderRadius:3,background:"rgba(133,183,235,"+((0.15+0.85*s.cnt/maxCnt).toFixed(2))+")",width:barW+"%"}}/></td>
-                  </tr>})}</tbody>
-              </table>
-              <div style={{marginTop:6,fontSize:10,color:C.txm}}>💡 사정률 <span style={{color:"#85b7eb",fontWeight:500}}>{(100+topAdj).toFixed(dec)}%</span>이 {showList[0].cnt}회로 가장 많으며, 상위 3개에 <span style={{color:"#85b7eb",fontWeight:500}}>{top3Pct}%</span> 집중 · 중복 {multi.length}개</div>
-            </div>})()}
-
-          {/* AI 전략 어드바이저 */}
-          <div style={{borderTop:"1px solid "+C.bdr,paddingTop:12}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <div style={{fontSize:13,fontWeight:500,color:"#a8b4ff"}}>AI 전략 어드바이저{d.match_status==="matched"&&detailAi?" (사후분석 가능)":""}</div>
-              <div style={{display:"flex",gap:6}}>
+                <div style={{fontSize:12,fontWeight:500,color:"#a8b4ff"}}>📝 AI 전략 어드바이저{d.match_status==="matched"&&detailAi?" (사후분석)":""}</div>
                 {!detailAi&&<button disabled={detailAiLoading} onClick={async()=>{
                   setDetailAiLoading(true);setDetailAi("");
                   try{const isMatched=d.match_status==="matched"&&d.actual_adj_rate!=null;
@@ -1222,31 +1122,97 @@ ${baseInfo}
                       setPredictions(prev=>prev.map(p=>p.id===d.id?{...p,ai_advice:text}:p))}catch(e){}}}
                   catch(e){setDetailAi("⚠ "+e.message)}finally{setDetailAiLoading(false)}
                 }} style={{padding:"4px 12px",fontSize:11,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.3)",borderRadius:5,color:"#a8b4ff",cursor:detailAiLoading?"default":"pointer"}}>
-                  {detailAiLoading?"분석 중...":(d.match_status==="matched"&&d.actual_adj_rate!=null?"사후 분석 요청":"전략 분석 요청")}
-                </button>}
-                {detailAi&&!detailAiLoading&&<button onClick={async()=>{
-                  setDetailAiLoading(true);setDetailAi("");
-                  try{const isMatched=d.match_status==="matched"&&d.actual_adj_rate!=null;
-                    const matchedRec=isMatched?recs.find(rc=>rc.id===Number(d.matched_record_id))||{}:{};
-                    const prompt=buildAiPrompt({pn:d.pn,ag:d.ag,at:d.at,ba:ba,ep:ep,av:av,
-                      pred:{adj:pa,xp:pxp,fr:Number(d.pred_floor_rate),bid:pb,src:d.pred_source||"",ci70:null,ci90:null},
-                      actual:isMatched?Number(d.actual_adj_rate):null,matchedRecord:matchedRec},isMatched?"post":"initial");
-                    if(!prompt)throw new Error("데이터 없음");
-                    const text=await callAi(prompt);setDetailAi(text);
-                    if(d.id){try{await fetch(`${SB_URL}/rest/v1/bid_predictions?id=eq.${d.id}`,{method:"PATCH",headers:{...hdrs,"Prefer":"return=minimal"},body:JSON.stringify({ai_advice:text})});
-                      setPredictions(prev=>prev.map(p=>p.id===d.id?{...p,ai_advice:text}:p))}catch(e){}}}
-                  catch(e){setDetailAi("⚠ "+e.message)}finally{setDetailAiLoading(false)}
-                }} style={{padding:"4px 12px",fontSize:11,background:"rgba(93,202,150,0.1)",border:"1px solid rgba(93,202,150,0.3)",borderRadius:5,color:"#5dca96",cursor:"pointer"}}>
-                  {d.match_status==="matched"&&d.actual_adj_rate!=null?"사후 재분석":"재분석"}
+                  {detailAiLoading?"분석 중...":(d.match_status==="matched"&&d.actual_adj_rate!=null?"사후 분석":"전략 분석")}
                 </button>}
               </div>
+              {detailAiLoading?<div style={{padding:"16px",textAlign:"center",color:"#a8b4ff",fontSize:12}}>AI 분석 중...</div>
+                :detailAi?<div style={{padding:"10px 12px",background:C.bg3,borderRadius:6,fontSize:12,lineHeight:1.7,color:C.txt}} dangerouslySetInnerHTML={{__html:md2html(detailAi)}}/>
+                :null}
             </div>
-            {detailAiLoading?<div style={{padding:"16px",textAlign:"center",color:"#a8b4ff",fontSize:12}}>AI 분석 중...</div>
-              :detailAi?<div style={{padding:"10px 12px",background:C.bg3,borderRadius:6,fontSize:13,lineHeight:1.8,color:C.txt}} dangerouslySetInnerHTML={{__html:md2html(detailAi)}}/>
-              :<div style={{fontSize:11,color:C.txd}}>전략 분석 요청 버튼을 클릭하면 AI가 이 입찰건의 맞춤 전략을 제안합니다</div>}
-          </div>
+          </div>}
+
+          {/* ───────── 기관 패턴 탭 ───────── */}
+          {detailTab==="pattern"&&<div>
+            {(()=>{
+              const agRecs=recs.filter(r=>r.ag===d.ag&&r.br1&&Number(r.br1)>=95&&Number(r.br1)<=105&&r.co&&r.co!=="유찰"&&r.co!=="유찰(무)");
+              if(agRecs.length<3)return<div style={{padding:"20px",textAlign:"center",color:C.txd,fontSize:11}}>이 발주기관의 낙찰 데이터가 부족합니다 (최소 3건 필요, 현재 {agRecs.length}건)</div>;
+              const dec=adjPatDec;
+              const mul=Math.pow(10,dec);
+              const freqMap={};
+              for(const r of agRecs){
+                const adj=Math.round((Number(r.br1)-100)*mul)/mul;
+                freqMap[adj]=(freqMap[adj]||0)+1;
+              }
+              const allSorted=Object.entries(freqMap).map(([k,v])=>({adj:Number(k),cnt:v})).sort((a,b)=>b.cnt-a.cnt);
+              const multi=allSorted.filter(s=>s.cnt>=2);
+              const showList=multi.length>=10?multi.slice(0,30):allSorted.slice(0,Math.max(10,multi.length));
+              if(showList.length===0)return<div style={{padding:"20px",textAlign:"center",color:C.txd,fontSize:11}}>패턴 데이터 없음</div>;
+              const maxCnt=showList[0].cnt;
+              const total=agRecs.length;
+              const top3Pct=Math.round((showList.slice(0,3).reduce((s,x)=>s+x.cnt,0))/total*100);
+              const topAdj=showList[0].adj;
+              return<div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontSize:12,fontWeight:500,color:"#85b7eb"}}>{d.ag} — 1위 사정률 패턴 ({total}건)</div>
+                  <div style={{display:"flex",gap:3}}>
+                    {[2,3,4].map(v=><button key={v} onClick={()=>setAdjPatDec(v)}
+                      style={{padding:"3px 8px",fontSize:10,borderRadius:3,cursor:"pointer",
+                        background:dec===v?"rgba(133,183,235,0.25)":"transparent",
+                        border:dec===v?"1px solid #85b7eb":"1px solid "+C.bdr,
+                        color:dec===v?"#85b7eb":C.txm}}>{v}자리</button>)}
+                  </div>
+                </div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                  <thead><tr style={{background:C.bg3}}>
+                    <th style={{padding:"5px 6px",textAlign:"center",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"8%"}}>순위</th>
+                    <th style={{padding:"5px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"30%"}}>사정률</th>
+                    <th style={{padding:"5px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"12%"}}>횟수</th>
+                    <th style={{padding:"5px 6px",textAlign:"right",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"12%"}}>비율</th>
+                    <th style={{padding:"5px 6px",textAlign:"left",color:C.txm,borderBottom:"1px solid "+C.bdr,width:"38%"}}></th>
+                  </tr></thead>
+                  <tbody>{showList.map((s,i)=>{
+                    const pct=Math.round(s.cnt/total*1000)/10;
+                    const barW=Math.max(Math.round(s.cnt/maxCnt*100),2);
+                    const isTop=i===0;
+                    return<tr key={i} style={{borderBottom:"1px solid "+C.bdr+"44"}}>
+                      <td style={{padding:"4px 6px",textAlign:"center",color:isTop?"#85b7eb":C.txm,fontWeight:isTop?600:400}}>{i+1}</td>
+                      <td style={{padding:"4px 6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:isTop?"#85b7eb":C.txt,fontWeight:isTop?600:400}}>{(100+s.adj).toFixed(dec)}% <span style={{color:C.txd,fontSize:9}}>({s.adj>=0?"+":""}{s.adj.toFixed(dec)})</span></td>
+                      <td style={{padding:"4px 6px",textAlign:"right",color:C.txt,fontWeight:s.cnt>=3?600:400}}>{s.cnt}회</td>
+                      <td style={{padding:"4px 6px",textAlign:"right",color:C.txm}}>{pct}%</td>
+                      <td style={{padding:"4px 6px"}}><div style={{height:10,borderRadius:3,background:"rgba(133,183,235,"+((0.15+0.85*s.cnt/maxCnt).toFixed(2))+")",width:barW+"%"}}/></td>
+                    </tr>})}</tbody>
+                </table>
+                <div style={{marginTop:8,fontSize:10,color:C.txm}}>💡 사정률 <span style={{color:"#85b7eb",fontWeight:500}}>{(100+topAdj).toFixed(dec)}%</span>이 {showList[0].cnt}회로 가장 많으며, 상위 3개에 <span style={{color:"#85b7eb",fontWeight:500}}>{top3Pct}%</span> 집중</div>
+              </div>
+            })()}
+          </div>}
+
+          {/* ───────── 기본정보 탭 ───────── */}
+          {detailTab==="info"&&<div>
+            <div style={{padding:"14px 16px",background:C.bg3,borderRadius:8}}>
+              <div style={{fontSize:11,color:C.txm,fontWeight:600,marginBottom:10}}>📋 입찰 기본 정보</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 20px",fontSize:12}}>
+                <div style={{color:C.txm}}>공고번호: <span style={{color:C.txt,fontFamily:"monospace",fontSize:11}}>{d.pn_no||"—"}</span></div>
+                <div style={{color:C.txm}}>발주기관: <span style={{color:C.txt}}>{d.ag||"—"}</span></div>
+                <div style={{color:C.txm}}>기관유형: <span style={{color:C.txt}}>{d.at||"—"}</span></div>
+                <div style={{color:C.txm}}>개찰일: <span style={{color:C.txt}}>{d.open_date||"—"}</span></div>
+                <div style={{color:C.txm}}>기초금액: <span style={{color:C.txt,fontFamily:"monospace"}}>{ba?tc(ba)+"원":"—"}</span></div>
+                <div style={{color:C.txm}}>추정가격: <span style={{color:C.txt,fontFamily:"monospace"}}>{ep?tc(ep)+"원":"—"}</span></div>
+                <div style={{color:C.txm}}>A값: <span style={{color:C.txt,fontFamily:"monospace"}}>{av?tc(av)+"원":"없음"}</span></div>
+                <div style={{color:C.txm}}>낙찰하한율: <span style={{color:C.txt,fontFamily:"monospace"}}>{d.pred_floor_rate||"—"}%</span></div>
+              </div>
+              {d.pred_source&&<div style={{marginTop:12,paddingTop:10,borderTop:"1px solid "+C.bdr,fontSize:11,color:C.txm}}>
+                예측 근거: <span style={{color:C.txt}}>{d.pred_source}</span>
+              </div>}
+              {d.actual_winner&&<div style={{marginTop:6,fontSize:11,color:C.txm}}>
+                1순위 업체: <span style={{color:"#5dca96",fontWeight:500}}>{d.actual_winner}</span>
+                {d.actual_participant_count&&<span style={{color:C.txd,marginLeft:8}}>(참여 {d.actual_participant_count}개사)</span>}
+              </div>}
+            </div>
+          </div>}
         </div>
       </div>})()}
+
 
       {/* 여성기업 가산 옵션 */}
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,padding:"8px 14px",background:isWomenBiz?"rgba(93,202,150,0.06)":"rgba(255,255,255,0.02)",border:"1px solid "+(isWomenBiz?"rgba(93,202,150,0.25)":C.bdr),borderRadius:8}}>
@@ -1494,7 +1460,7 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{isYuchal?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.1)",color:"#e24b4a"}}>유찰</span>:isSuui?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(212,168,52,0.15)",color:"#d4a834"}}>수의</span>:<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span>}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"&&!isYuchal&&!isSuui?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
-                <td style={{padding:"6px",textAlign:"center"}}><button onClick={async()=>{setDetailModal(p);setDetailAi(p.ai_advice||"");setDetailAiLoading(false);
+                <td style={{padding:"6px",textAlign:"center"}}><button onClick={async()=>{setDetailModal(p);setDetailTab("detail");setDetailAi(p.ai_advice||"");setDetailAiLoading(false);
                   // Phase 5.4: 저장된 AI 분석 자동 로드
                   if(!aiAnalysisMap[p.id]){
                     try{const ai=await sbFetchAiAnalysis(p.id);if(ai)setAiAnalysisMap(prev=>({...prev,[p.id]:ai}))}catch(e){}
