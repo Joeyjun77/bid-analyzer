@@ -106,3 +106,20 @@ export async function sbFetchDetailsByAg(ag){
 // ─── 발주기관별 가정사정률 통계 ─────────────────────────
 export async function sbFetchAgAssumedStats(){
   try{const res=await fetch(SB_URL+"/rest/v1/ag_assumed_stats?select=ag,at,seg,n,p25,p50,p75&order=n.desc&limit=1000",{headers:hdrsSel});if(!res.ok)return{};const rows=await res.json();const map={};for(const r of rows){const k=r.ag+"|"+r.seg;map[k]={at:r.at,n:Number(r.n),p25:Number(r.p25),p50:Number(r.p50),p75:Number(r.p75)}}return map}catch(e){return{}}}
+
+// ─── Phase 5: ROI Scoring ─────────────────────────
+export async function sbFetchScoring(){
+  try{
+    const PAGE=1000;let all=[],offset=0;
+    while(true){
+      const res=await fetch(SB_URL+"/rest/v1/bid_scoring?select=prediction_id,win_prob,expected_margin,expected_value,roi_grade,strategy_label&offset="+offset+"&limit="+PAGE,{headers:hdrsSel});
+      if(!res.ok)return all;
+      const rows=await res.json();
+      if(!Array.isArray(rows))return all;
+      all=all.concat(rows);
+      if(rows.length<PAGE)break;
+      offset+=PAGE
+    }
+    return all
+  }catch(e){return[]}
+}

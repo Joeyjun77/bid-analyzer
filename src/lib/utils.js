@@ -391,3 +391,87 @@ export function recommendAssumedAdj({at,agName,ba,ep,av,pc,isWomenBiz},ts,as,agA
     risk:{failRate:FAIL_RATES[at]||25,note:`${at} 균형 전략 기준 탈락률`}
   }}
 
+
+// ============ Phase 5: ROI 통합 점수 시스템 ============
+// 기관 × 금액대 매트릭스 (1085건 검증, 2026-04-09 기준)
+export const WIN_PROB_MATRIX={
+  "LH":{S:0.182,M:0.000,L:0.318},
+  "한전":{S:0.048,M:0.212,L:0.500},
+  "군시설":{S:0.014,M:0.188,L:0.000},
+  "지자체":{S:0.045,M:0.061,L:0.095},
+  "교육청":{S:0.022,M:0.080,L:0.000},
+  "조달청":{S:0.000,M:0.083,L:0.050},
+  "수자원공사":{S:0.000,M:0.000,L:0.000}
+};
+
+// 금액대 분류
+export const tierOf=(amt)=>{const a=Number(amt)||0;return a<3e8?"S":a<1e9?"M":"L"};
+
+// Phase 5-A: 기본 ROI 점수 (기관×금액 매트릭스)
+export const calcRoiBase=(at,amt)=>{
+  const tier=tierOf(amt);
+  return(WIN_PROB_MATRIX[at]&&WIN_PROB_MATRIX[at][tier])||0.04
+};
+
+// Phase 5-B: 통합 점수 (6신호 결합)
+export const calcRoiV2=(p)=>{
+  const at=p.at||"지자체";
+  const amt=Number(p.ep||p.ba||0);
+  const tier=tierOf(amt);
+  const pc=Number(p.actual_participant_count||p.pc||0);
+  const od=p.open_date||p.od;
+  const fr=Number(p.pred_floor_rate||p.fr||90);
+
+  // 1. 베이스 확률 (기관×금액)
+  let winProb=calcRoiBase(at,amt);
+
+  // 2. 경쟁강도 보정 (1500명 미만이면 +30%)
+  if(pc>0&&pc<1500)winProb*=1.3;
+  else if(pc>=3000)winProb*=1.1; // 3000+는 약간 +
+  
+  // 3. 시점 보정 (화/수/목)
+  if(od){const dow=new Date(od).getDay();if(dow>=2&&dow<=4)winProb*=1.1}
+
+  // 4. 신호 결합 보너스 (골드존)
+  const isGold=amt>=1e9&&(at==="LH"||at==="한전");
+  if(isGold)winProb*=1.5;
+
+  // 5. 회피존 강제 차단
+  const isAvoid=at==="수자원공사"||(at==="교육청"&&tier==="L")||(at==="조달청"&&tier==="S");
+  if(isAvoid)winProb=0.001;
+
+  winProb=Math.min(0.95,Math.max(0,winProb));
+
+  // 기대 마진 (기관×금액 평균에서 추정, 양수만)
+  const marginMap={
+    "LH":{S:200000,M:0,L:0},
+    "한전":{S:100000,M:500000,L:8666668},
+    "군시설":{S:50000,M:300000,L:0},
+    "지자체":{S:300000,M:500000,L:1000000},
+    "교육청":{S:100000,M:200000,L:0},
+    "조달청":{S:0,M:300000,L:500000},
+    "수자원공사":{S:0,M:0,L:0}
+  };
+  const expectedMargin=(marginMap[at]&&marginMap[at][tier])||100000;
+  const expectedValue=Math.round(winProb*expectedMargin);
+
+  // 등급 산정
+  let grade="D",strategy="제외 권장",riskScore=1-winProb;
+  if(winProb>=0.25&&expectedMargin>=10000000){grade="S";strategy="반드시 투찰"}
+  else if(winProb>=0.15||expectedMargin>=5000000){grade="A";strategy="우선 투찰"}
+  else if(winProb>=0.07&&expectedMargin>=1000000){grade="B";strategy="선택 투찰"}
+  else if(winProb>=0.03){grade="C";strategy="여력시 투찰"}
+
+  return{
+    winProb:Math.round(winProb*10000)/10000,
+    expectedMargin,
+    expectedValue,
+    grade,
+    strategy,
+    riskScore:Math.round(riskScore*10000)/10000,
+    factors:{tier,pc,isGold,isAvoid,baseProb:calcRoiBase(at,amt)}
+  }
+};
+
+// 등급 색상
+export const GRADE_COLORS={S:"#a855f7",A:"#5dca96",B:"#d4a834",C:"#a8b4ff",D:"#666680"};
