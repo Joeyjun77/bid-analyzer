@@ -191,3 +191,64 @@ export async function sbRefreshRoiMatrix(){
   // 실제 갱신은 Supabase Dashboard 또는 cron으로 SQL 실행
   return sbFetchRoiMatrix()
 }
+
+// Phase 5.4: 편차 보정 + 추세 데이터 로드
+export async function sbFetchBiasMap(){
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/prediction_bias?select=scope,scope_key,bias_offset,n_samples,confidence&limit=200",{headers:hdrsSel});
+    if(!res.ok)return null;
+    const rows=await res.json();
+    const map={agency:{},at:{}};
+    for(const r of rows){
+      map[r.scope][r.scope_key]={offset:Number(r.bias_offset),n:Number(r.n_samples),confidence:Number(r.confidence)}
+    }
+    return map
+  }catch(e){return null}
+}
+
+export async function sbFetchTrendMap(){
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/adj_trend?select=scope_key,trend_30d,trend_90d,trend_all,direction,trend_strength&limit=50",{headers:hdrsSel});
+    if(!res.ok)return null;
+    const rows=await res.json();
+    const map={};
+    for(const r of rows)map[r.scope_key]=r;
+    return map
+  }catch(e){return null}
+}
+
+// Phase 5.4: AI 전략 분석 저장/조회
+export async function sbSaveAiAnalysis(predictionId,pnNo,analysis){
+  if(!predictionId||!analysis)return false;
+  try{
+    const body=JSON.stringify([{
+      prediction_id:predictionId,
+      pn_no:pnNo,
+      strategy_safe:analysis.strategy_safe,
+      strategy_balanced:analysis.strategy_balanced,
+      strategy_aggressive:analysis.strategy_aggressive,
+      prob_safe:analysis.prob_safe,
+      prob_balanced:analysis.prob_balanced,
+      prob_aggressive:analysis.prob_aggressive,
+      recommended:analysis.recommended,
+      ai_analysis:analysis.ai_analysis,
+      reasons:analysis.reasons||[],
+      warnings:analysis.warnings||[]
+    }]);
+    const res=await fetch(SB_URL+"/rest/v1/ai_strategy_analysis?on_conflict=prediction_id",{
+      method:"POST",
+      headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},
+      body
+    });
+    return res.ok
+  }catch(e){return false}
+}
+
+export async function sbFetchAiAnalysis(predictionId){
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/ai_strategy_analysis?prediction_id=eq."+predictionId+"&select=*&limit=1",{headers:hdrsSel});
+    if(!res.ok)return null;
+    const rows=await res.json();
+    return rows[0]||null
+  }catch(e){return null}
+}

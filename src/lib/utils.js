@@ -503,3 +503,205 @@ export const calcRoiV2=(p)=>{
 
 // 등급 색상
 export const GRADE_COLORS={S:"#a855f7",A:"#5dca96",B:"#d4a834",C:"#a8b4ff",D:"#666680"};
+
+// ============ Phase 5.4: AI 전략 — 편차 보정 + 추세 적용 ============
+
+// 편차 보정 맵 (DB에서 로드)
+export let BIAS_MAP={agency:{},at:{}};
+export function setBiasMap(newMap){if(newMap)BIAS_MAP=newMap;return true}
+
+// 추세 맵 (DB에서 로드)
+export let TREND_MAP={};
+export function setTrendMap(newMap){if(newMap)TREND_MAP=newMap;return true}
+
+// 전략 1: 편차 보정 적용
+// 발주기관 단위 편차가 있으면 우선, 없으면 기관유형 편차 사용
+export function applyBiasCorrection(prediction){
+  if(!prediction)return prediction;
+  const ag=prediction.ag||"";
+  const at=prediction.at||"";
+  // 발주기관 편차 우선 (신뢰도 가중)
+  const agBias=BIAS_MAP.agency[ag];
+  const atBias=BIAS_MAP.at[at];
+  let bias=0,source="none",conf=0;
+  if(agBias&&agBias.n>=5){
+    bias=agBias.offset*agBias.confidence;
+    source=`agency(n=${agBias.n})`;conf=agBias.confidence
+  }else if(atBias&&atBias.n>=3){
+    bias=atBias.offset*atBias.confidence*0.7; // 기관유형은 70%만 적용
+    source=`at(n=${atBias.n})`;conf=atBias.confidence*0.7
+  }
+  return{
+    ...prediction,
+    adj_corrected:Number(prediction.opt_adj||prediction.pred_adj_rate||0)+bias,
+    bias_offset:Math.round(bias*10000)/10000,
+    bias_source:source,
+    bias_confidence:conf
+  }
+}
+
+// 전략 2: 추세 보정 적용 (기관유형 단위)
+export function applyTrendCorrection(prediction){
+  if(!prediction)return prediction;
+  const at=prediction.at||"";
+  const trend=TREND_MAP[at];
+  if(!trend)return{...prediction,trend_offset:0,trend_direction:"none"};
+  const t30=Number(trend.trend_30d||0);
+  const tall=Number(trend.trend_all||0);
+  const drift=t30-tall; // 최근이 전체 평균 대비 얼마나 변했는지
+  // 추세 강도가 높을 때만 50% 반영 (보수적)
+  const trendOffset=drift*Number(trend.trend_strength||0)*0.5;
+  return{
+    ...prediction,
+    trend_offset:Math.round(trendOffset*10000)/10000,
+    trend_direction:trend.direction,
+    trend_strength:trend.trend_strength
+  }
+}
+
+// 통합: 편차 + 추세 모두 적용한 최종 추천 사정률
+export function getEnhancedAdj(prediction){
+  if(!prediction)return null;
+  const baseAdj=Number(prediction.opt_adj||prediction.pred_adj_rate||0);
+  const withBias=applyBiasCorrection(prediction);
+  const withTrend=applyTrendCorrection(prediction);
+  const enhancedAdj=baseAdj+(withBias.bias_offset||0)+(withTrend.trend_offset||0);
+  return{
+    base:Math.round(baseAdj*10000)/10000,
+    enhanced:Math.round(enhancedAdj*10000)/10000,
+    biasOffset:withBias.bias_offset||0,
+    trendOffset:withTrend.trend_offset||0,
+    biasSource:withBias.bias_source,
+    trendDirection:withTrend.trend_direction,
+    explanation:[
+      withBias.bias_source!=="none"?`편차 보정 ${(withBias.bias_offset>=0?"+":"")}${(withBias.bias_offset).toFixed(3)}%p (${withBias.bias_source})`:null,
+      withTrend.trend_offset!==0?`추세 보정 ${(withTrend.trend_offset>=0?"+":"")}${withTrend.trend_offset.toFixed(3)}%p (${withTrend.trend_direction})`:null
+    ].filter(Boolean)
+  }
+}
+
+// ============ Phase 5.4 전략 3: Claude API 통합 ============
+
+// Claude API 호출용 컨텍스트 구성
+export function buildAiContext(prediction,scoringMap,biasMap,trendMap,records){
+  const at=prediction.at||"기타";
+  const ag=prediction.ag||"";
+  const amt=Number(prediction.ep||prediction.ba||0);
+  const sc=scoringMap[prediction.id]||{};
+  
+  // 같은 기관 최근 5건
+  const agencyHistory=(records||[])
+    .filter(r=>r.ag===ag&&r.actual_adj_rate!=null)
+    .sort((a,b)=>(b.open_date||"").localeCompare(a.open_date||""))
+    .slice(0,5)
+    .map(r=>({
+      pn:r.pn,
+      낙찰자사정률:Number(r.actual_adj_rate),
+      개찰일:r.open_date,
+      금액:Number(r.ep||r.ba||0)
+    }));
+
+  return{
+    공고:{
+      pn:prediction.pn,ag:ag,at:at,
+      금액:amt,개찰일:prediction.open_date,
+      pn_no:prediction.pn_no
+    },
+    현재예측:{
+      추천사정률:Number(prediction.opt_adj||prediction.pred_adj_rate||0),
+      추천투찰금액:Number(prediction.opt_bid||prediction.pred_bid_amount||0),
+      낙찰확률:sc.win_prob?(Number(sc.win_prob)*100).toFixed(1)+"%":"미산정",
+      등급:sc.roi_grade||"D",
+      하한율:Number(prediction.pred_floor_rate||0)
+    },
+    기관히스토리:agencyHistory,
+    편차정보:{
+      발주기관편차:biasMap.agency[ag]?(biasMap.agency[ag].offset).toFixed(3)+"%p":"없음",
+      기관유형편차:biasMap.at[at]?(biasMap.at[at].offset).toFixed(3)+"%p":"없음"
+    },
+    추세:trendMap[at]||{}
+  }
+}
+
+// Claude API 호출 (사용자 API 키 필요)
+export async function callClaudeAi(context,apiKey){
+  if(!apiKey)throw new Error("Claude API 키가 필요합니다");
+  
+  const prompt=`당신은 한국 공공조달 입찰 전문가입니다. 다음 공고를 분석하여 최적 사정률을 JSON으로 응답해주세요.
+
+[공고 정보]
+${JSON.stringify(context.공고,null,2)}
+
+[현재 시스템 예측]
+${JSON.stringify(context.현재예측,null,2)}
+
+[발주기관 최근 사례 ${context.기관히스토리.length}건]
+${JSON.stringify(context.기관히스토리,null,2)}
+
+[편차 정보 — 시스템 예측 vs 낙찰자 평균]
+${JSON.stringify(context.편차정보,null,2)}
+
+[시장 추세 (기관유형)]
+${JSON.stringify(context.추세,null,2)}
+
+다음을 분석하여 JSON으로 응답해주세요 (반드시 JSON만, 마크다운 ${'```'} 없이):
+{
+  "분석": "이 공고와 발주기관에 대한 2~3문장 분석",
+  "strategy_safe": -0.20,
+  "strategy_balanced": 0.05,
+  "strategy_aggressive": 0.30,
+  "prob_safe": 0.18,
+  "prob_balanced": 0.30,
+  "prob_aggressive": 0.42,
+  "recommended": "balanced",
+  "reasons": ["근거 1", "근거 2"],
+  "warnings": ["주의 1"]
+}
+
+전략 가이드:
+- safe: 낙찰자 분포 P25 (안전, 낮은 낙찰률·낮은 마진)
+- balanced: 낙찰자 분포 P50 (균형)
+- aggressive: 낙찰자 분포 P75 (공격, 높은 낙찰률·높은 마진)
+- recommended: 발주기관 패턴 + 추세를 고려한 최적 선택`;
+
+  const res=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "x-api-key":apiKey,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true"
+    },
+    body:JSON.stringify({
+      model:"claude-sonnet-4-5",
+      max_tokens:1500,
+      messages:[{role:"user",content:prompt}]
+    })
+  });
+  if(!res.ok){
+    const err=await res.text();
+    throw new Error("Claude API 오류: "+res.status+" "+err.slice(0,200))
+  }
+  const data=await res.json();
+  const text=data.content?.[0]?.text||"";
+  
+  // JSON 파싱 (마크다운 코드 펜스 제거)
+  const cleaned=text.replace(/```json|```/g,"").trim();
+  try{
+    const parsed=JSON.parse(cleaned);
+    return{
+      ai_analysis:parsed.분석||"",
+      strategy_safe:parsed.strategy_safe,
+      strategy_balanced:parsed.strategy_balanced,
+      strategy_aggressive:parsed.strategy_aggressive,
+      prob_safe:parsed.prob_safe,
+      prob_balanced:parsed.prob_balanced,
+      prob_aggressive:parsed.prob_aggressive,
+      recommended:parsed.recommended||"balanced",
+      reasons:parsed.reasons||[],
+      warnings:parsed.warnings||[]
+    }
+  }catch(e){
+    throw new Error("Claude 응답 파싱 실패: "+text.slice(0,200))
+  }
+}
