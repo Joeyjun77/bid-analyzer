@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS, SB_URL, hdrs } from "./lib/constants.js";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring } from "./lib/supabase.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2 } from "./lib/utils.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring } from "./lib/supabase.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
@@ -320,8 +320,16 @@ ${baseInfo}
     try{const[rows,preds,dets]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails()]);
       setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));setBidDetails(dets||[]);
       const matched=await sbMatchPredictions(preds,rows);
-      if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭`})}
-      else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:"업로드 완료"})}
+      // Phase 5.2: 신규 예측에 대해 자동 scoring
+      const existingIds=new Set(Object.keys(scoringMap).map(Number));
+      const newPreds=(matched>0?await sbFetchPredictions():preds).filter(p=>!existingIds.has(p.id));
+      if(newPreds.length>0){
+        const scoringRows=newPreds.map(p=>{const sc=calcRoiV2(p);return{prediction_id:p.id,...sc}});
+        await sbBatchUpsertScoring(scoringRows);
+        const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm);
+      }
+      if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭 · 신규 ${newPreds.length}건 scoring`})}
+      else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:`업로드 완료 · 신규 ${newPreds.length}건 scoring`})}
     }catch(e){setMsg({type:"err",text:"DB 재로드 실패"})}
     setSel({});setBusy(false)},[refreshStats,allS,bidDetails,agAss,isWomenBiz]);
 
@@ -344,7 +352,16 @@ ${baseInfo}
     if(totalResults.length>0){
       setPredResults(prev=>{const dkSet=new Set(totalResults.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...totalResults]});
       const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,source:"file_upload",match_status:"pending"}));
-      await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds)}
+      await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds);
+      // Phase 5.2: 신규 예측 자동 scoring
+      const existingIds=new Set(Object.keys(scoringMap).map(Number));
+      const newPreds=preds.filter(p=>!existingIds.has(p.id));
+      if(newPreds.length>0){
+        const scoringRows=newPreds.map(p=>{const sc=calcRoiV2(p);return{prediction_id:p.id,...sc}});
+        await sbBatchUpsertScoring(scoringRows);
+        const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm);
+      }
+    }
     const summary=fileList.length===1?logs[0]?.ok?`${totalResults.length}건 예측 완료 · DB 저장`:logs[0]?.msg
       :`${fileList.length}개 파일 처리: 성공 ${successCount} · 실패 ${failCount} · 총 ${totalResults.length}건 예측`;
     setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails,agAss,isWomenBiz]);
@@ -420,6 +437,7 @@ ${baseInfo}
 
   const compStats=useMemo(()=>{
     const preds=predictions||[];const matched=preds.filter(p=>p.match_status==="matched");const pending=preds.filter(p=>p.match_status==="pending");
+    const expired=preds.filter(p=>p.match_status==="expired");
     const errors=matched.filter(p=>p.adj_rate_error!=null).map(p=>Number(p.adj_rate_error));
     const absErrors=errors.map(e=>Math.abs(e));
     const avgErr=absErrors.length?Math.round(absErrors.reduce((a,b)=>a+b,0)/absErrors.length*10000)/10000:0;
@@ -427,8 +445,13 @@ ${baseInfo}
     const within05=absErrors.filter(e=>e<=0.5).length;
     const byType={};matched.forEach(p=>{const t=p.at||"기타";if(!byType[t])byType[t]={n:0,errSum:0};byType[t].n++;if(p.adj_rate_error!=null)byType[t].errSum+=Math.abs(p.adj_rate_error)});
     Object.values(byType).forEach(v=>{v.avgErr=v.n?Math.round(v.errSum/v.n*10000)/10000:0});
-    return{total:preds.length,matched:matched.length,pending:pending.length,avgErr,bias,within05,byType}},[predictions]);
-  const compList=useMemo(()=>{const p=predictions||[];let list;if(compFilter==="matched")list=p.filter(x=>x.match_status==="matched");else if(compFilter==="pending")list=p.filter(x=>x.match_status==="pending");else list=p;
+    return{total:preds.length,matched:matched.length,pending:pending.length,expired:expired.length,avgErr,bias,within05,byType}},[predictions]);
+  const compList=useMemo(()=>{const p=predictions||[];let list;
+    // 기본: expired 자동 제외 (명시적 expired 필터 선택 시에만 표시)
+    if(compFilter==="matched")list=p.filter(x=>x.match_status==="matched");
+    else if(compFilter==="pending")list=p.filter(x=>x.match_status==="pending");
+    else if(compFilter==="expired")list=p.filter(x=>x.match_status==="expired");
+    else list=p.filter(x=>x.match_status!=="expired"); // 전체에서 expired 제외
     if(hideYuchal)list=list.filter(x=>!(x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)")));
     if(hideSuui)list=list.filter(x=>{const y=x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)");return y||!(x.match_status==="matched"&&x.actual_adj_rate==null&&x.actual_winner!=null&&x.actual_winner!=="")});
     // Phase 5: 등급 필터
@@ -538,6 +561,18 @@ ${baseInfo}
           <div style={{fontSize:9,color:C.txd,marginTop:2}}>{c.s}</div>
         </div>)}
       </div>
+
+      {/* Phase 5.2: 만료 경고 카드 (낙찰결과 미업로드 유도) */}
+      {compStats.expired>0&&<div style={{background:"linear-gradient(135deg, rgba(226,75,74,0.08), rgba(212,168,52,0.04))",border:"1px solid rgba(226,75,74,0.3)",borderRadius:8,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={()=>{setTab("predict");setCompFilter("expired")}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:16}}>⚠️</span>
+          <div>
+            <div style={{fontSize:12,fontWeight:600,color:"#e24b4a"}}>검증 만료 {compStats.expired}건</div>
+            <div style={{fontSize:10,color:C.txm,marginTop:2}}>60일 이상 경과 + 낙찰결과 미업로드 — 낙찰정보리스트를 업로드하면 매트릭스가 자동 재학습됩니다</div>
+          </div>
+        </div>
+        <span style={{fontSize:11,color:"#e24b4a",fontWeight:600}}>확인 →</span>
+      </div>}
 
       {/* Phase 5: ROI 추천 카드 */}
       {(()=>{const counts={S:0,A:0,B:0,C:0,D:0};let evSum=0;let pendingSA=0;
@@ -1216,9 +1251,10 @@ ${baseInfo}
           </div>
         </div>
         <div style={{display:"flex",gap:4,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
-          <button onClick={()=>{setCompFilter("all");setPredListShow(50)}} style={btnS(compFilter==="all",C.gold)}>전체 ({compStats.total})</button>
+          <button onClick={()=>{setCompFilter("all");setPredListShow(50)}} style={btnS(compFilter==="all",C.gold)}>전체 ({compStats.total - compStats.expired})</button>
           <button onClick={()=>{setCompFilter("matched");setPredListShow(50)}} style={btnS(compFilter==="matched","#5dca96")}>매칭 ({compStats.matched})</button>
           <button onClick={()=>{setCompFilter("pending");setPredListShow(50)}} style={btnS(compFilter==="pending","#e24b4a")}>대기 ({compStats.pending})</button>
+          {compStats.expired>0&&<button onClick={()=>{setCompFilter("expired");setPredListShow(50)}} style={btnS(compFilter==="expired","#666680")}>만료 ({compStats.expired})</button>}
           <label style={{display:"flex",alignItems:"center",gap:4,marginLeft:8,cursor:"pointer",fontSize:10,color:hideYuchal?C.txd:"#e24b4a"}}>
             <input type="checkbox" checked={hideYuchal} onChange={e=>{setHideYuchal(e.target.checked);setPredListShow(50)}} style={{accentColor:"#e24b4a",width:12,height:12}}/>
             <span>유찰 숨김 ({predictions.filter(p=>p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)")).length}건)</span>
