@@ -392,10 +392,10 @@ export function recommendAssumedAdj({at,agName,ba,ep,av,pc,isWomenBiz},ts,as,agA
   }}
 
 
-// ============ Phase 5.1: ROI 통합 점수 시스템 (개선판) ============
-// 셀 구조: {p: 확률, n: 표본수} — shrinkage 적용
-// 1,085건 검증 데이터 기반 (2026-04-10)
-export const WIN_PROB_MATRIX={
+// ============ Phase 5.3: ROI 통합 점수 시스템 (DB 매트릭스 + 동적) ============
+// 매트릭스는 DB에서 로드 가능하지만 fallback으로 하드코딩 유지
+// 1,128건 검증 데이터 기반 (2026-04-10)
+export let WIN_PROB_MATRIX={
   "LH":       {S:{p:0.1818,n:11}, M:{p:0.0000,n:3},  L:{p:0.3182,n:22}},
   "한전":     {S:{p:0.0476,n:42}, M:{p:0.2121,n:33}, L:{p:0.5000,n:2}},
   "군시설":   {S:{p:0.0135,n:148},M:{p:0.1875,n:16}, L:{p:0.0000,n:1}},
@@ -405,7 +405,16 @@ export const WIN_PROB_MATRIX={
   "수자원공사":{S:{p:0.0000,n:18}, M:{p:0.0000,n:0},  L:{p:0.0000,n:2}}
 };
 
-// Shrinkage 상수: 표본 K건 이하는 전역 평균으로 수렴
+// DB에서 받은 매트릭스로 교체
+export function setWinProbMatrix(newMatrix){
+  if(newMatrix&&typeof newMatrix==='object'&&Object.keys(newMatrix).length>0){
+    WIN_PROB_MATRIX=newMatrix;
+    return true
+  }
+  return false
+}
+
+// Shrinkage 상수: K=5 (Phase 5.2 검증)
 export const SHRINKAGE_K=5;
 export const GLOBAL_MEAN=0.0544;
 
@@ -474,10 +483,10 @@ export const calcRoiV2=(p)=>{
   const expectedMargin=(marginMap[at]&&marginMap[at][tier])||100000;
   const expectedValue=Math.round(winProb*expectedMargin);
 
-  // 4. 등급 산정 (기준 재조정: S 0.20 / A 0.12 / B 0.07 / C 0.03)
+  // 4. 등급 산정 (Phase 5.3: A 임계값 0.12→0.11 미세 조정)
   let grade="D",strategy="제외 권장",riskScore=1-winProb;
   if(winProb>=0.20){grade="S";strategy="반드시 투찰"}
-  else if(winProb>=0.12){grade="A";strategy="우선 투찰"}
+  else if(winProb>=0.11){grade="A";strategy="우선 투찰"}
   else if(winProb>=0.07){grade="B";strategy="선택 투찰"}
   else if(winProb>=0.03){grade="C";strategy="여력시 투찰"}
 

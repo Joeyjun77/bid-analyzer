@@ -169,3 +169,25 @@ export async function sbBatchUpsertScoring(scoringRows){
     return res.ok?scoringRows.length:0
   }catch(e){return 0}
 }
+
+// Phase 5.3: ROI 매트릭스 자동 재학습
+export async function sbFetchRoiMatrix(){
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/roi_matrix?select=at,tier,prob,n,updated_at&limit=100",{headers:hdrsSel});
+    if(!res.ok)return null;
+    const rows=await res.json();
+    const matrix={};
+    for(const r of rows){
+      if(!matrix[r.at])matrix[r.at]={};
+      matrix[r.at][r.tier]={p:Number(r.prob),n:Number(r.n)}
+    }
+    return{matrix,updatedAt:rows[0]?.updated_at}
+  }catch(e){return null}
+}
+
+// 매트릭스 수동 갱신 (RPC 대신 SQL 직접 실행)
+export async function sbRefreshRoiMatrix(){
+  // 클라이언트에서 직접 SQL 실행 불가하므로, 대신 fetch로 최신 매트릭스만 다시 로드
+  // 실제 갱신은 Supabase Dashboard 또는 cron으로 SQL 실행
+  return sbFetchRoiMatrix()
+}
