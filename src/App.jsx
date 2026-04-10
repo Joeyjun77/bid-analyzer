@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS, SB_URL, hdrs } from "./lib/constants.js";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2 } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring } from "./lib/supabase.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix } from "./lib/utils.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix } from "./lib/supabase.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
@@ -273,6 +273,7 @@ ${baseInfo}
     try{const dets=await sbFetchDetails();setBidDetails(dets||[])}catch(e){setBidDetails([])}
     try{const agStats=await sbFetchAgAssumedStats();setAgAss(agStats||{})}catch(e){setAgAss({})}
     try{const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm)}catch(e){setScoringMap({})}
+    try{const mtx=await sbFetchRoiMatrix();if(mtx?.matrix)setWinProbMatrix(mtx.matrix)}catch(e){}
     setDbLoading(false)
   })()},[refreshStats]);
 
@@ -601,7 +602,37 @@ ${baseInfo}
         </div>
       })()}
 
-      {/* 복수예가 상세 데이터 */}
+      {/* Phase 5.3: 같은 기관 묶음 알림 */}
+      {(()=>{
+        // pending S/A 건을 발주기관별로 그룹핑
+        const sa=predictions.filter(p=>{const g=scoringMap[p.id]?.roi_grade;return p.match_status==="pending"&&(g==="S"||g==="A")});
+        const groups={};sa.forEach(p=>{if(!p.ag)return;if(!groups[p.ag])groups[p.ag]=[];groups[p.ag].push(p)});
+        const big=Object.entries(groups).filter(([_,items])=>items.length>=3).sort((a,b)=>b[1].length-a[1].length);
+        if(big.length===0)return null;
+        return<div style={{background:"linear-gradient(135deg, rgba(168,85,247,0.12), rgba(212,168,52,0.06))",border:"1px solid rgba(168,85,247,0.4)",borderRadius:10,padding:"14px 16px",marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <span style={{fontSize:13,fontWeight:600,color:"#a855f7",letterSpacing:1}}>🔥 발주기관 묶음 발견 — 우선 검토</span>
+            <span style={{fontSize:9,color:C.txd}}>같은 기관에 S/A등급 3건 이상 집중</span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {big.slice(0,5).map(([ag,items])=>{
+              const totalAmt=items.reduce((s,p)=>s+(Number(p.ep||p.ba)||0),0);
+              const avgProb=items.reduce((s,p)=>s+(Number(scoringMap[p.id]?.win_prob)||0),0)/items.length;
+              const expWins=Math.round(avgProb*items.length*10)/10;
+              return<div key={ag} style={{padding:"8px 12px",background:C.bg3,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={()=>{setTab("predict");setGradeFilter("SA")}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
+                  <span style={{fontSize:18,fontWeight:700,color:"#a855f7",fontFamily:"monospace",minWidth:32}}>{items.length}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,color:C.txt,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ag}</div>
+                    <div style={{fontSize:10,color:C.txm,marginTop:2}}>총 {tc(totalAmt)}원 · 평균 확률 {(avgProb*100).toFixed(1)}% · 기대 낙찰 {expWins}건</div>
+                  </div>
+                </div>
+                <span style={{fontSize:11,color:"#a855f7",marginLeft:8}}>→</span>
+              </div>
+            })}
+          </div>
+        </div>
+      })()}
       {bidDetails.length>0&&<div style={{marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:600,color:C.gold,marginBottom:8}}>복수예가 상세 데이터 ({bidDetails.length}건)</div>
         {/* 기관유형별 요약 */}
@@ -853,6 +884,39 @@ ${baseInfo}
               <div style={{fontSize:10,color:C.txd,marginTop:8,lineHeight:1.5}}>
                 💡 <strong style={{color:C.txt}}>{sc.strategy_label}</strong> · 6개 신호 결합 (기관×금액 매트릭스 + 경쟁강도 + 시점 + 골드존 + 회피존 필터)
               </div>
+              {/* Phase 5.3: 등급 이유 자연어 설명 */}
+              {(()=>{
+                const at=d.at||"기타";
+                const amt=Number(d.ep||d.ba||0);
+                const tier=amt<3e8?"S":amt<1e9?"M":"L";
+                const tierLabel={S:"3억 미만",M:"3~10억",L:"10억 이상"}[tier];
+                const od=d.open_date;
+                const dow=od?["일","월","화","수","목","금","토"][new Date(od).getDay()]:null;
+                const isPeakDay=dow&&["화","수","목"].includes(dow);
+                const isInvalid=(d.pn||"").match(/\[(취소|중지|재공고|정정|연기)\]/);
+                const isAvoid=at==="수자원공사"||(at==="교육청"&&tier==="L")||(at==="조달청"&&tier==="S");
+                
+                let reasons=[];
+                if(isInvalid){reasons.push(`⚠️ 공고에 "${isInvalid[1]}" 표시 → D등급 강제`)}
+                else if(isAvoid){reasons.push(`⚠️ ${at}-${tier} 회피존 → 강제 차단`)}
+                else{
+                  reasons.push(`📊 ${at}-${tierLabel} 매트릭스 베이스 확률 적용`);
+                  if(isPeakDay)reasons.push(`📅 ${dow}요일 개찰 → +10% 보정 (검증: 화/수/목 6.6% vs 월/금 3.5%)`);
+                }
+                
+                let conclusion="";
+                if(grade==="S")conclusion=`✨ 비슷한 조건의 과거 공고에서 평균 30%+ 낙찰. 강력 추천.`;
+                else if(grade==="A")conclusion=`✓ 안정적 낙찰 패턴. 우선 검토 추천.`;
+                else if(grade==="B")conclusion=`◯ 평균 이상 가능성. 여력 있을 때 투찰.`;
+                else if(grade==="C")conclusion=`△ 평균 수준. 다른 우선순위 건이 없을 때만.`;
+                else if(grade==="D")conclusion=`✗ 시간 대비 효율 낮음. 다른 건에 집중 권장.`;
+                
+                return<div style={{marginTop:10,padding:"10px 12px",background:"rgba(0,0,0,0.2)",borderRadius:6,borderLeft:"3px solid "+gc}}>
+                  <div style={{fontSize:10,color:C.txm,fontWeight:600,marginBottom:6}}>🤖 등급 산정 이유</div>
+                  {reasons.map((r,i)=><div key={i} style={{fontSize:10,color:C.txt,marginBottom:3,lineHeight:1.5}}>{r}</div>)}
+                  <div style={{fontSize:10,color:gc,marginTop:6,paddingTop:6,borderTop:"1px solid "+C.bdr,fontWeight:500}}>{conclusion}</div>
+                </div>
+              })()}
             </div>
           })()}
 
