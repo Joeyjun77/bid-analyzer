@@ -125,3 +125,10 @@ export async function sbFetchTargetMatrix(){
 export async function sbFetchSweetSpotAgencies(){
   try{const res=await fetch(SB_URL+"/rest/v1/sweet_spot_agencies?select=*&order=sweet_spot_count.desc",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
+// ─── Phase 12-C: 발주사별 낙찰 예측 ────────────────────────
+export async function sbFetchAgencyWinStats(){
+  try{const res=await fetch(SB_URL+"/rest/v1/agency_win_stats?select=*&order=theoretical_win_rate.desc",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}
+}
+export async function sbFetchAgencyPredictor(){
+  try{const res=await fetch(SB_URL+"/rest/v1/agency_predictor?select=*",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}
+}
