@@ -413,7 +413,7 @@ ${baseInfo}
           // 입찰서류함 → 예측 처리
           if(!Object.keys(allS.ts||{}).length){throw new Error("낙찰 통계가 로드되지 않았습니다. 낙찰정보리스트를 먼저 업로드해주세요.")}
           const items=parseBidDoc(raw);if(!items.length)throw new Error("입찰서류함: 예측 대상 0건");
-          const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
+          const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails,agencyPred);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
           if(!results.length)throw new Error("예측 결과 0건");
           accPredResults=accPredResults.concat(results);setPredResults([...accPredResults]); // ★ 누적 표시
           const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,source:"file_upload",match_status:"pending"}));
@@ -453,7 +453,7 @@ ${baseInfo}
     let totalResults=[];let successCount=0;let failCount=0;const logs=[];
     for(const file of Array.from(fileList)){
       try{const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length){logs.push({name:file.name,ok:false,msg:"예측 대상 0건"});failCount++;continue}
-        const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
+        const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails,agencyPred);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
         if(!results.length){logs.push({name:file.name,ok:false,msg:"예측 결과 0건"});failCount++;continue}
         totalResults=totalResults.concat(results);
         logs.push({name:file.name,ok:true,msg:`${results.length}건 예측`});successCount++;
@@ -508,11 +508,11 @@ ${baseInfo}
   const[manualRec,setManualRec]=useState(null);
   const doManualPred=useCallback(()=>{
     if(!Object.keys(allS.ts||{}).length){setMsg({type:"err",text:"낙찰 데이터가 없습니다. 먼저 데이터를 업로드해주세요."});return}
-    const p=predictV5({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,bidDetails);
+    const p=predictV5({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,bidDetails,agencyPred);
     if(!p){setMsg({type:"err",text:"예측 실패: 기관 또는 금액 정보를 확인해주세요."});return}
     setPred(p);if(p)setSimSlider(Math.round(p.adj*100));
     const rec=recommendAssumedAdj({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,agAss);
-    setManualRec(rec)},[inp,allS,bidDetails]);
+    setManualRec(rec)},[inp,allS,bidDetails,agencyPred,agAss]);
 
   // 삭제
   const selCount=Object.keys(sel).filter(k=>sel[k]).length;
@@ -1351,6 +1351,10 @@ ${baseInfo}
           {pred&&<div style={{marginTop:10,padding:"10px",background:C.bg3,borderRadius:6}}>
             {/* 예측 분석 */}
             <div style={{fontSize:11,color:C.txm,marginBottom:6}}>📊 예측: 사정률 <span style={{color:"#5dca96",fontFamily:"monospace"}}>{(100+pred.adj).toFixed(4)}%</span> · 하한율 {pred.fr}% · <span style={{fontSize:10}}>{pred.src}</span></div>
+            {/* Phase 12-D: 발주사 보정 표시 */}
+            {pred.agencyOffset!=null&&pred.agencyN>0&&<div style={{fontSize:10,color:"#e24b4a",marginBottom:6,padding:"3px 6px",background:"rgba(226,75,74,0.06)",borderRadius:4,border:"1px solid rgba(226,75,74,0.2)"}}>
+              🎯 발주사 보정: 기관유형 {pred.typeOffset>=0?"+":""}{pred.typeOffset.toFixed(3)}% <span style={{color:C.txd}}>+</span> <span style={{color:"#e24b4a",fontWeight:600}}>발주사 {pred.agencyOffset>=0?"+":""}{pred.agencyOffset.toFixed(3)}%</span> <span style={{color:C.txd}}>(샘플 {pred.agencyN}건)</span> = 최종 {pred.optOffset>=0?"+":""}{pred.optOffset.toFixed(3)}%
+            </div>}
             {/* ★ 추천 투찰 (메인) */}
             <div style={{padding:"10px 12px",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.25)",borderRadius:6,marginBottom:8}}>
               <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:6}}>★ 추천 투찰</div>
