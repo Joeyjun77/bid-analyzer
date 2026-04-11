@@ -107,148 +107,21 @@ export async function sbFetchDetailsByAg(ag){
 export async function sbFetchAgAssumedStats(){
   try{const res=await fetch(SB_URL+"/rest/v1/ag_assumed_stats?select=ag,at,seg,n,p25,p50,p75&order=n.desc&limit=1000",{headers:hdrsSel});if(!res.ok)return{};const rows=await res.json();const map={};for(const r of rows){const k=r.ag+"|"+r.seg;map[k]={at:r.at,n:Number(r.n),p25:Number(r.p25),p50:Number(r.p50),p75:Number(r.p75)}}return map}catch(e){return{}}}
 
-// ─── Phase 5: ROI Scoring ─────────────────────────
-export async function sbFetchScoring(){
-  try{
-    const PAGE=1000;let all=[],offset=0;
-    while(true){
-      const res=await fetch(SB_URL+"/rest/v1/bid_scoring?select=prediction_id,win_prob,expected_margin,expected_value,roi_grade,strategy_label&offset="+offset+"&limit="+PAGE,{headers:hdrsSel});
-      if(!res.ok)return all;
-      const rows=await res.json();
-      if(!Array.isArray(rows))return all;
-      all=all.concat(rows);
-      if(rows.length<PAGE)break;
-      offset+=PAGE
-    }
-    return all
-  }catch(e){return[]}
-}
+// ─── Phase 12: Phase 6~10 스텁 (드롭된 테이블 참조 제거) ─────
+// 이 함수들은 Phase 6~10에서 만들어졌으나, 여성기업 가산 오염으로 백지화됨.
+// App.jsx 호환성 유지를 위해 no-op으로 유지. 다음 정리 시 App.jsx에서 호출 제거 예정.
+export async function sbFetchScoring(){return[]}
+export async function sbBatchUpsertScoring(rows){return}
+export async function sbFetchRoiMatrix(){return[]}
+export async function sbFetchBiasMap(){return{agency:{},at:{}}}
+export async function sbFetchTrendMap(){return{}}
+export async function sbSaveAiAnalysis(predId,analysis){return}
+export async function sbFetchAiAnalysis(){return{}}
 
-// Phase 5.2: 신규 예측 자동 scoring upsert
-export async function sbUpsertScoring(predictionId,scoringData){
-  if(!predictionId||!scoringData)return false;
-  try{
-    const body=JSON.stringify([{
-      prediction_id:predictionId,
-      win_prob:scoringData.winProb,
-      expected_margin:scoringData.expectedMargin,
-      expected_value:scoringData.expectedValue,
-      roi_grade:scoringData.grade,
-      strategy_label:scoringData.strategy,
-      risk_score:scoringData.riskScore,
-      factors:scoringData.factors||{}
-    }]);
-    const res=await fetch(SB_URL+"/rest/v1/bid_scoring?on_conflict=prediction_id",{
-      method:"POST",
-      headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},
-      body
-    });
-    return res.ok
-  }catch(e){return false}
+// ─── Phase 12: 타깃팅 데이터 로딩 ────────────────────────
+export async function sbFetchTargetMatrix(){
+  try{const res=await fetch(SB_URL+"/rest/v1/target_matrix?select=*&order=priority_tier.asc",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
-
-// Phase 5.2: 여러 scoring을 배치로 upsert
-export async function sbBatchUpsertScoring(scoringRows){
-  if(!Array.isArray(scoringRows)||scoringRows.length===0)return 0;
-  try{
-    const body=JSON.stringify(scoringRows.map(r=>({
-      prediction_id:r.prediction_id,
-      win_prob:r.winProb,
-      expected_margin:r.expectedMargin,
-      expected_value:r.expectedValue,
-      roi_grade:r.grade,
-      strategy_label:r.strategy,
-      risk_score:r.riskScore,
-      factors:r.factors||{}
-    })));
-    const res=await fetch(SB_URL+"/rest/v1/bid_scoring?on_conflict=prediction_id",{
-      method:"POST",
-      headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},
-      body
-    });
-    return res.ok?scoringRows.length:0
-  }catch(e){return 0}
-}
-
-// Phase 5.3: ROI 매트릭스 자동 재학습
-export async function sbFetchRoiMatrix(){
-  try{
-    const res=await fetch(SB_URL+"/rest/v1/roi_matrix?select=at,tier,prob,n,updated_at&limit=100",{headers:hdrsSel});
-    if(!res.ok)return null;
-    const rows=await res.json();
-    const matrix={};
-    for(const r of rows){
-      if(!matrix[r.at])matrix[r.at]={};
-      matrix[r.at][r.tier]={p:Number(r.prob),n:Number(r.n)}
-    }
-    return{matrix,updatedAt:rows[0]?.updated_at}
-  }catch(e){return null}
-}
-
-// 매트릭스 수동 갱신 (RPC 대신 SQL 직접 실행)
-export async function sbRefreshRoiMatrix(){
-  // 클라이언트에서 직접 SQL 실행 불가하므로, 대신 fetch로 최신 매트릭스만 다시 로드
-  // 실제 갱신은 Supabase Dashboard 또는 cron으로 SQL 실행
-  return sbFetchRoiMatrix()
-}
-
-// Phase 5.4: 편차 보정 + 추세 데이터 로드
-export async function sbFetchBiasMap(){
-  try{
-    const res=await fetch(SB_URL+"/rest/v1/prediction_bias?select=scope,scope_key,bias_offset,n_samples,confidence&limit=200",{headers:hdrsSel});
-    if(!res.ok)return null;
-    const rows=await res.json();
-    const map={agency:{},at:{}};
-    for(const r of rows){
-      map[r.scope][r.scope_key]={offset:Number(r.bias_offset),n:Number(r.n_samples),confidence:Number(r.confidence)}
-    }
-    return map
-  }catch(e){return null}
-}
-
-export async function sbFetchTrendMap(){
-  try{
-    const res=await fetch(SB_URL+"/rest/v1/adj_trend?select=scope_key,trend_30d,trend_90d,trend_all,direction,trend_strength&limit=50",{headers:hdrsSel});
-    if(!res.ok)return null;
-    const rows=await res.json();
-    const map={};
-    for(const r of rows)map[r.scope_key]=r;
-    return map
-  }catch(e){return null}
-}
-
-// Phase 5.4: AI 전략 분석 저장/조회
-export async function sbSaveAiAnalysis(predictionId,pnNo,analysis){
-  if(!predictionId||!analysis)return false;
-  try{
-    const body=JSON.stringify([{
-      prediction_id:predictionId,
-      pn_no:pnNo,
-      strategy_safe:analysis.strategy_safe,
-      strategy_balanced:analysis.strategy_balanced,
-      strategy_aggressive:analysis.strategy_aggressive,
-      prob_safe:analysis.prob_safe,
-      prob_balanced:analysis.prob_balanced,
-      prob_aggressive:analysis.prob_aggressive,
-      recommended:analysis.recommended,
-      ai_analysis:analysis.ai_analysis,
-      reasons:analysis.reasons||[],
-      warnings:analysis.warnings||[]
-    }]);
-    const res=await fetch(SB_URL+"/rest/v1/ai_strategy_analysis?on_conflict=prediction_id",{
-      method:"POST",
-      headers:{...hdrs,"Prefer":"resolution=merge-duplicates,return=minimal"},
-      body
-    });
-    return res.ok
-  }catch(e){return false}
-}
-
-export async function sbFetchAiAnalysis(predictionId){
-  try{
-    const res=await fetch(SB_URL+"/rest/v1/ai_strategy_analysis?prediction_id=eq."+predictionId+"&select=*&limit=1",{headers:hdrsSel});
-    if(!res.ok)return null;
-    const rows=await res.json();
-    return rows[0]||null
-  }catch(e){return null}
+export async function sbFetchSweetSpotAgencies(){
+  try{const res=await fetch(SB_URL+"/rest/v1/sweet_spot_agencies?select=*&order=sweet_spot_count.desc",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
