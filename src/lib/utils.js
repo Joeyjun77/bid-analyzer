@@ -148,7 +148,7 @@ export function calcStats(recs,filter){const src=filter?recs.filter(filter):recs
 
 // ─── 예측 v5 (51K 백테스트 기반 보정) ────────────────────────
 const rnd4=v=>Math.round((v||0)*10000)/10000;
-export function predictV5({at,agName,ba,ep,av},ts,as,details){
+export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred){
   if(!ba)return null;
   const tKeys=Object.keys(ts||{});
   if(!tKeys.length)return null;
@@ -215,12 +215,19 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details){
   // 군시설: -0.15→0.0 (낙찰 2→3건, 탈락 61→51건 감소)
   // 지자체: -0.15→+0.30 (2026-04-10 편향 재검증: 81건 평균 편향 -0.31% → 0.45%p 상향 보정)
   const OPT_OFFSET={"지자체":0.30,"군시설":0.0,"교육청":-0.2,"한전":0.1,"LH":-0.1,"조달청":-0.1,"수자원공사":-0.1};
-  const off=OPT_OFFSET[at]||-0.1;
+  const typeOff=OPT_OFFSET[at]||-0.1;
+  // ★ Phase 12-D A안: 발주사별 오프셋 (agency_predictor 기반)
+  // 신규 예측에만 적용. 과거 bid_predictions는 건드리지 않음.
+  // agencyPred는 ag → {effective_offset, n, strategy} map
+  const agPred=agencyPred&&agencyPred[agName];
+  const agencyOff=agPred?Number(agPred.effective_offset||0):0;
+  const off=typeOff+agencyOff;
   const optAdj=rnd4(ref.med+off);const optXp=calcXp(ref.med+off);const optBid=calcBid(ref.med+off);
   return{scenarios,fr,src,bidRateRec,bidByRate,
     adjAvg:rnd4(ref.avg),adjStd:rnd4(ref.std),
     adj:rnd4(ref.med),xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:rnd4(ref.avg),
-    detailInsight,biasAdj:rnd4(biasAdj),driftUsed:0,ci70,ci90,optAdj,optXp,optBid,optOffset:off}}
+    detailInsight,biasAdj:rnd4(biasAdj),driftUsed:0,ci70,ci90,optAdj,optXp,optBid,optOffset:off,
+    typeOffset:typeOff,agencyOffset:agencyOff,agencyN:agPred?Number(agPred.n||0):0}}
 
 // ─── 데이터 현황 (최근 업로드 + 실제 최신 개찰일 분리) ────
 export function calcDataStatus(rows){
