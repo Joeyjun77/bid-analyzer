@@ -207,20 +207,41 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred){
   const effStd=Math.max(std,noiseFloor); // 최소한 노이즈 바닥 이상
   const ci70={low:rnd4(ref.med-effStd*0.52),high:rnd4(ref.med+effStd*0.52)};
   const ci90={low:rnd4(ref.med-effStd*1.28),high:rnd4(ref.med+effStd*1.28)};
-  // ★ 최적 투찰: 기관별 차별 오프셋 (190건 백테스트 기반, B안 낙찰률 16.2%)
-  // 안정(30건+): 지자체 -0.15, 군시설 -0.15
-  // 참고(10~29건): 교육청 -0.2
-  // 불안정(<10건): 한전 +0.1 (음수 bias 보정), 나머지 -0.1 기본
-  // ★ 기관별 오프셋 (722건 백테스트 기반, 2026-04-07 재교정)
-  // 군시설: -0.15→0.0 (낙찰 2→3건, 탈락 61→51건 감소)
-  // 지자체: -0.15→+0.30 (2026-04-10 편향 재검증: 81건 평균 편향 -0.31% → 0.45%p 상향 보정)
-  const OPT_OFFSET={"지자체":0.30,"군시설":0.0,"교육청":-0.2,"한전":0.1,"LH":-0.1,"조달청":-0.1,"수자원공사":-0.1};
-  const typeOff=OPT_OFFSET[at]||-0.1;
+
+  // ★ 기관별 오프셋 (2026-04-12 WIN구간 분석 기반 재교정)
+  // 분석 근거: bid_details 296건 — 나의 투찰이 1위보다 높은 평균 갭
+  //   지자체: +0.68% 갭 → -0.50% 하향 (이전 +0.30 → -0.20)
+  //   교육청: +0.73% 갭 → -0.55% 하향 (이전 -0.20 → -0.55)
+  //   군시설: +0.42% 갭 → -0.35% 하향 (이전 0.0  → -0.35)
+  //   한전:   +0.40% 갭 → -0.30% 하향 (이전 +0.10 → -0.20)
+  //   LH:    +0.21% 갭 → -0.15% 하향 (이전 -0.10 → -0.15)
+  //   조달청: +0.68% 갭 → -0.50% 하향 (이전 -0.10 → -0.50)
+  //   수자원: 샘플 부족 → 보수적 유지
+  // 목표: optAdj ≈ (1위 사정률) - 0.1~0.2% = WIN 구간 중앙~하단
+  const OPT_OFFSET={
+    "지자체":   -0.20,  // +0.30 → -0.20 (갭 -0.68% 분석, 조정폭 50%)
+    "군시설":   -0.35,  // 0.0   → -0.35 (갭 -0.42% 분석)
+    "교육청":   -0.55,  // -0.20 → -0.55 (갭 -0.73% 분석, 가장 큰 갭)
+    "한전":     -0.20,  // +0.10 → -0.20 (갭 -0.40% 분석)
+    "LH":       -0.15,  // -0.10 → -0.15 (갭 -0.21% 분석, 작은 조정)
+    "조달청":   -0.50,  // -0.10 → -0.50 (갭 -0.68% 분석)
+    "수자원공사":-0.10   // 샘플 1건, 보수적 유지
+  };
+  const typeOff=OPT_OFFSET[at]||-0.2;
+
   // ★ Phase 12-D A안: 발주사별 오프셋 (agency_predictor 기반)
   // 신규 예측에만 적용. 과거 bid_predictions는 건드리지 않음.
   // agencyPred는 ag → {effective_offset, n, strategy} map
+  // shrinkage 개선: n/20 → n/10 (2026-04-12 백테스트: MAE 0.5634% → 0.5265%)
   const agPred=agencyPred&&agencyPred[agName];
-  const agencyOff=agPred?Number(agPred.effective_offset||0):0;
+  // effective_offset은 DB에서 n/20 shrinkage로 저장됨 → n/10으로 재계산
+  let agencyOff=0;
+  if(agPred){
+    const rawOffset=Number(agPred.adj_offset||0);
+    const n=Number(agPred.n||0);
+    // n/10 shrinkage 적용 (n/20보다 공격적, 백테스트 검증)
+    agencyOff=rawOffset*Math.min(1,n/10);
+  }
   const off=typeOff+agencyOff;
   const optAdj=rnd4(ref.med+off);const optXp=calcXp(ref.med+off);const optBid=calcBid(ref.med+off);
   return{scenarios,fr,src,bidRateRec,bidByRate,
