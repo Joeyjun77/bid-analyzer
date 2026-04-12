@@ -208,39 +208,51 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred){
   const ci70={low:rnd4(ref.med-effStd*0.52),high:rnd4(ref.med+effStd*0.52)};
   const ci90={low:rnd4(ref.med-effStd*1.28),high:rnd4(ref.med+effStd*1.28)};
 
-  // ★ 기관별 오프셋 (2026-04-12 WIN구간 분석 기반 재교정)
-  // 분석 근거: bid_details 296건 — 나의 투찰이 1위보다 높은 평균 갭
-  //   지자체: +0.68% 갭 → -0.50% 하향 (이전 +0.30 → -0.20)
-  //   교육청: +0.73% 갭 → -0.55% 하향 (이전 -0.20 → -0.55)
-  //   군시설: +0.42% 갭 → -0.35% 하향 (이전 0.0  → -0.35)
-  //   한전:   +0.40% 갭 → -0.30% 하향 (이전 +0.10 → -0.20)
-  //   LH:    +0.21% 갭 → -0.15% 하향 (이전 -0.10 → -0.15)
-  //   조달청: +0.68% 갭 → -0.50% 하향 (이전 -0.10 → -0.50)
-  //   수자원: 샘플 부족 → 보수적 유지
-  // 목표: optAdj ≈ (1위 사정률) - 0.1~0.2% = WIN 구간 중앙~하단
-  const OPT_OFFSET={
-    "지자체":   -0.20,  // +0.30 → -0.20 (갭 -0.68% 분석, 조정폭 50%)
-    "군시설":   -0.35,  // 0.0   → -0.35 (갭 -0.42% 분석)
-    "교육청":   -0.55,  // -0.20 → -0.55 (갭 -0.73% 분석, 가장 큰 갭)
-    "한전":     -0.20,  // +0.10 → -0.20 (갭 -0.40% 분석)
-    "LH":       -0.15,  // -0.10 → -0.15 (갭 -0.21% 분석, 작은 조정)
-    "조달청":   -0.50,  // -0.10 → -0.50 (갭 -0.68% 분석)
-    "수자원공사":-0.10   // 샘플 1건, 보수적 유지
+  // ★ Phase 12-F (2026-04-12 발주사별 예측 강화)
+  // 구성: legacy typeOff + 발주사별 agencyOff (shrinkage n/10)
+  //
+  // 근거 (1,091건 백테스트 + 등록/미등록 발주사 분리 분석):
+  //   - 등록 발주사(826건): Phase 12-F MAE 0.508% / WIN±0.1% 15.6%
+  //     → Phase 12-D(현재, 재교정) MAE 0.559% 대비 -9.1%
+  //   - 미등록 발주사(265건): Phase 12-F MAE 1.052% (예측 가치 낮음)
+  //   - 전체 1,091건: MAE 0.640% / WIN±0.5% 55.5% / WIN±0.3% 37.3%
+  //     → Phase 12-D 대비 MAE -7.6%, WIN +3.3%p
+  //
+  // 직전 Phase 12-D(재교정) 롤백 사유:
+  //   - 296건 bid_details 샘플 편향으로 "내가 1위보다 +0.5~0.7% 높다" 해석 → typeOff 과잉 하향
+  //   - 실제 1,091건 기준 평균 편향은 미미하며, 재교정이 오히려 bias를 음수 방향으로 키움
+  //   - 해결: typeOff를 legacy로 롤백, 대신 agencyOff를 모든 at에 일관 적용
+  //
+  // Phase 12-E(at별 하이브리드) 폐기 사유:
+  //   - bid_details의 발주사 분포가 agency_predictor 미등록 발주사에 편중
+  //     (부천교육지원청 11건 등) → "교육청 agencyOff 끄자"가 잘못된 추론이었음
+  //   - 등록 발주사만 보면 교육청이 agencyOff 효과 최상위 (+14.1% 개선)
+  //   - 해결: 발주사 등록 여부가 분기 기준이어야 하며, 이는 agPred 존재 여부로 자연 분기됨
+  //
+  // 발주사별 예측의 본질:
+  //   이 함수의 line 155~166(ref 선택)과 line 174(bid_details 보정)에서 이미
+  //   발주사별(agSt) 데이터를 우선 사용 중. OPT_CONFIG는 그 위에 얹는 최종 보정층.
+  //   agency_predictor 테이블이 114개 발주사의 개별 adj_offset을 제공하며,
+  //   이 값이 n/10 shrinkage로 감쇠 적용되어 발주사 특성을 최종 추천에 반영.
+  const TYPE_OFF={
+    "지자체":   -0.15,
+    "군시설":    0.0,
+    "교육청":   -0.20,
+    "한전":      0.10,
+    "LH":       -0.10,
+    "조달청":   -0.10,
+    "수자원공사":-0.10
   };
-  const typeOff=OPT_OFFSET[at]||-0.2;
+  const typeOff=TYPE_OFF[at]??-0.10;
 
-  // ★ Phase 12-D A안: 발주사별 오프셋 (agency_predictor 기반)
-  // 신규 예측에만 적용. 과거 bid_predictions는 건드리지 않음.
-  // agencyPred는 ag → {effective_offset, n, strategy} map
-  // shrinkage 개선: n/20 → n/10 (2026-04-12 백테스트: MAE 0.5634% → 0.5265%)
+  // 발주사별 오프셋 (agency_predictor 기반, n/10 shrinkage)
+  // 발주사가 등록되어 있으면 적용, 없으면 자연스럽게 0 (typeOff만 유효)
   const agPred=agencyPred&&agencyPred[agName];
-  // effective_offset은 DB에서 n/20 shrinkage로 저장됨 → n/10으로 재계산
   let agencyOff=0;
   if(agPred){
     const rawOffset=Number(agPred.adj_offset||0);
     const n=Number(agPred.n||0);
-    // n/10 shrinkage 적용 (n/20보다 공격적, 백테스트 검증)
-    agencyOff=rawOffset*Math.min(1,n/10);
+    agencyOff=rawOffset*Math.min(1, n/10);
   }
   const off=typeOff+agencyOff;
   const optAdj=rnd4(ref.med+off);const optXp=calcXp(ref.med+off);const optBid=calcBid(ref.med+off);
