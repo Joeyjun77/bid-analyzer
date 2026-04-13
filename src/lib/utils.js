@@ -110,6 +110,15 @@ export function calcStats(recs,filter){const src=filter?recs.filter(filter):recs
   const now=new Date();
   const d90=new Date(now-90*24*60*60*1000).toISOString().slice(0,10);
   const d180=new Date(now-180*24*60*60*1000).toISOString().slice(0,10);
+  // Phase 14-5: 옛 데이터 100% 발주사 리다이렉트 매핑
+  // 특정 발주사가 2024년 이후 데이터가 0건이면서 옛 데이터만 있는 경우,
+  // 통계적으로 유사한 대체 발주사로 리다이렉트하여 학습 오염 방지
+  // (대안이 없는 경우 null → 해당 발주사 학습 건너뜀)
+  const AGENCY_REDIRECT={
+    "한국토지주택공사":"한국토지주택공사 경기남부지역본부" // 본사 옛 데이터(2012-2013) 격리
+  };
+  // Phase 14-5: 데이터 시점 컷오프 (2024년 이전 데이터는 학습 제외)
+  const STALE_CUTOFF="2024-01-01";
   for(const r of src){if(r.br1==null)continue;
     const adj=r.br1-100;if(adj<-5||adj>5)continue;
     const bidRate=(r.bp&&r.xp&&r.xp>0)?r.bp/r.xp*100:null;
@@ -120,7 +129,20 @@ export function calcStats(recs,filter){const src=filter?recs.filter(filter):recs
     // drift용 시간대별 분류
     if(r.od&&r.od>=d90){ts[t].recentVals.push(adj)}
     else if(r.od&&r.od>=d180){ts[t].prevVals.push(adj)}
-    const a=r.ag;if(a){
+    // ★ 발주사 학습 (Phase 14-5 안전 필터 적용)
+    let a=r.ag;
+    // 1) 리다이렉트 매핑 적용 (LH 본사 등)
+    if(a&&AGENCY_REDIRECT[a]){
+      // 옛 데이터 발주사는 본인 학습 건너뛰고, 대체 발주사에 누적하지 않음
+      // (대체 발주사는 자기 데이터로 자연스럽게 학습됨)
+      a=null;
+    }
+    // 2) 옛 데이터 필터: 2024년 이전 데이터는 발주사 학습에서 제외
+    //    (at별 통계는 그대로 사용, 발주사 개별 학습만 보호)
+    if(a&&r.od&&r.od<STALE_CUTOFF){
+      a=null;
+    }
+    if(a){
       if(!as[a])as[a]={n:0,sum:0,vals:[],bidRates:[],type:t,recentVals:[],prevVals:[]};
       as[a].n++;as[a].sum+=adj;as[a].vals.push(adj);
       if(bidRate&&bidRate>80&&bidRate<95)as[a].bidRates.push(bidRate);
@@ -152,10 +174,21 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred){
   if(!ba)return null;
   const tKeys=Object.keys(ts||{});
   if(!tKeys.length)return null;
-  const agSt=as[agName];const tSt=ts[at]||ts[tKeys[0]];
+  // Phase 14-5: LH 본사처럼 옛 데이터만 있는 발주사는 대체 발주사로 리다이렉트
+  // calcStats에서 옛 데이터를 필터링했기 때문에 원래 키로는 as[agName]이 없음
+  // 따라서 대체 키로 조회하여 예측에 사용
+  const AGENCY_LOOKUP_REDIRECT={
+    "한국토지주택공사":"한국토지주택공사 경기남부지역본부"
+  };
+  const lookupKey=AGENCY_LOOKUP_REDIRECT[agName]||agName;
+  const agSt=as[lookupKey];const tSt=ts[at]||ts[tKeys[0]];
   if(!tSt)return null;
   let ref=tSt;
   let src=at;
+  // 리다이렉트 발생 시 출처 표시
+  if(AGENCY_LOOKUP_REDIRECT[agName]&&agSt){
+    src=`${agName}→${lookupKey}(${agSt.n}건, 옛데이터 격리)`;
+  }
   if(agSt&&agSt.n>=5){ref=agSt;src=`${agName}(${agSt.n}건)`}
   else if(agSt&&agSt.n>=2){
     const w=agSt.n>=3?0.7:0.5;
