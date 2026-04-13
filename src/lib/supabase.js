@@ -132,3 +132,7 @@ export async function sbFetchAgencyWinStats(){
 export async function sbFetchAgencyPredictor(){
   try{const res=await fetch(SB_URL+"/rest/v1/agency_predictor?select=*",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
+// Phase 14-3: 분산 투찰 시뮬레이터
+export async function sbFetchSimulator(){
+  try{const res=await fetch(SB_URL+"/rest/v1/v_simulator_api?select=*",{headers:hdrsSel});if(!res.ok)return[];return await res.json()}catch(e){return[]}
+}
