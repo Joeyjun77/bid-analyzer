@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS, SB_URL, hdrs } from "./lib/constants.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator } from "./lib/supabase.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
@@ -95,6 +95,24 @@ function ConfBar({confidence}){
     <span style={{color,fontWeight:600}}>{pct}%</span>
   </div>
 }
+// Phase 14-3: 분산 투찰 추천 뱃지
+function SplitBadge({sim,compact=false}){
+  if(!sim)return null;
+  const lbl=sim.strategy_label;
+  if(lbl==="single_only"||lbl==="no_data")return null;
+  const styles={
+    split_strong:{emoji:"🔥",text:"분산강력",color:"#e24b4a",bg:"rgba(226,75,74,0.12)",border:"#e24b4a"},
+    split_consider:{emoji:"📊",text:"분산검토",color:"#5b9dd9",bg:"rgba(91,157,217,0.10)",border:"#5b9dd9"},
+    low_sample:{emoji:"⚠",text:"샘플부족",color:"#a8a8ff",bg:"rgba(168,168,255,0.06)",border:"#a8a8ff"}
+  };
+  const s=styles[lbl];if(!s)return null;
+  const gain=Number(sim.ev_gain_eok)||0;
+  const gainStr=gain>=0.01?(gain>=1?gain.toFixed(2)+"억":(gain*10000).toFixed(0)+"만"):"";
+  const tooltip=`12-F 단독: ${(Number(sim.p_calibrated_12f)*100).toFixed(1)}%\n분산 투찰: ${(Number(sim.p_calibrated_split)*100).toFixed(1)}%\nEV 증가: +${gainStr||"미미"}\n샘플: ${sim.cat_n}건`;
+  return<span title={tooltip} style={{display:"inline-flex",alignItems:"center",gap:3,padding:compact?"1px 5px":"2px 7px",fontSize:compact?9:10,fontWeight:600,color:s.color,background:s.bg,border:"1px solid "+s.border+"55",borderRadius:4,cursor:"help"}}>
+    {s.emoji} {compact?gainStr||s.text:s.text+(gainStr?" +"+gainStr:"")}
+  </span>
+}
 
 // ═══════════════════════════════════════════════════════════
 export default function App(){
@@ -138,6 +156,8 @@ export default function App(){
   const[agencyPred,setAgencyPred]=useState({}); // ag → {offset, strategy}
   const[hideP5,setHideP5]=useState(true); // P5 (회피) 자동 숨김 기본 ON
   const[onlyPrimary,setOnlyPrimary]=useState(false); // 주력 발주사만 보기
+  // Phase 14-3: 분산 투찰 시뮬레이터 (prediction_id → {strategy_label, ev_gain_eok, ...})
+  const[simulatorMap,setSimulatorMap]=useState({});
   // ★ AI 챗봇 (localStorage 세션 관리)
   const[chatSessions,setChatSessions]=useState(()=>{try{return JSON.parse(localStorage.getItem("bid_chat_sessions")||"[]")}catch(e){return[]}});
   const[chatSid,setChatSid]=useState(()=>localStorage.getItem("bid_chat_active")||"");
@@ -382,6 +402,11 @@ ${baseInfo}
       const awsMap={};(aws||[]).forEach(r=>{awsMap[r.ag]=r});setAgencyStats(awsMap);
       const aprMap={};(apr||[]).forEach(r=>{aprMap[r.ag]=r});setAgencyPred(aprMap);
     }catch(e){setAgencyStats({});setAgencyPred({})}
+    // Phase 14-3: 분산 투찰 시뮬레이터 데이터 로드
+    try{
+      const sim=await sbFetchSimulator();
+      const simMap={};(sim||[]).forEach(r=>{simMap[r.prediction_id]=r});setSimulatorMap(simMap);
+    }catch(e){setSimulatorMap({})}
     setDbLoading(false)
   })()},[refreshStats]);
 
@@ -1543,6 +1568,61 @@ ${baseInfo}
             {Object.keys(agencyStats).length===0&&<div style={{fontSize:10,color:"#e24b4a",marginTop:6,textAlign:"center"}}>⚠️ agency_win_stats 로드 실패 — 다시 시도 중</div>}
           </div>
         })()}
+        {/* Phase 14-3: 분산 투찰 시뮬레이터 요약 */}
+        {(()=>{
+          const pending=predictions.filter(p=>p.match_status==="pending");
+          const sims=pending.map(p=>simulatorMap[p.id]).filter(s=>s);
+          if(sims.length===0)return null;
+          const strong=sims.filter(s=>s.strategy_label==="split_strong");
+          const consider=sims.filter(s=>s.strategy_label==="split_consider");
+          const lowSample=sims.filter(s=>s.strategy_label==="low_sample");
+          const totalGain=strong.reduce((a,s)=>a+(Number(s.ev_gain_eok)||0),0)
+                        + consider.reduce((a,s)=>a+(Number(s.ev_gain_eok)||0),0);
+          // Top 5 strong
+          const top5=[...strong].sort((a,b)=>(Number(b.ev_gain_eok)||0)-(Number(a.ev_gain_eok)||0)).slice(0,5);
+          const top5Pids=new Set(top5.map(s=>s.prediction_id));
+          const top5Preds=pending.filter(p=>top5Pids.has(p.id));
+          return<div style={{marginBottom:10,padding:"10px 12px",background:"linear-gradient(90deg, rgba(226,75,74,0.06), rgba(91,157,217,0.06))",borderRadius:8,border:"1px solid "+C.bdr}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:8}}>
+              <div style={{fontSize:11,fontWeight:600,color:"#e24b4a",letterSpacing:0.5}}>
+                🔥 분산 투찰 시뮬레이터 · pending {sims.length}건 분석
+              </div>
+              <div style={{fontSize:10,color:C.txd}}>
+                EV 증가 잠재력: <span style={{color:"#5dca96",fontWeight:600,fontSize:12}}>+{totalGain.toFixed(2)}억</span>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:top5.length>0?10:0}}>
+              {[
+                {l:"🔥 강력 추천",v:strong.length,c:"#e24b4a",sub:"EV +300만↑"},
+                {l:"📊 검토 권장",v:consider.length,c:"#5b9dd9",sub:"50%+ 개선"},
+                {l:"⚠ 샘플 부족",v:lowSample.length,c:"#a8a8ff",sub:"참고용"},
+                {l:"💰 합산 EV",v:"+"+totalGain.toFixed(2),c:"#5dca96",sub:"억",unit:""}
+              ].map((c,i)=>
+                <div key={i} style={{background:C.bg3,border:"1px solid "+c.c+"33",borderRadius:6,padding:"6px 4px",textAlign:"center"}}>
+                  <div style={{fontSize:9,color:C.txd,marginBottom:2}}>{c.l}</div>
+                  <div style={{fontSize:16,fontWeight:700,color:c.c,fontFamily:"monospace"}}>{c.v}{c.unit||""}</div>
+                  <div style={{fontSize:8,color:C.txd}}>{c.sub}</div>
+                </div>
+              )}
+            </div>
+            {top5.length>0&&<div style={{fontSize:10,color:C.txm,marginBottom:4,fontWeight:600}}>Top {top5.length} 분산 투찰 강력 추천:</div>}
+            {top5.length>0&&<div style={{display:"flex",flexDirection:"column",gap:3}}>
+              {top5.map(s=>{
+                const p=top5Preds.find(x=>x.id===s.prediction_id);if(!p)return null;
+                const gain=Number(s.ev_gain_eok)||0;
+                const gainStr=gain>=1?gain.toFixed(2)+"억":(gain*10000).toFixed(0)+"만";
+                const baEok=p.ba?(Number(p.ba)/100000000).toFixed(2):"-";
+                return<div key={s.prediction_id} style={{display:"flex",alignItems:"center",gap:8,fontSize:10,padding:"4px 8px",background:C.bg2,borderRadius:4,border:"1px solid "+C.bdr+"55"}}>
+                  <span style={{color:C.txd,minWidth:54,fontFamily:"monospace"}}>{p.open_date||"-"}</span>
+                  <span style={{color:C.txt,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.ag} · {p.pn}</span>
+                  <span style={{color:C.gold,fontFamily:"monospace",minWidth:48,textAlign:"right"}}>{baEok}억</span>
+                  <span style={{color:"#5b9dd9",fontFamily:"monospace",minWidth:42,textAlign:"right"}}>{(Number(s.p_calibrated_12f)*100).toFixed(0)}%→{(Number(s.p_calibrated_split)*100).toFixed(0)}%</span>
+                  <span style={{color:"#5dca96",fontWeight:600,fontFamily:"monospace",minWidth:48,textAlign:"right"}}>+{gainStr}</span>
+                </div>
+              })}
+            </div>}
+          </div>
+        })()}
         {/* Phase 5: ROI 등급 필터 + 등급별 통계 */}
         <div style={{display:"flex",gap:6,marginBottom:8,alignItems:"center",flexWrap:"wrap",padding:"6px 8px",background:"linear-gradient(90deg, rgba(168,85,247,0.05), rgba(93,202,165,0.05))",borderRadius:6,border:"1px solid "+C.bdr}}>
           <span style={{fontSize:10,color:C.txm,fontWeight:600,marginRight:4}}>🎯 ROI 등급:</span>
@@ -1601,6 +1681,7 @@ ${baseInfo}
               // AI 권장은 이제 최종 추천에 영향 없음 (참고용 탭에서만 확인)
               // Phase 12-C: 발주사별 낙찰 예측
               const agAsmt=assessPrediction(p,agencyStats,agencyPred);
+              const sim=simulatorMap[p.id]; // Phase 14-3: 분산 투찰 시뮬레이터
               const tierStyle=agAsmt&&agAsmt.tier?TIER_STYLES[agAsmt.tier]:null;
               // P1~P2는 좌측 강조 보더, P5는 opacity 추가 감소
               const rowBorder=tierStyle&&agAsmt.tier<=2?{borderLeft:"3px solid "+tierStyle.border}:{};
@@ -1611,7 +1692,8 @@ ${baseInfo}
                   {agAsmt&&agAsmt.tier?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}} title={`${agAsmt.label}\n샘플 ${agAsmt.n}건\n이론 ${agAsmt.win_rate}%\n오차 ${agAsmt.mae}%`}>
                     <TierBadge tier={agAsmt.tier} compact={true}/>
                     <span style={{fontSize:9,fontFamily:"monospace",color:tierStyle?.color||C.txd,fontWeight:600}}>{agAsmt.win_rate}%</span>
-                  </div>:<span style={{fontSize:9,color:C.txd}}>-</span>}
+                    {sim&&<SplitBadge sim={sim} compact={true}/>}
+                  </div>:(sim?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><span style={{fontSize:9,color:C.txd}}>-</span><SplitBadge sim={sim} compact={true}/></div>:<span style={{fontSize:9,color:C.txd}}>-</span>)}
                 </td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
