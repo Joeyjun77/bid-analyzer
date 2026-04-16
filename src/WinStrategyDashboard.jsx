@@ -163,15 +163,32 @@ export function WinStrategyDashboard() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const url = `${SB_URL}/rest/v1/v_win_strategy_api?select=*&order=priority_rank.asc`;
-      const res = await fetch(url, { headers: hdrs });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // 1차: view 직접 호출 (가장 단순, 빠름)
+      let url = `${SB_URL}/rest/v1/win_strategy_cache?select=*&order=priority_rank.asc`;
+      let res = await fetch(url, { headers: hdrs });
+      
+      // view 실패 시 RPC fallback (캐시 자동 갱신 포함)
+      if (!res.ok) {
+        console.warn(`View 호출 실패(HTTP ${res.status}), RPC로 재시도`);
+        url = `${SB_URL}/rest/v1/rpc/get_win_strategy`;
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { ...hdrs, 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+      }
+      
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100)}`);
+      }
       const json = await res.json();
-      setData(json);
+      setData(Array.isArray(json) ? json : []);
       setRefreshedAt(new Date());
       setError(null);
     } catch (e) {
       setError(e.message);
+      console.error('WinStrategyDashboard loadData error:', e);
     } finally {
       setLoading(false);
     }
