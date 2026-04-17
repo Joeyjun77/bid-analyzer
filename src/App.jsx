@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS, SB_URL, hdrs, getHdrs } from "./lib/constants.js";
 import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi } from "./lib/utils.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid } from "./lib/utils.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices } from "./lib/supabase.js";
 import AuthGate from "./components/AuthGate.jsx";
 import { useAuth, getSession } from "./auth.js";
@@ -220,14 +220,18 @@ export default function App(){
     // 1순위: opt_adj (편향 보정 + OPT_OFFSET 적용된 최종값)
     if(p.opt_adj!=null){
       const adjNum=Number(p.opt_adj);
-      return{adj:adjNum,bid:p.opt_bid?Number(p.opt_bid):calcBid(adjNum),source:"추천"};
+      const bid=p.opt_bid?Number(p.opt_bid):calcBid(adjNum);
+      const bid1st=calcWin1stBid(bid,fr,p.at);
+      return{adj:adjNum,bid,bid1st,source:"추천"};
     }
     // 2순위 fallback: pred_adj_rate (편향 보정 전 순수 예측)
     if(p.pred_adj_rate!=null){
       const adjNum=Number(p.pred_adj_rate);
-      return{adj:adjNum,bid:p.pred_bid_amount?Number(p.pred_bid_amount):calcBid(adjNum),source:"순수예측"};
+      const bid=p.pred_bid_amount?Number(p.pred_bid_amount):calcBid(adjNum);
+      const bid1st=calcWin1stBid(bid,fr,p.at);
+      return{adj:adjNum,bid,bid1st,source:"순수예측"};
     }
-    return{adj:null,bid:null,source:null};
+    return{adj:null,bid:null,bid1st:null,source:null};
   },[]);
 
   // AI 프롬프트 생성 (공통)
@@ -1039,6 +1043,7 @@ ${baseInfo}
         const finalRec=getFinalRecommendation(d);
         const finalAdj=finalRec.adj;
         const finalBid=finalRec.bid;
+        const finalBid1st=finalRec.bid1st;
         const finalSource=finalRec.source==="추천"?"통계 예측 + 편향 보정":
                           finalRec.source==="순수예측"?"순수 통계 예측":"—";
         const fr2=Number(d.pred_floor_rate||0);
@@ -1088,6 +1093,11 @@ ${baseInfo}
               <div style={{padding:"12px 14px",background:"rgba(0,0,0,0.25)",borderRadius:8}}>
                 <div style={{fontSize:10,color:C.txm,marginBottom:4,fontWeight:600}}>💰 추천 투찰금액</div>
                 <div style={{fontSize:24,fontWeight:700,color:C.gold,fontFamily:"monospace",lineHeight:1.1}}>{finalBid?tc(finalBid)+"원":"—"}</div>
+                {finalBid1st&&finalBid1st!==finalBid&&<div style={{marginTop:6,padding:"4px 8px",background:"rgba(226,75,74,0.1)",borderRadius:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontSize:9,color:"#e24b4a",fontWeight:600}}>🎯 1위 목표</span>
+                  <span style={{fontSize:13,fontWeight:700,color:"#e24b4a",fontFamily:"monospace"}}>{tc(finalBid1st)}원</span>
+                  <span style={{fontSize:9,color:C.txd}}>-{tc(finalBid-finalBid1st)}원</span>
+                </div>}
               </div>
             </div>
             <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:10,color:C.txd}}>
@@ -1697,7 +1707,7 @@ ${baseInfo}
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 사정률(100%)</th>
-              <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 투찰금액</th>
+              <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 투찰금액<br/><span style={{fontSize:9,color:"#e24b4a",fontWeight:400}}>↓1위목표</span></th>
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
               <th style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제 1위 사정률(100%)</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>오차</th>
@@ -1708,7 +1718,7 @@ ${baseInfo}
             <tbody>{compList.slice(0,predListShow).map(p=>{
               // Phase 5.6: 통합 최종 추천 (모달과 동일 로직: AI > Enhanced > opt_adj > pred)
               const finalRec=getFinalRecommendation(p);
-              const finalAdj=finalRec.adj;const finalBid=finalRec.bid;
+              const finalAdj=finalRec.adj;const finalBid=finalRec.bid;const finalBid1st=finalRec.bid1st;
               const optErr=(finalAdj!=null&&p.actual_adj_rate!=null)?Number(finalAdj)-Number(p.actual_adj_rate):null;
               const isAnomaly=optErr!=null&&Math.abs(optErr)>5;
               const errColor=isAnomaly?"#e24b4a":optErr!=null?(Math.abs(optErr)<0.3?"#5dca96":Math.abs(optErr)<1?"#d4a834":"#e24b4a"):C.txd;
@@ -1740,7 +1750,11 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}} title={finalRec.source?"근거: "+finalRec.source:""}>
                   {finalAdj!=null?(100+Number(finalAdj)).toFixed(4)+"%":""}
                 </td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>{finalBid?tc(Number(finalBid)):""}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>
+                  {finalBid?<div style={{display:"flex",flexDirection:"column",gap:1}}>
+                    <span>{tc(Number(finalBid))}</span>
+                    {finalBid1st&&finalBid1st!==finalBid&&<span style={{color:"#e24b4a",fontSize:10}} title={"1위 목표 투찰금 (기관유형별 보정)\n현재 대비 "+(finalBid-finalBid1st).toLocaleString()+"원 낮음"}>▼{tc(finalBid1st)}</span>}
+                  </div>:""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>

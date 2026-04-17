@@ -1,6 +1,24 @@
 import * as XLSX from "xlsx";
 import { CHO } from "./constants.js";
 
+// ─── Phase 17-A: 1위 목표 투찰금 보정 ──────────────────────
+// 근거: bid_details 315건 자사 입찰 분석 — 자사 투찰률이 1위보다 기관유형별 중앙값만큼 높음
+// bid1st = opt_bid × fr / (fr + gap)  ← 1위 수준으로 낮춤
+export const WIN_OPT_GAP={
+  "지자체":    0.493,
+  "군시설":    0.385,
+  "교육청":    0.533,
+  "한전":      0.367,
+  "조달청":    0.676,
+  "LH":        0.088,
+  "수자원공사": 0.003,
+};
+export function calcWin1stBid(bid, fr, at){
+  if(!bid||!fr)return null;
+  const gap=WIN_OPT_GAP[at]??0.3;
+  return Math.round(Number(bid)*Number(fr)/(Number(fr)+gap));
+}
+
 // ─── 낙찰하한율 (2026 기관별 개정 반영) ──────────────────────
 // ─── 낙찰하한율 (2026 기관별 개정 반영) ──────────────────────
 // 구기준: 산식기준 88/100 기반
