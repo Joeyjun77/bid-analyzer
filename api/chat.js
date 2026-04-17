@@ -1,9 +1,23 @@
 const SB_URL = "https://sadunejfkstxbxogzutl.supabase.co";
 
+async function verifySupabaseToken(req, sbKey) {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  if (!token) return false;
+  try {
+    const r = await fetch(`${SB_URL}/auth/v1/user`, {
+      headers: { apikey: sbKey, Authorization: `Bearer ${token}` }
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
@@ -11,6 +25,9 @@ export default async function handler(req, res) {
   const sbKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
   if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY 미설정" });
   if (!sbKey) return res.status(500).json({ error: "SUPABASE_SERVICE_KEY 미설정" });
+
+  const authed = await verifySupabaseToken(req, sbKey);
+  if (!authed) return res.status(401).json({ error: "인증이 필요합니다" });
 
   const { messages, systemBase } = req.body;
   if (!messages || !messages.length) return res.status(400).json({ error: "messages 필요" });
@@ -36,7 +53,7 @@ export default async function handler(req, res) {
         "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
-        model: "claude-opus-4-6",
+        model: "claude-opus-4-7",
         max_tokens: 2000,
         system,
         messages: messages.slice(-20)

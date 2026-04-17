@@ -1,11 +1,11 @@
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
-import { C, PAGE, inpS, SB_URL, hdrs } from "./lib/constants.js";
+import { C, PAGE, inpS, SB_URL, hdrs, getHdrs } from "./lib/constants.js";
 import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi } from "./lib/utils.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator } from "./lib/supabase.js";
 import AuthGate from "./components/AuthGate.jsx";
-import { useAuth } from "./auth.js";
+import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
@@ -303,7 +303,8 @@ ${baseInfo}
 2. 추천 투찰 전략 (보수/균형/공격 중)과 그 이유 — 예측 투찰금액과 추천 투찰금액 차이도 언급
 3. 투찰 시 유의사항 한 가지`};
   const callAi=async(prompt)=>{
-    const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+    const _sess=getSession();
+    const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":_sess?.access_token?`Bearer ${_sess.access_token}`:""},
       body:JSON.stringify({systemBase:buildChatSystem(),messages:[{role:"user",content:prompt}]})});
     if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||err.error||`API ${res.status}`)}
     const data=await res.json();return data.content?.map(c=>c.text||"").join("")||"응답 없음"};
@@ -363,7 +364,8 @@ ${baseInfo}
     // 첫 메시지면 세션 제목 업데이트
     if(chatMsgs.length===0){const updated=chatSessions.map(s=>s.id===sid?{...s,title:text.slice(0,20)}:s);saveSessions(updated.length?updated:[{id:sid,title:text.slice(0,20),created:new Date().toISOString().slice(0,16)}])}
     try{
-      const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+      const _sess2=getSession();
+      const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":_sess2?.access_token?`Bearer ${_sess2.access_token}`:""},
         body:JSON.stringify({systemBase:buildChatSystem(),messages:newMsgs.slice(-20)})});
       if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||err.error||`API ${res.status}`)}
       const data=await res.json();
@@ -1274,7 +1276,7 @@ ${baseInfo}
                       actual:isMatched?Number(d.actual_adj_rate):null,matchedRecord:matchedRec},isMatched?"post":"initial");
                     if(!prompt)throw new Error("데이터 없음");
                     const text=await callAi(prompt);setDetailAi(text);
-                    if(d.id){try{await fetch(`${SB_URL}/rest/v1/bid_predictions?id=eq.${d.id}`,{method:"PATCH",headers:{...hdrs,"Prefer":"return=minimal"},body:JSON.stringify({ai_advice:text})});
+                    if(d.id){try{await fetch(`${SB_URL}/rest/v1/bid_predictions?id=eq.${d.id}`,{method:"PATCH",headers:{...getHdrs(),"Prefer":"return=minimal"},body:JSON.stringify({ai_advice:text})});
                       setPredictions(prev=>prev.map(p=>p.id===d.id?{...p,ai_advice:text}:p))}catch(e){}}}
                   catch(e){setDetailAi("⚠ "+e.message)}finally{setDetailAiLoading(false)}
                 }} style={{padding:"4px 12px",fontSize:11,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.3)",borderRadius:5,color:"#a8b4ff",cursor:detailAiLoading?"default":"pointer"}}>

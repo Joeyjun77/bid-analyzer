@@ -15,7 +15,7 @@
 // 필터링 후:       90건 → 낙찰 10건 (11.1%)  <- 권장
 // 집중 전략:       23건 → 낙찰 4건 (17.4%)
 
-import { SB_URL, SB_KEY, hdrs } from "./constants.js";
+import { SB_URL, SB_KEY, getHdrs } from "./constants.js";
 
 // ─── 경쟁 강도 계산 (DB 함수 호출) ──────────────────
 export async function calcCompetitiveIntensity(pred) {
@@ -40,7 +40,7 @@ export async function calcCompetitiveIntensity(pred) {
   const url = `${SB_URL}/rest/v1/rpc/calc_competitive_intensity_v4`;
   const res = await fetch(url, {
     method: "POST",
-    headers: { ...hdrs, "Content-Type": "application/json" },
+    headers: { ...getHdrs() },
     body: JSON.stringify({
       p_at: at,
       p_ba: ba,

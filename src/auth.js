@@ -25,20 +25,36 @@ export const useAuth = () => useContext(AuthContext);
 // 세션 관리
 // ============================================================================
 
+let _refreshing = false;
+function _scheduleRefresh() {
+  if (_refreshing) return;
+  _refreshing = true;
+  refreshSession().finally(() => { _refreshing = false; });
+}
+
 export function getSession() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw);
-    // 만료 체크
-    if (session.expires_at && session.expires_at * 1000 < Date.now()) {
-      // 자동 갱신 시도 (refresh_token 있으면)
-      if (session.refresh_token) {
-        // 비동기 갱신은 나중에. 일단 null 반환.
+    if (session.expires_at) {
+      const expiresMs = session.expires_at * 1000;
+      const now = Date.now();
+      if (expiresMs < now) {
+        if (session.refresh_token) {
+          // 만료 후 60초 이내: stale 세션 반환하며 백그라운드 갱신
+          if (now - expiresMs < 60_000) {
+            _scheduleRefresh();
+            return session;
+          }
+        }
+        localStorage.removeItem(STORAGE_KEY);
         return null;
       }
-      localStorage.removeItem(STORAGE_KEY);
-      return null;
+      // 만료 5분 전: 미리 백그라운드 갱신
+      if (expiresMs - now < 5 * 60_000 && session.refresh_token) {
+        _scheduleRefresh();
+      }
     }
     return session;
   } catch {

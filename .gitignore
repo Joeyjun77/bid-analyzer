@@ -24,3 +24,8 @@ npm-debug.log*
 
 # Vercel
 .vercel
+
+# 테스트/개발 산출물
+reports/
+scripts/
+*.backup
