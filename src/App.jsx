@@ -1849,7 +1849,8 @@ ${baseInfo}
         {/* 안내 메시지 */}
         <div style={{marginBottom:12,padding:"10px 14px",background:"rgba(91,157,217,0.06)",border:"1px solid rgba(91,157,217,0.2)",borderRadius:8,fontSize:11,color:"#5b9dd9"}}>
           💡 나라장터에서 자동 수집된 공고입니다. 입찰 참여할 공고의 <strong>[예측 등록]</strong> 버튼을 클릭하면 예측탭에 즉시 반영됩니다.
-          군부대(UMM)·민간 발주처 공고는 기존처럼 엑셀 업로드를 이용하세요.
+          군부대(UMM)·민간 발주처 공고는 기존처럼 엑셀 업로드를 이용하세요.<br/>
+          <span style={{fontSize:10,color:C.txd}}>※ 과거 샘플 3건 미만 발주사는 "⚠ 데이터 부족"으로 표시 (배지 Hover 시 상세 안내)</span>
         </div>
         {/* 필터 */}
         <div style={{display:"flex",gap:6,marginBottom:10,alignItems:"center"}}>
@@ -1895,7 +1896,7 @@ ${baseInfo}
                   <td style={{padding:"8px 10px",textAlign:"center",whiteSpace:"nowrap"}}>
                     {isUmm?<span style={{fontSize:9,color:C.txd}}>엑셀 업로드</span>:
                      hasPred?<button onClick={()=>{setTab("predict");}} style={{fontSize:9,padding:"3px 8px",background:"rgba(93,202,150,.1)",border:"1px solid rgba(93,202,150,.3)",borderRadius:4,color:"#5dca96",cursor:"pointer"}}>✅ 예측완료 →</button>:
-                     noPred?<span style={{fontSize:9,padding:"2px 6px",background:"rgba(168,168,255,.08)",border:"1px solid rgba(168,168,255,.2)",borderRadius:4,color:"#a8a8ff"}}>⚠ 데이터부족</span>:
+                     noPred?<span title={"⚠ 데이터 부족\n이 발주사의 과거 낙찰 샘플이 3건 미만입니다.\n신규/민간/소형 기관이거나 학습 데이터가 누적되지 않았습니다.\nSUCVIEW 파일(인포21c)을 업로드해 수동 예측을 보강하세요."} style={{fontSize:9,padding:"2px 6px",background:"rgba(168,168,255,.08)",border:"1px solid rgba(168,168,255,.2)",borderRadius:4,color:"#a8a8ff",cursor:"help"}}>⚠ 데이터부족</span>:
                      isLoading?<span style={{fontSize:9,color:C.txd}}>처리중...</span>:
                      <button onClick={()=>handlePredictNotice(n)}
                        style={{fontSize:10,padding:"4px 10px",background:"rgba(91,157,217,0.1)",border:"1px solid rgba(91,157,217,0.4)",borderRadius:5,color:"#5b9dd9",cursor:"pointer",fontWeight:600}}>
