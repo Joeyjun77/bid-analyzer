@@ -12,17 +12,34 @@ export async function sbSavePredictions(preds){const BATCH=50;for(let i=0;i<pred
 export async function sbFetchPredictions(){try{const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_predictions?select=*&order=created_at.desc&offset="+offset+"&limit="+PAGE,{headers:getHdrsSel()});if(!res.ok)return[];const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}catch(e){return[]}}
 
 // 자동 매칭: bid_predictions.pn_no → bid_records.pn_no (날짜 검증 필수)
+// Phase 21: pn_no prefix fallback 매칭 추가 (지자체 접미사 -000/-001/-002 대응)
 export async function sbMatchPredictions(predictions,records){
-  // pn_no 기준으로 모든 후보를 배열로 저장 (동일 pn_no 복수 존재 가능)
-  const recMap={};for(const r of records){if(r.pn_no&&r.pn_no.length>5){if(!recMap[r.pn_no])recMap[r.pn_no]=[];recMap[r.pn_no].push(r)}}
+  // pn_no 정확 매칭 맵 + prefix 매칭 맵 (접미사 제거)
+  const recMap={};const prefixMap={};
+  const stripSfx=(s)=>s.replace(/-\d{1,3}$/,''); // 마지막 -숫자 제거
+  for(const r of records){
+    if(r.pn_no&&r.pn_no.length>5){
+      if(!recMap[r.pn_no])recMap[r.pn_no]=[];recMap[r.pn_no].push(r);
+      const pfx=stripSfx(r.pn_no);
+      if(pfx.length>5){if(!prefixMap[pfx])prefixMap[pfx]=[];prefixMap[pfx].push(r)}
+    }
+  }
   // ★ 이미 매칭된 record_id 수집 (중복 매칭 방지)
   const usedRecIds=new Set(predictions.filter(p=>p.match_status==="matched"&&p.matched_record_id).map(p=>p.matched_record_id));
   const updates=[];
   for(const p of predictions){
     if(p.match_status==="matched")continue;
     if(!p.pn_no)continue;
-    const candidates=recMap[p.pn_no];
+    // 1순위: 정확 pn_no 매칭
+    let candidates=recMap[p.pn_no];
+    // 2순위: prefix 매칭 (bid_predictions에만 접미사 있는 경우)
+    if(!candidates||!candidates.length){
+      const pPfx=stripSfx(p.pn_no);
+      if(pPfx.length>5&&pPfx!==p.pn_no)candidates=prefixMap[pPfx]||recMap[pPfx];
+    }
     if(!candidates||!candidates.length)continue;
+    // prefix fallback 케이스에서는 ag 검증 필수 (오매칭 방지)
+    const isPfxFallback=!recMap[p.pn_no]||!recMap[p.pn_no].length;
     let match=null;
     if(p.open_date){
       // 예측 개찰일과 가장 가까운 낙찰 건 선택 (이미 사용된 record 제외)
@@ -31,6 +48,11 @@ export async function sbMatchPredictions(predictions,records){
       for(const c of candidates){
         if(!c.od)continue;
         if(usedRecIds.has(c.id))continue; // ★ 중복 방지
+        // prefix fallback일 때 ag 일치 검증 (발주기관 첫 4자 이상 공통)
+        if(isPfxFallback&&p.ag&&c.ag){
+          const p4=p.ag.replace(/\s/g,'').slice(0,4),c4=c.ag.replace(/\s/g,'').slice(0,4);
+          if(p4&&c4&&!p.ag.includes(c4)&&!c.ag.includes(p4))continue;
+        }
         const dist=Math.abs(new Date(pOd)-new Date(c.od));
         if(dist<bestDist){bestDist=dist;match=c}
       }
