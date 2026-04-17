@@ -8,8 +8,8 @@
 
 import { createContext, useContext } from 'react';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://sadunejfkstxbxogzutl.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'YOUR_ANON_KEY';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 // 세션 저장 키
 const STORAGE_KEY = 'bid-analyzer.session';

@@ -1,7 +1,7 @@
 // ─── Supabase ──────────────────────────────────────────────
 import { getSession } from "../auth.js";
-export const SB_URL="https://sadunejfkstxbxogzutl.supabase.co";
-export const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhZHVuZWpma3N0eGJ4b2d6dXRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2ODYxOTksImV4cCI6MjA5MDI2MjE5OX0.C5kNr-4urLImKfqOi_yl2-SUbrpcSgz2N3IiWGbObgc";
+export const SB_URL=import.meta.env.VITE_SUPABASE_URL||"https://sadunejfkstxbxogzutl.supabase.co";
+export const SB_KEY=import.meta.env.VITE_SUPABASE_ANON_KEY||"";
 // 정적 hdrs/hdrsSel는 레거시 호환용으로 유지 (anon key만 사용)
 export const hdrs={"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY};
 export const hdrsSel={"apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY};
