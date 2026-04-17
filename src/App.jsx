@@ -150,6 +150,7 @@ export default function App(){
   const[predictions,setPredictions]=useState([]);
   const[lastG2bAt,setLastG2bAt]=useState(null); // 나라장터 자동 예측 마지막 갱신 시각
   const[lastSucviewAt,setLastSucviewAt]=useState(null); // SUCVIEW 마지막 업로드 시각
+  const[focusedPredId,setFocusedPredId]=useState(null); // 공고→예측 이동 시 포커스할 예측 id
   const[notices,setNotices]=useState([]); // 나라장터 공고 목록
   const[noticeLoadingIds,setNoticeLoadingIds]=useState(new Set()); // 예측 등록 중인 notice id
   const[noticeFilter,setNoticeFilter]=useState("upcoming"); // upcoming/all/registered
@@ -454,6 +455,24 @@ ${baseInfo}
   // 예측 탭 진입 시 자동 새로고침
   useEffect(()=>{if(tab==="predict"&&!dbLoading){refreshPredictions()}},[tab,dbLoading]);
 
+  // focusedPredId 변경 시: 리스트 확장 + 해당 행으로 스크롤 (공고→예측 이동 시 자동 포커스)
+  useEffect(()=>{
+    if(!focusedPredId||tab!=="predict")return;
+    // 대상 행이 현재 표시 범위 밖이면 predListShow 확장
+    const idx=compList.findIndex(p=>p.id===focusedPredId);
+    if(idx>=0&&idx>=predListShow){
+      setPredListShow(Math.ceil((idx+1)/50)*50);
+    }
+    // DOM 업데이트 후 scrollIntoView
+    const t=setTimeout(()=>{
+      const el=document.getElementById("pred-row-"+focusedPredId);
+      if(el){el.scrollIntoView({behavior:"smooth",block:"center"});}
+    },200);
+    // 3초 후 하이라이트 자동 해제
+    const t2=setTimeout(()=>setFocusedPredId(null),3000);
+    return()=>{clearTimeout(t);clearTimeout(t2);};
+  },[focusedPredId,tab,compList,predListShow]);
+
   // 파일 업로드 (3종 자동 판별: SUCVIEW / 입찰서류함 / 낙찰정보리스트)
   const loadFiles=useCallback(async(fileList)=>{
     const files=Array.from(fileList).filter(Boolean);if(!files.length)return;setBusy(true);setMsg({type:"",text:""});setUploadLog([]);const logs=[];
@@ -714,8 +733,8 @@ ${baseInfo}
         <button onClick={doDelete} disabled={busy||(dlgType==="all"&&delConfirm!=="삭제")} style={{padding:"7px 16px",background:dlgType==="all"&&delConfirm!=="삭제"?"#555":"#e24b4a",border:"none",borderRadius:5,color:"#fff",fontSize:12,fontWeight:600,cursor:dlgType==="all"&&delConfirm!=="삭제"?"not-allowed":"pointer"}}>{busy?"처리중...":"삭제 실행"}</button>
       </div></div></div>}
 
-    {/* 헤더 + 3탭 */}
-    <div style={{padding:"10px 20px",borderBottom:"1px solid "+C.bdr,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+    {/* 헤더 + 3탭 (sticky 고정) */}
+    <div style={{padding:"10px 20px",borderBottom:"1px solid "+C.bdr,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,position:"sticky",top:0,zIndex:50,background:C.bg}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <span style={{fontSize:16,fontWeight:700,color:C.gold}}>입찰 분석 시스템</span>
         <span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span>
@@ -1785,7 +1804,8 @@ ${baseInfo}
               // P1~P2는 좌측 강조 보더, P5는 opacity 추가 감소
               const rowBorder=tierStyle&&agAsmt.tier<=2?{borderLeft:"3px solid "+tierStyle.border}:{};
               const p5Fade=agAsmt&&agAsmt.tier===5?0.55:1;
-              return<tr key={p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:(isAnomaly||isYuchal||isSuui?0.5:1)*p5Fade,...rowBorder}}>
+              const isFocused=focusedPredId===p.id;
+              return<tr key={p.id} id={"pred-row-"+p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:(isAnomaly||isYuchal||isSuui?0.5:1)*p5Fade,background:isFocused?"rgba(93,202,150,0.14)":"",boxShadow:isFocused?"inset 3px 0 0 #5dca96":"",transition:"background 0.3s",...rowBorder}}>
                 <td style={{padding:"6px",textAlign:"center"}}><span title={sc?`${sc.strategy_label} · 낙찰확률 ${(winProb*100).toFixed(1)}%`:""} style={{display:"inline-block",fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:gradeColor+"22",color:gradeColor,border:"1px solid "+gradeColor+"55",minWidth:18}}>{grade}</span></td>
                 <td style={{padding:"6px 2px",textAlign:"center"}}>
                   {agAsmt&&agAsmt.tier?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}} title={`${agAsmt.label}\n샘플 ${agAsmt.n}건\n이론 ${agAsmt.win_rate}%\n오차 ${agAsmt.mae}%`}>
@@ -1909,12 +1929,9 @@ ${baseInfo}
                   <td style={{padding:"8px 10px",textAlign:"center",whiteSpace:"nowrap"}}>
                     {isUmm?<span style={{fontSize:9,color:C.txd}}>엑셀 업로드</span>:
                      hasPred?<button onClick={()=>{
-                       // 해당 공고의 예측 상세 모달 자동 열기
+                       // 공고→예측 탭 이동 + 해당 행 포커스 (모달은 열지 않음, 리스트에서 바로 확인)
                        if(p){
-                         setDetailModal(p);
-                         setDetailTab("detail");
-                         setDetailAi(p.ai_advice||"");
-                         setDetailAiLoading(false);
+                         setFocusedPredId(p.id);
                        }
                        setTab("predict");
                      }} style={{fontSize:9,padding:"3px 8px",background:"rgba(93,202,150,.1)",border:"1px solid rgba(93,202,150,.3)",borderRadius:4,color:"#5dca96",cursor:"pointer"}}>✅ 예측완료 →</button>:
