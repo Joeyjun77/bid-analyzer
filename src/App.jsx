@@ -1075,44 +1075,72 @@ ${baseInfo}
             <div style={{fontSize:20,color:C.txd,cursor:"pointer",lineHeight:1,padding:"0 4px",flexShrink:0}} onClick={()=>{setDetailModal(null);setDetailAi("");setDetailTab("detail")}}>×</div>
           </div>
 
-          {/* ★★★ 메인: 최종 추천 (1개, 크게) ★★★ */}
-          <div style={{marginBottom:14,padding:"16px 18px",background:"linear-gradient(135deg, rgba(212,168,52,0.10), rgba(93,202,165,0.06))",border:"2px solid rgba(212,168,52,0.45)",borderRadius:10}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:12,color:C.gold,fontWeight:700,letterSpacing:0.5}}>⭐ 최종 추천 투찰</span>
-                {grade&&<span style={{display:"inline-block",fontSize:12,fontWeight:700,padding:"2px 9px",borderRadius:4,background:gc+"33",color:gc,border:"1px solid "+gc+"77"}}>{grade}</span>}
-                {grade&&<span style={{fontSize:10,color:C.txm}}>{gradeDesc}</span>}
+          {/* ★★★ 투찰 결정 가이드 ★★★ */}
+          {(()=>{
+            // pred_source 파싱: "d:0.50|s:0.25|c:0.20|bc*0.0"
+            const src=d.pred_source||"";
+            const dm=src.match(/d:([\d.]+)/),sm=src.match(/s:([\d.]+)/),cm=src.match(/c:([\d.]+)/),bcm=src.match(/bc\*([\d.]+)/);
+            const dw=dm?Math.round(Number(dm[1])*100):0,sw=sm?Math.round(Number(sm[1])*100):0,cw=cm?Math.round(Number(cm[1])*100):0,bc=bcm?Number(bcm[1]):0;
+            const srcLabel=(dw||sw||cw)?[dw>0&&`발주사통계 ${dw}%`,sw>0&&`유사사례 ${sw}%`,cw>0&&`업체패턴 ${cw}%`].filter(Boolean).join(" + "):"";
+            const dataConf=dw>=50?"high":dw>=30?"med":sw>=40?"med":"low";
+            const confColor=dataConf==="high"?"#5dca96":dataConf==="med"?"#d4a834":"#a8b4ff";
+            const confLabel=dataConf==="high"?"신뢰 높음":dataConf==="med"?"신뢰 보통":"데이터 부족";
+            const winBid=finalBid1st||finalBid;
+            const agEnv=agAsmt;
+            const isHard=agEnv&&agEnv.confidence>0.5&&(agEnv.n||0)>5;
+            return<div style={{marginBottom:14,borderRadius:10,overflow:"hidden",border:"2px solid rgba(212,168,52,0.5)"}}>
+              {/* 헤더 */}
+              <div style={{background:"rgba(212,168,52,0.12)",padding:"9px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:12,fontWeight:700,color:C.gold}}>📋 투찰 결정 가이드</span>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  {grade&&<span style={{fontSize:12,fontWeight:700,padding:"2px 9px",borderRadius:4,background:gc+"33",color:gc,border:"1px solid "+gc+"77"}}>{grade} {gradeDesc}</span>}
+                  {winProb!=null&&<span style={{fontSize:11,color:gc,fontWeight:600}}>낙찰확률 {(winProb*100).toFixed(1)}%</span>}
+                </div>
               </div>
-              {winProb!=null&&<span style={{fontSize:11,color:gc,fontWeight:600}}>낙찰확률 {(winProb*100).toFixed(1)}%</span>}
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-              <div style={{padding:"12px 14px",background:"rgba(0,0,0,0.25)",borderRadius:8}}>
-                <div style={{fontSize:10,color:C.txm,marginBottom:4,fontWeight:600}}>🎯 추천 사정률(100%)</div>
-                <div style={{fontSize:24,fontWeight:700,color:"#5dca96",fontFamily:"monospace",lineHeight:1.1}}>{fmtAdj(finalAdj)}</div>
+              {/* 핵심 2값: 사정률 + 투찰금 */}
+              <div style={{padding:"14px 16px",background:"rgba(0,0,0,0.2)",display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div>
+                  <div style={{fontSize:10,color:C.txm,marginBottom:3}}>📌 입찰 시 사용할 사정률(100%)</div>
+                  <div style={{fontSize:28,fontWeight:700,color:"#5dca96",fontFamily:"monospace",lineHeight:1}}>{fmtAdj(finalAdj)}</div>
+                  <div style={{fontSize:10,color:C.txd,marginTop:3}}>이 예정가격을 기초금액으로 계산한 값</div>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:C.txm,marginBottom:3}}>💰 입찰 시 사용할 투찰금액</div>
+                  <div style={{fontSize:28,fontWeight:700,color:C.gold,fontFamily:"monospace",lineHeight:1}}>{winBid?tc(winBid)+"원":"—"}</div>
+                  <div style={{fontSize:10,color:C.txd,marginTop:3}}>낙찰하한율 {d.pred_floor_rate||"—"}% 적용{d.av&&Number(d.av)>0?" (A값 "+tc(Number(d.av))+"원)":""}</div>
+                </div>
               </div>
-              <div style={{padding:"12px 14px",background:"rgba(0,0,0,0.25)",borderRadius:8}}>
-                <div style={{fontSize:10,color:C.txm,marginBottom:4,fontWeight:600}}>💰 추천 투찰금액</div>
-                <div style={{fontSize:24,fontWeight:700,color:C.gold,fontFamily:"monospace",lineHeight:1.1}}>{finalBid?tc(finalBid)+"원":"—"}</div>
-                {finalBid1st&&finalBid1st!==finalBid&&<div style={{marginTop:6,padding:"4px 8px",background:"rgba(226,75,74,0.1)",borderRadius:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontSize:9,color:"#e24b4a",fontWeight:600}}>🎯 1위 목표</span>
-                  <span style={{fontSize:13,fontWeight:700,color:"#e24b4a",fontFamily:"monospace"}}>{tc(finalBid1st)}원</span>
-                  <span style={{fontSize:9,color:C.txd}}>-{tc(finalBid-finalBid1st)}원</span>
-                </div>}
+              {/* 신뢰도 + 근거 */}
+              <div style={{padding:"10px 16px",background:"rgba(0,0,0,0.1)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                <div style={{fontSize:11,color:C.txm}}>
+                  {srcLabel&&<span>예측 근거: <span style={{color:C.txt}}>{srcLabel}</span></span>}
+                  {bc>0&&<span style={{color:confColor,marginLeft:6}}>| 편향보정 적용</span>}
+                </div>
+                <span style={{fontSize:10,padding:"2px 8px",borderRadius:10,background:confColor+"22",color:confColor,border:"1px solid "+confColor+"44",fontWeight:600,whiteSpace:"nowrap"}}>{confLabel}</span>
               </div>
+              {/* 경고 (격전지, 단골) */}
+              {agEnv&&<div style={{padding:"8px 16px",background:agEnv.tier<=2?"rgba(226,75,74,0.08)":agEnv.tier===5?"rgba(100,100,128,0.08)":"rgba(91,157,217,0.08)",borderTop:"1px solid "+C.bdr+"55",display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:11,color:agEnv.tier<=2?"#e24b4a":agEnv.tier===5?"#666680":"#5b9dd9"}}>
+                  {agEnv.tier<=2?"🏆 주력 발주사 — 적극 투찰 권장":agEnv.tier===5?"⛔ 회피 발주사 — 참여 비추천":"📊 일반 발주사"}
+                </span>
+                <span style={{fontSize:10,color:C.txd}}>이론 낙찰률 {agEnv.win_rate||"—"}% | 데이터 {agEnv.n||"—"}건</span>
+              </div>}
+              {/* 매칭 결과 (개찰 후) */}
+              {matchResult&&<div style={{padding:"10px 16px",borderTop:"1px solid "+C.bdr+"55",
+                background:matchResult==="win"?"rgba(93,202,165,0.08)":matchResult==="invalid"?"rgba(226,75,74,0.08)":"rgba(212,168,52,0.08)"}}>
+                <div style={{fontSize:11,fontWeight:600,color:matchResult==="win"?"#5dca96":matchResult==="invalid"?"#e24b4a":"#d4a834",marginBottom:4}}>
+                  {matchResult==="win"&&"✓ 이 금액으로 낙찰 가능했습니다"}
+                  {matchResult==="higher"&&"✗ 실제 1위보다 높아 낙찰 불가 — 다음 투찰 시 낮추기"}
+                  {matchResult==="invalid"&&"⚠ 하한율 미달 — 투찰 무효 위험"}
+                </div>
+                <div style={{fontSize:11,color:C.txm,display:"flex",gap:16}}>
+                  {ab&&<span>실제 1위: <span style={{color:C.txt,fontFamily:"monospace"}}>{tc(ab)}원</span></span>}
+                  {finalAdj!=null&&d.actual_adj_rate!=null&&<span>예측 오차: <span style={{color:Math.abs(Number(finalAdj)-Number(d.actual_adj_rate))<0.3?"#5dca96":"#d4a834",fontFamily:"monospace"}}>{(Number(finalAdj)-Number(d.actual_adj_rate))>=0?"+":""}{(Number(finalAdj)-Number(d.actual_adj_rate)).toFixed(4)}%</span></span>}
+                  {winBid&&ab&&matchResult==="higher"&&<span>초과: <span style={{color:"#d4a834",fontFamily:"monospace"}}>+{tc(winBid-ab)}원</span></span>}
+                </div>
+              </div>}
             </div>
-            <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:10,color:C.txd}}>
-              <span>근거: <span style={{color:C.txm}}>{finalSource||"—"}</span></span>
-              {d.pred_floor_rate&&<span>낙찰하한율 <span style={{color:C.txm,fontFamily:"monospace"}}>{d.pred_floor_rate}%</span></span>}
-            </div>
-            {/* 매칭된 경우 결과 표시 */}
-            {matchResult&&<div style={{marginTop:10,padding:"8px 12px",borderRadius:6,fontSize:11,
-              background:matchResult==="win"?"rgba(93,202,165,0.12)":matchResult==="invalid"?"rgba(226,75,74,0.12)":"rgba(212,168,52,0.12)",
-              border:"1px solid "+(matchResult==="win"?"rgba(93,202,165,0.35)":matchResult==="invalid"?"rgba(226,75,74,0.35)":"rgba(212,168,52,0.35)")}}>
-              {matchResult==="win"&&<span style={{color:"#5dca96"}}>✓ 낙찰 가능 — 실제 1위 {tc(ab)}원 대비 {tc(ab-finalBid)}원 낮음</span>}
-              {matchResult==="higher"&&<span style={{color:"#d4a834"}}>✗ 낙찰자보다 높음 — 실제 1위 {tc(ab)}원 대비 {tc(finalBid-ab)}원 초과</span>}
-              {matchResult==="invalid"&&<span style={{color:"#e24b4a"}}>⚠ 법정 하한선 밑 — {tc(Math.round(floorLine-finalBid))}원 부족 (무효 위험)</span>}
-            </div>}
-          </div>
+          })()}
 
           {/* 탭 네비게이션 */}
           <div style={{display:"flex",gap:2,borderBottom:"1px solid "+C.bdr,marginBottom:14}}>
@@ -1707,7 +1735,7 @@ ${baseInfo}
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 사정률(100%)</th>
-              <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 투찰금액<br/><span style={{fontSize:9,color:"#e24b4a",fontWeight:400}}>↓1위목표</span></th>
+              <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 투찰금</th>
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
               <th style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제 1위 사정률(100%)</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>오차</th>
@@ -1750,11 +1778,8 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}} title={finalRec.source?"근거: "+finalRec.source:""}>
                   {finalAdj!=null?(100+Number(finalAdj)).toFixed(4)+"%":""}
                 </td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}}>
-                  {finalBid?<div style={{display:"flex",flexDirection:"column",gap:1}}>
-                    <span>{tc(Number(finalBid))}</span>
-                    {finalBid1st&&finalBid1st!==finalBid&&<span style={{color:"#e24b4a",fontSize:10}} title={"1위 목표 투찰금 (기관유형별 보정)\n현재 대비 "+(finalBid-finalBid1st).toLocaleString()+"원 낮음"}>▼{tc(finalBid1st)}</span>}
-                  </div>:""}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:700}}>
+                  {(finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
