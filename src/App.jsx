@@ -587,12 +587,12 @@ ${baseInfo}
   const filteredRecs=useMemo(()=>{const t=search.toLowerCase();let src=recs;
     if(eF==="new")src=recs.filter(r=>r.era==="new");else if(eF==="old")src=recs.filter(r=>r.era==="old");
     if(atF!=="all")src=src.filter(r=>r.at===atF);
-    if(hideAbnormal)src=src.filter(r=>{const y=r.co==="유찰"||r.co==="유찰(무)";const b=!y&&(r.br1==null&&(r.ba==null||r.ba===0));const o=!y&&!b&&r.br1!=null&&(r.br1<95||r.br1>105);return!y&&!b&&!o});
+    if(hideAbnormal)src=src.filter(r=>{const y=r.co==="유찰"||r.co==="유찰(무)";const b=!y&&(r.br1==null&&(r.ba==null||r.ba===0));const o=!y&&!b&&r.br1!=null&&(r.br1<87||r.br1>110);return!y&&!b&&!o});
     if(t)src=src.filter(r=>((r.pn||"")+(r.ag||"")+(r.co||"")).toLowerCase().includes(t));
     return[...src].sort((a,b)=>sortFn(a,b,dataSort.key,dataSort.dir))},[recs,search,eF,atF,dataSort,hideAbnormal]);
   const pagedRecs=useMemo(()=>filteredRecs.slice(dataPage*PAGE,(dataPage+1)*PAGE),[filteredRecs,dataPage]);
   const totalPages=Math.max(1,Math.ceil(filteredRecs.length/PAGE));
-  const abnormalStats=useMemo(()=>{const y=recs.filter(r=>r.co==="유찰"||r.co==="유찰(무)").length;const b=recs.filter(r=>r.co!=="유찰"&&r.co!=="유찰(무)"&&r.br1==null&&(r.ba==null||r.ba===0)).length;const o=recs.filter(r=>r.br1!=null&&(r.br1<95||r.br1>105)).length;return{yuchal:y,broken:b,outlier:o,total:y+b+o}},[recs]);
+  const abnormalStats=useMemo(()=>{const y=recs.filter(r=>r.co==="유찰"||r.co==="유찰(무)").length;const b=recs.filter(r=>r.co!=="유찰"&&r.co!=="유찰(무)"&&r.br1==null&&(r.ba==null||r.ba===0)).length;const o=recs.filter(r=>r.br1!=null&&(r.br1<87||r.br1>110)).length;return{yuchal:y,broken:b,outlier:o,total:y+b+o}},[recs]);
   const fAg=useMemo(()=>{const t=agSch.toLowerCase();return Object.entries(curSt.as||{}).filter(([k])=>!t||mSch(k,t)).sort((a,b)=>b[1].n-a[1].n)},[curSt.as,agSch]);
   const agencyList=useMemo(()=>Object.keys(allS.as||{}).sort(),[allS.as]);
   const nC=recs.filter(r=>r.era==="new").length,oC=recs.filter(r=>r.era==="old").length;
