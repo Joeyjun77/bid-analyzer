@@ -4,12 +4,22 @@
 //
 // 사용법:
 //   import { getSession, signIn, signUp, signOut, authedFetch } from './auth';
+//   import { useAuth } from './auth'; // Context 훅 (로그인 상태 조회)
+
+import { createContext, useContext } from 'react';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://sadunejfkstxbxogzutl.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'YOUR_ANON_KEY';
 
 // 세션 저장 키
 const STORAGE_KEY = 'bid-analyzer.session';
+
+// ============================================================================
+// React Context (패턴 B: AuthGate가 Provider로 감싸고, 하위에서 useAuth()로 사용)
+// ============================================================================
+
+export const AuthContext = createContext({ user: null, signOut: () => {} });
+export const useAuth = () => useContext(AuthContext);
 
 // ============================================================================
 // 세션 관리

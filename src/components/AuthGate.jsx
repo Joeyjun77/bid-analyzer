@@ -1,7 +1,9 @@
 // src/components/AuthGate.jsx
 // Phase 4-B MVP: 로그인 관문 컴포넌트
-// App.jsx 의 최상단에서 감싸는 방식으로 사용:
+// 패턴 B: Context 로 user/signOut 을 하위 트리에 제공.
+// 로그인 후 UI는 App.jsx 헤더에서 useAuth() 로 렌더링.
 //
+// 사용법:
 //   import AuthGate from './components/AuthGate';
 //   function App() {
 //     return (
@@ -12,7 +14,7 @@
 //   }
 
 import { useState, useEffect } from 'react';
-import { getSession, signIn, signUp, signOut, getUser, refreshSession } from '../auth';
+import { getSession, signIn, signUp, signOut, getUser, refreshSession, AuthContext } from '../auth';
 
 export default function AuthGate({ children }) {
   const [user, setUser] = useState(getUser());
@@ -66,16 +68,12 @@ export default function AuthGate({ children }) {
     setUser(null);
   };
 
-  // 로그인 상태면 자식 렌더링 (기존 App.jsx 내용) + 로그아웃 버튼
+  // 로그인 상태면 Context 로 user/signOut 제공 → 하위(App.jsx 헤더)에서 useAuth()
   if (user) {
     return (
-      <>
-        <div style={styles.userBar}>
-          <span style={styles.userEmail}>{user.email}</span>
-          <button onClick={handleSignOut} style={styles.signOutBtn}>로그아웃</button>
-        </div>
+      <AuthContext.Provider value={{ user, signOut: handleSignOut }}>
         {children}
-      </>
+      </AuthContext.Provider>
     );
   }
 
@@ -228,29 +226,5 @@ const styles = {
     color: '#22543d',
     borderRadius: 6,
     fontSize: 13,
-  },
-  userBar: {
-    position: 'fixed',
-    top: 8,
-    right: 8,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    background: 'rgba(255,255,255,0.95)',
-    padding: '6px 10px',
-    borderRadius: 8,
-    fontSize: 13,
-    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-    zIndex: 1000,
-  },
-  userEmail: { color: '#4a5568' },
-  signOutBtn: {
-    padding: '4px 10px',
-    background: '#edf2f7',
-    border: '1px solid #cbd5e0',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 12,
-    color: '#2d3748',
   },
 };

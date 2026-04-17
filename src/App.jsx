@@ -5,9 +5,28 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi } from "./lib/utils.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator } from "./lib/supabase.js";
 import AuthGate from "./components/AuthGate.jsx";
+import { useAuth } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
+
+// 계정 배지 (헤더 우측: 이메일 + 로그아웃) — useAuth() 로 Context 에서 받음
+function UserBadge(){
+  const {user,signOut}=useAuth();
+  if(!user)return null;
+  const email=user.email||"";
+  // 이메일을 @ 앞부분만 표시 (공간 절약). 툴팁엔 전체 이메일.
+  const shortName=email.includes("@")?email.split("@")[0]:email;
+  return<div style={{display:"flex",alignItems:"center",gap:8,paddingLeft:12,marginLeft:4,borderLeft:"1px solid "+C.bdr}}>
+    <span title={email} style={{fontSize:11,color:C.txm,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{shortName}</span>
+    <button onClick={signOut} title="로그아웃"
+      style={{padding:"4px 10px",fontSize:10,background:"transparent",border:"1px solid "+C.bdr,borderRadius:5,color:C.txd,cursor:"pointer",whiteSpace:"nowrap"}}
+      onMouseEnter={e=>{e.currentTarget.style.color=C.txt;e.currentTarget.style.borderColor=C.txm}}
+      onMouseLeave={e=>{e.currentTarget.style.color=C.txd;e.currentTarget.style.borderColor=C.bdr}}>
+      로그아웃
+    </button>
+  </div>
+}
 
 // 발주기관 자동완성 드롭다운 (초성 검색 지원)
 function AgencyInput({value,onChange,agencies,placeholder,stats}){
@@ -673,7 +692,10 @@ ${baseInfo}
         <span style={{fontSize:16,fontWeight:700,color:C.gold}}>입찰 분석 시스템</span>
         <span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span>
       </div>
-      <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="winstrat" ch="🎯 작전"/><Tb id="chat" ch="AI 상담"/></div>
+      <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="winstrat" ch="🎯 작전"/><Tb id="chat" ch="AI 상담"/></div>
+        <UserBadge/>
+      </div>
     </div>
     {msg.text&&<div style={{margin:"0 auto",maxWidth:1000,padding:"8px 16px"}}><div style={{padding:"8px 14px",background:msg.type==="ok"?"rgba(93,202,165,0.08)":"rgba(220,50,50,0.08)",border:`1px solid ${msg.type==="ok"?"rgba(93,202,165,0.3)":"rgba(220,50,50,0.3)"}`,borderRadius:6,fontSize:12,color:msg.type==="ok"?"#5ca":"#e55"}}>{msg.type==="ok"?"✓ ":"✕ "}{msg.text}</div></div>}
 
