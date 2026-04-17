@@ -140,3 +140,7 @@ export async function sbFetchSimulator(){
 export async function sbFetchNotices(){
   try{const res=await fetch(SB_URL+"/rest/v1/bid_notices?select=id,pn,pn_no,ag,at,ep,ba,av,od,status,is_target,prediction_id,api_fetched_at&order=od.asc&limit=1000",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
+// 단건 공고 예측 등록 (predict_notice DB 함수 호출)
+export async function sbPredictNotice(noticeId){
+  try{const res=await fetch(SB_URL+"/rest/v1/rpc/predict_notice",{method:"POST",headers:{...getHdrs(),"Prefer":"return=representation"},body:JSON.stringify({p_notice_id:noticeId})});if(!res.ok)return null;const rows=await res.json();return rows[0]||null}catch(e){return null}
+}
