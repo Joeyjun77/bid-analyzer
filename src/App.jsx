@@ -1086,7 +1086,7 @@ ${baseInfo}
             const confColor=dataConf==="high"?"#5dca96":dataConf==="med"?"#d4a834":"#a8b4ff";
             const confLabel=dataConf==="high"?"신뢰 높음":dataConf==="med"?"신뢰 보통":"데이터 부족";
             const winBid=finalBid1st||finalBid;
-            const agEnv=agAsmt;
+            const agEnv=assessPrediction(d,agencyStats,agencyPred);
             const isHard=agEnv&&agEnv.confidence>0.5&&(agEnv.n||0)>5;
             return<div style={{marginBottom:14,borderRadius:10,overflow:"hidden",border:"2px solid rgba(212,168,52,0.5)"}}>
               {/* 헤더 */}
