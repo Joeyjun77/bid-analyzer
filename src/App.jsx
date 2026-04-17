@@ -487,7 +487,13 @@ ${baseInfo}
         if(!hdr0.some(v=>v.includes("공고명")))throw new Error("지원하지 않는 파일 형식");
         const nr=toRecords(raw.slice(1));await sbUpsert(nr);
         const nc=nr.filter(r=>r.era==="new").length,oc=nr.filter(r=>r.era==="old").length;
-        logs.push({name:file.name,type:"ok",text:`[${format}] ${nr.length}건 | 신${nc}·구${oc}`});setUploadLog([...logs])
+        // 공종 비율 검증 (비대상 공종 50% 초과 시 경고)
+        const tgtKw=/전기|통신|소방/i;
+        const catValid=nr.filter(r=>r.cat&&tgtKw.test(r.cat)).length;
+        const catEmpty=nr.filter(r=>!r.cat).length;
+        const nonTgtRatio=Math.round((nr.length-catValid)/Math.max(nr.length,1)*100);
+        const catWarn=nonTgtRatio>=50?` ⚠ 비대상 공종 ${nonTgtRatio}% (전기/통신/소방 외, 분석 제외됨)`:catEmpty>=nr.length*0.3?` ⚠ 공종 미기재 ${catEmpty}건`:"";
+        logs.push({name:file.name,type:catWarn?"warn":"ok",text:`[${format}] ${nr.length}건 | 신${nc}·구${oc}${catWarn}`});setUploadLog([...logs])
       }catch(e){logs.push({name:file.name,type:"err",text:e.message});setUploadLog([...logs])}}
     try{const[rows,preds,dets]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails()]);
       setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));setBidDetails(dets||[]);
@@ -736,7 +742,7 @@ ${baseInfo}
           {dbLoading&&<div style={{marginTop:8,fontSize:11,color:C.txd}}>DB 연결 중...</div>}
         </>}
       </div>
-      {uploadLog.length>0&&<div style={{marginBottom:12}}>{uploadLog.map((l,i)=><div key={i} style={{padding:"6px 12px",fontSize:12,color:l.type==="ok"?"#5ca":"#e55",borderBottom:"1px solid "+C.bdr}}>{l.type==="ok"?"✓":"✕"} {l.name} — {l.text}</div>)}</div>}
+      {uploadLog.length>0&&<div style={{marginBottom:12}}>{uploadLog.map((l,i)=><div key={i} style={{padding:"6px 12px",fontSize:12,color:l.type==="ok"?"#5ca":l.type==="warn"?"#d4a834":"#e55",borderBottom:"1px solid "+C.bdr}}>{l.type==="ok"?"✓":l.type==="warn"?"⚠":"✕"} {l.name} — {l.text}</div>)}</div>}
 
       {/* 요약 카드 5개 */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:16}}>
