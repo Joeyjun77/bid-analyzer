@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { C, PAGE, inpS, SB_URL, hdrs } from "./lib/constants.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi } from "./lib/utils.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor } from "./lib/supabase.js";
+import AuthGate from "./components/AuthGate.jsx";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
@@ -615,7 +616,7 @@ ${baseInfo}
       </div>
     </div>};
 
-  return(<div style={{fontFamily:"system-ui,sans-serif",background:C.bg,color:C.txt,minHeight:"100vh",fontSize:13}}>
+  return(<AuthGate><div style={{fontFamily:"system-ui,sans-serif",background:C.bg,color:C.txt,minHeight:"100vh",fontSize:13}}>
     {/* ★ 전체 로딩 오버레이 */}
     {dbLoading&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:C.bg,zIndex:200,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
       <div style={{fontSize:18,fontWeight:700,color:C.gold}}>입찰 분석 시스템</div>
@@ -1745,4 +1746,4 @@ ${baseInfo}
     </div>})()}
 
     </div>
-  </div>)}
+  </div></AuthGate>)}
