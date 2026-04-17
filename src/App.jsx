@@ -455,24 +455,6 @@ ${baseInfo}
   // 예측 탭 진입 시 자동 새로고침
   useEffect(()=>{if(tab==="predict"&&!dbLoading){refreshPredictions()}},[tab,dbLoading]);
 
-  // focusedPredId 변경 시: 리스트 확장 + 해당 행으로 스크롤 (공고→예측 이동 시 자동 포커스)
-  useEffect(()=>{
-    if(!focusedPredId||tab!=="predict")return;
-    // 대상 행이 현재 표시 범위 밖이면 predListShow 확장
-    const idx=compList.findIndex(p=>p.id===focusedPredId);
-    if(idx>=0&&idx>=predListShow){
-      setPredListShow(Math.ceil((idx+1)/50)*50);
-    }
-    // DOM 업데이트 후 scrollIntoView
-    const t=setTimeout(()=>{
-      const el=document.getElementById("pred-row-"+focusedPredId);
-      if(el){el.scrollIntoView({behavior:"smooth",block:"center"});}
-    },200);
-    // 3초 후 하이라이트 자동 해제
-    const t2=setTimeout(()=>setFocusedPredId(null),3000);
-    return()=>{clearTimeout(t);clearTimeout(t2);};
-  },[focusedPredId,tab,compList,predListShow]);
-
   // 파일 업로드 (3종 자동 판별: SUCVIEW / 입찰서류함 / 낙찰정보리스트)
   const loadFiles=useCallback(async(fileList)=>{
     const files=Array.from(fileList).filter(Boolean);if(!files.length)return;setBusy(true);setMsg({type:"",text:""});setUploadLog([]);const logs=[];
@@ -670,6 +652,21 @@ ${baseInfo}
       return a&&a.tier!=null&&a.tier<=2;
     })}
     return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,predSort,hideYuchal,hideSuui,gradeFilter,scoringMap,hideP5,onlyPrimary,agencyStats,agencyPred]);
+
+  // focusedPredId 변경 시: 리스트 확장 + 해당 행으로 스크롤 (공고→예측 이동 시 자동 포커스)
+  useEffect(()=>{
+    if(!focusedPredId||tab!=="predict")return;
+    const idx=compList.findIndex(p=>p.id===focusedPredId);
+    if(idx>=0&&idx>=predListShow){
+      setPredListShow(Math.ceil((idx+1)/50)*50);
+    }
+    const t=setTimeout(()=>{
+      const el=document.getElementById("pred-row-"+focusedPredId);
+      if(el){el.scrollIntoView({behavior:"smooth",block:"center"});}
+    },200);
+    const t2=setTimeout(()=>setFocusedPredId(null),3000);
+    return()=>{clearTimeout(t);clearTimeout(t2);};
+  },[focusedPredId,tab,compList,predListShow]);
 
   // 스타일
   const btnS=(act,c)=>({padding:"4px 12px",fontSize:11,fontWeight:act?600:400,background:act?c+"22":"#1a1a30",color:act?c:"#888",border:"1px solid "+(act?c+"44":"#252540"),borderRadius:5,cursor:"pointer"});
