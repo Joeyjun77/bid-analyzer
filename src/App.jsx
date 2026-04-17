@@ -148,6 +148,7 @@ export default function App(){
   const[hideAbnormal,setHideAbnormal]=useState(false); // D-1: 비정상 데이터 필터
   const[predResults,setPredResults]=useState([]);
   const[predictions,setPredictions]=useState([]);
+  const[lastG2bAt,setLastG2bAt]=useState(null); // 나라장터 자동 예측 마지막 갱신 시각
   const[scoringMap,setScoringMap]=useState({}); // Phase 5: ROI scoring (prediction_id → grade/win_prob/...)
   const[biasMap,setBiasMapState]=useState({agency:{},at:{}}); // Phase 5.4: 편차 보정 맵
   const[trendMap,setTrendMapState]=useState({}); // Phase 5.4: 추세 맵
@@ -403,6 +404,8 @@ ${baseInfo}
   useEffect(()=>{(async()=>{
     try{const rows=await sbFetchAll();setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));if(rows.length>0)setTab("dash")}catch(e){setMsg({type:"err",text:"DB 로드 실패: "+e.message})}
     try{const preds=await sbFetchPredictions();setPredictions(preds||[]);
+      const g2bP=(preds||[]).filter(p=>p.source==="g2b_auto"&&p.created_at);
+      if(g2bP.length>0){const lat=g2bP.reduce((a,b)=>a.created_at>b.created_at?a:b);setLastG2bAt(lat.created_at)}
       // ★ file_upload 예측을 predResults로 복원 (새로고침 시 유지)
       const filePreds=(preds||[]).filter(p=>p.source==="file_upload"&&p.pred_adj_rate!=null);
       if(filePreds.length>0){setPredResults(filePreds.map(p=>({
@@ -593,6 +596,7 @@ ${baseInfo}
   const fAg=useMemo(()=>{const t=agSch.toLowerCase();return Object.entries(curSt.as||{}).filter(([k])=>!t||mSch(k,t)).sort((a,b)=>b[1].n-a[1].n)},[curSt.as,agSch]);
   const agencyList=useMemo(()=>Object.keys(allS.as||{}).sort(),[allS.as]);
   const nC=recs.filter(r=>r.era==="new").length,oC=recs.filter(r=>r.era==="old").length;
+  const fmtRelTime=(iso)=>{if(!iso)return null;const d=Date.now()-new Date(iso).getTime();const m=Math.floor(d/60000);if(m<1)return"방금";if(m<60)return m+"분 전";const h=Math.floor(m/60);if(h<24)return h+"시간 전";return new Date(iso).toLocaleDateString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})};
   const allSel=pagedRecs.length>0&&pagedRecs.every(r=>sel[r.id]);
 
   const compStats=useMemo(()=>{
@@ -696,6 +700,9 @@ ${baseInfo}
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <span style={{fontSize:16,fontWeight:700,color:C.gold}}>입찰 분석 시스템</span>
         <span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span>
+        {lastG2bAt&&<span title={"나라장터 공고 마지막 예측 갱신: "+new Date(lastG2bAt).toLocaleString("ko-KR")} style={{display:"inline-flex",alignItems:"center",gap:3,padding:"2px 7px",fontSize:9,color:"#5dca96",background:"rgba(93,202,150,0.08)",border:"1px solid rgba(93,202,150,0.2)",borderRadius:10,cursor:"default"}}>
+          ● 공고 {fmtRelTime(lastG2bAt)} 갱신
+        </span>}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="winstrat" ch="🎯 작전"/><Tb id="chat" ch="AI 상담"/></div>
