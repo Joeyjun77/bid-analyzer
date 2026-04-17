@@ -1908,7 +1908,16 @@ ${baseInfo}
                   </td>
                   <td style={{padding:"8px 10px",textAlign:"center",whiteSpace:"nowrap"}}>
                     {isUmm?<span style={{fontSize:9,color:C.txd}}>엑셀 업로드</span>:
-                     hasPred?<button onClick={()=>{setTab("predict");}} style={{fontSize:9,padding:"3px 8px",background:"rgba(93,202,150,.1)",border:"1px solid rgba(93,202,150,.3)",borderRadius:4,color:"#5dca96",cursor:"pointer"}}>✅ 예측완료 →</button>:
+                     hasPred?<button onClick={()=>{
+                       // 해당 공고의 예측 상세 모달 자동 열기
+                       if(p){
+                         setDetailModal(p);
+                         setDetailTab("detail");
+                         setDetailAi(p.ai_advice||"");
+                         setDetailAiLoading(false);
+                       }
+                       setTab("predict");
+                     }} style={{fontSize:9,padding:"3px 8px",background:"rgba(93,202,150,.1)",border:"1px solid rgba(93,202,150,.3)",borderRadius:4,color:"#5dca96",cursor:"pointer"}}>✅ 예측완료 →</button>:
                      noPred?<span title={"⚠ 데이터 부족\n이 발주사의 과거 낙찰 샘플이 3건 미만입니다.\n신규/민간/소형 기관이거나 학습 데이터가 누적되지 않았습니다.\nSUCVIEW 파일(인포21c)을 업로드해 수동 예측을 보강하세요."} style={{fontSize:9,padding:"2px 6px",background:"rgba(168,168,255,.08)",border:"1px solid rgba(168,168,255,.2)",borderRadius:4,color:"#a8a8ff",cursor:"help"}}>⚠ 데이터부족</span>:
                      isLoading?<span style={{fontSize:9,color:C.txd}}>처리중...</span>:
                      <button onClick={()=>handlePredictNotice(n)}
