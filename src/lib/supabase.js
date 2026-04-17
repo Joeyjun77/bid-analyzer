@@ -136,3 +136,7 @@ export async function sbFetchAgencyPredictor(){
 export async function sbFetchSimulator(){
   try{const res=await fetch(SB_URL+"/rest/v1/v_simulator_api?select=*",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
+// 나라장터 공고 목록 (bid_notices)
+export async function sbFetchNotices(){
+  try{const res=await fetch(SB_URL+"/rest/v1/bid_notices?select=id,pn,pn_no,ag,at,ep,ba,av,od,status,is_target,prediction_id,api_fetched_at&order=od.asc&limit=1000",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}
+}

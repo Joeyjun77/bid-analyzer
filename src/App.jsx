@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import { C, PAGE, inpS, SB_URL, hdrs, getHdrs } from "./lib/constants.js";
 import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices } from "./lib/supabase.js";
 import AuthGate from "./components/AuthGate.jsx";
 import { useAuth, getSession } from "./auth.js";
 
@@ -149,6 +149,7 @@ export default function App(){
   const[predResults,setPredResults]=useState([]);
   const[predictions,setPredictions]=useState([]);
   const[lastG2bAt,setLastG2bAt]=useState(null); // 나라장터 자동 예측 마지막 갱신 시각
+  const[notices,setNotices]=useState([]); // 나라장터 공고 목록
   const[scoringMap,setScoringMap]=useState({}); // Phase 5: ROI scoring (prediction_id → grade/win_prob/...)
   const[biasMap,setBiasMapState]=useState({agency:{},at:{}}); // Phase 5.4: 편차 보정 맵
   const[trendMap,setTrendMapState]=useState({}); // Phase 5.4: 추세 맵
@@ -436,6 +437,8 @@ ${baseInfo}
       const sim=await sbFetchSimulator();
       const simMap={};(sim||[]).forEach(r=>{simMap[r.prediction_id]=r});setSimulatorMap(simMap);
     }catch(e){setSimulatorMap({})}
+    // 나라장터 공고 로드
+    try{const nots=await sbFetchNotices();setNotices(nots||[])}catch(e){setNotices([])}
     setDbLoading(false)
   })()},[refreshStats]);
 
@@ -596,6 +599,7 @@ ${baseInfo}
   const fAg=useMemo(()=>{const t=agSch.toLowerCase();return Object.entries(curSt.as||{}).filter(([k])=>!t||mSch(k,t)).sort((a,b)=>b[1].n-a[1].n)},[curSt.as,agSch]);
   const agencyList=useMemo(()=>Object.keys(allS.as||{}).sort(),[allS.as]);
   const nC=recs.filter(r=>r.era==="new").length,oC=recs.filter(r=>r.era==="old").length;
+  const predMap=useMemo(()=>{const m={};predictions.forEach(p=>{m[p.id]=p});return m},[predictions]);
   const fmtRelTime=(iso)=>{if(!iso)return null;const d=Date.now()-new Date(iso).getTime();const m=Math.floor(d/60000);if(m<1)return"방금";if(m<60)return m+"분 전";const h=Math.floor(m/60);if(h<24)return h+"시간 전";return new Date(iso).toLocaleDateString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})};
   const allSel=pagedRecs.length>0&&pagedRecs.every(r=>sel[r.id]);
 
@@ -705,7 +709,7 @@ ${baseInfo}
         </span>}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="winstrat" ch="🎯 작전"/><Tb id="chat" ch="AI 상담"/></div>
+        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="winstrat" ch="🎯 작전"/><Tb id="chat" ch="AI 상담"/></div>
         <UserBadge/>
       </div>
     </div>
@@ -1760,6 +1764,65 @@ ${baseInfo}
         </div>:<div style={{textAlign:"center",padding:30,color:C.txd,fontSize:12}}>예측 내역이 없습니다. 입찰서류함을 업로드해주세요.</div>}
       </div>
     </div>}
+
+    {/* ═══ 나라장터 공고 탭 ═══ */}
+    {tab==="notices"&&(()=>{
+      const tgt=notices.filter(n=>n.is_target).sort((a,b)=>a.od>b.od?1:-1);
+      const nonTgt=notices.filter(n=>!n.is_target);
+      const predCnt=tgt.filter(n=>n.prediction_id&&predMap[n.prediction_id]?.pred_adj_rate!=null).length;
+      const AT_COLOR={"지자체":"#a8b4ff","교육청":"#ffb86c","군시설":"#ff79c6","한전":"#f1fa8c","조달청":"#8be9fd","LH":"#50fa7b","수자원공사":"#bd93f9"};
+      const fmtOd=(iso)=>{if(!iso)return"-";const d=new Date(iso);return(d.getMonth()+1)+"/"+(d.getDate())+" "+d.getHours().toString().padStart(2,"0")+":"+d.getMinutes().toString().padStart(2,"0")};
+      return<div style={{maxWidth:1100,margin:"0 auto",padding:"16px 20px"}}>
+        {/* 요약 카드 */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:16}}>
+          {[{l:"전체 수집",v:notices.length+"건",c:C.txm},{l:"예측 대상",v:tgt.length+"건",c:C.gold},{l:"예측 완료",v:predCnt+"건",c:"#5dca96"},{l:"예측 대기",v:(tgt.length-predCnt)+"건",c:tgt.length>predCnt?"#e24b4a":C.txm}]
+          .map((c,i)=><div key={i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+            <div style={{fontSize:10,color:C.txd,marginBottom:3}}>{c.l}</div>
+            <div style={{fontSize:18,fontWeight:600,color:c.c}}>{c.v}</div>
+          </div>)}
+        </div>
+        {/* 예측 대상 공고 */}
+        <div style={{fontSize:11,color:C.gold,marginBottom:8,fontWeight:700}}>예측 대상 공고 {tgt.length}건</div>
+        <div style={{border:"1px solid "+C.bdr,borderRadius:8,overflow:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:800}}>
+            <thead><tr style={{background:C.bg3}}>
+              {["개찰일","공고명","발주기관","유형","추정가격","예측사정률(100%)","추천투찰금액","상태"].map((h,i)=>
+                <th key={i} style={{padding:"8px 10px",textAlign:i>=4?"right":"left",color:C.txd,fontWeight:600,borderBottom:"1px solid "+C.bdr,whiteSpace:"nowrap"}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {tgt.map(n=>{
+                const p=n.prediction_id?predMap[n.prediction_id]:null;
+                const hasPred=p?.pred_adj_rate!=null;
+                const atClr=AT_COLOR[n.at]||"#a8a8ff";
+                return<tr key={n.id} style={{borderBottom:"1px solid "+C.bdr+"33",transition:"background .1s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=C.bg3}
+                  onMouseLeave={e=>e.currentTarget.style.background=""}>
+                  <td style={{padding:"9px 10px",color:C.txt,whiteSpace:"nowrap",fontFamily:"monospace",fontSize:11}}>{fmtOd(n.od)}</td>
+                  <td style={{padding:"9px 10px",color:C.txt,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={n.pn}>{n.pn}</td>
+                  <td style={{padding:"9px 10px",color:C.txm,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={n.ag}>{n.ag}</td>
+                  <td style={{padding:"9px 10px"}}><span style={{fontSize:9,padding:"1px 5px",background:atClr+"18",border:"1px solid "+atClr+"44",borderRadius:4,color:atClr}}>{n.at}</span></td>
+                  <td style={{padding:"9px 10px",color:C.txt,textAlign:"right",fontFamily:"monospace"}}>{n.ep?Number(n.ep).toLocaleString():"-"}</td>
+                  <td style={{padding:"9px 10px",textAlign:"right",color:hasPred?"#5dca96":C.txd,fontFamily:"monospace",fontWeight:hasPred?700:400}}>
+                    {hasPred?(100+Number(p.pred_adj_rate)).toFixed(4)+"%":"—"}
+                  </td>
+                  <td style={{padding:"9px 10px",textAlign:"right",color:hasPred?C.gold:C.txd,fontFamily:"monospace",fontWeight:hasPred?700:400}}>
+                    {hasPred&&p.pred_bid_amount?Number(p.pred_bid_amount).toLocaleString():"—"}
+                  </td>
+                  <td style={{padding:"9px 10px"}}>
+                    {hasPred
+                      ?<span style={{fontSize:9,padding:"2px 6px",background:"rgba(93,202,150,.1)",border:"1px solid rgba(93,202,150,.3)",borderRadius:4,color:"#5dca96"}}>예측완료</span>
+                      :<span style={{fontSize:9,padding:"2px 6px",background:"rgba(168,168,255,.08)",border:"1px solid rgba(168,168,255,.2)",borderRadius:4,color:"#a8a8ff"}}>데이터부족</span>}
+                  </td>
+                </tr>})}
+            </tbody>
+          </table>
+        </div>
+        {/* 비대상 공고 요약 */}
+        <div style={{marginTop:16,padding:"10px 14px",background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:11,color:C.txd}}>전체 수집 공고 {nonTgt.length}건 (예측 비대상) — 30분마다 자동 수집</span>
+          <span style={{fontSize:10,color:C.txd}}>{notices.length>0?"최근 수집: "+fmtRelTime(notices.reduce((a,b)=>a.api_fetched_at>b.api_fetched_at?a:b).api_fetched_at):"—"}</span>
+        </div>
+      </div>})()}
 
     {/* ═══ Phase 20: 작전 대시보드 탭 ═══ */}
     {tab==="winstrat"&&<WinStrategyDashboard/>}
