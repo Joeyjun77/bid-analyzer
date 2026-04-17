@@ -270,7 +270,7 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred){
   const TYPE_OFF={
     "지자체":   -0.15,
     "군시설":    0.0,
-    "교육청":   -0.20,
+    "교육청":   -0.45,
     "한전":      0.10,
     "LH":       -0.10,
     "조달청":   -0.10,
