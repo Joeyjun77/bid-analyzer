@@ -149,6 +149,7 @@ export default function App(){
   const[predResults,setPredResults]=useState([]);
   const[predictions,setPredictions]=useState([]);
   const[lastG2bAt,setLastG2bAt]=useState(null); // 나라장터 자동 예측 마지막 갱신 시각
+  const[lastSucviewAt,setLastSucviewAt]=useState(null); // SUCVIEW 마지막 업로드 시각
   const[notices,setNotices]=useState([]); // 나라장터 공고 목록
   const[noticeLoadingIds,setNoticeLoadingIds]=useState(new Set()); // 예측 등록 중인 notice id
   const[noticeFilter,setNoticeFilter]=useState("upcoming"); // upcoming/all/registered
@@ -426,7 +427,9 @@ ${baseInfo}
           bidByRate:0,adjAvg:0,adjStd:0,biasAdj:0,driftUsed:0,detailInsight:null}
       })))}
     }catch(e){setPredictions([])}
-    try{const dets=await sbFetchDetails();setBidDetails(dets||[])}catch(e){setBidDetails([])}
+    try{const dets=await sbFetchDetails();setBidDetails(dets||[]);
+      if(dets&&dets.length>0){const latest=dets.reduce((a,b)=>(a.created_at>b.created_at?a:b));setLastSucviewAt(latest.created_at)}
+    }catch(e){setBidDetails([])}
     try{const agStats=await sbFetchAgAssumedStats();setAgAss(agStats||{})}catch(e){setAgAss({})}
     try{const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm)}catch(e){setScoringMap({})}
     try{const mtx=await sbFetchRoiMatrix();if(mtx?.matrix)setWinProbMatrix(mtx.matrix)}catch(e){}
@@ -719,6 +722,16 @@ ${baseInfo}
         {lastG2bAt&&<span title={"나라장터 공고 마지막 예측 갱신: "+new Date(lastG2bAt).toLocaleString("ko-KR")} style={{display:"inline-flex",alignItems:"center",gap:3,padding:"2px 7px",fontSize:9,color:"#5dca96",background:"rgba(93,202,150,0.08)",border:"1px solid rgba(93,202,150,0.2)",borderRadius:10,cursor:"default"}}>
           ● 공고 {fmtRelTime(lastG2bAt)} 갱신
         </span>}
+        {(()=>{
+          if(!lastSucviewAt)return null;
+          const days=Math.floor((Date.now()-new Date(lastSucviewAt).getTime())/86400000);
+          if(days<7)return null;
+          const warn=days>=14;
+          return<span title={"SUCVIEW(복수예가) 마지막 업로드: "+new Date(lastSucviewAt).toLocaleString("ko-KR")+"\n인포21C에서 SUCVIEW 파일을 다운로드해 업로드하세요."}
+            style={{display:"inline-flex",alignItems:"center",gap:3,padding:"2px 7px",fontSize:9,color:warn?"#e24b4a":"#d4a834",background:warn?"rgba(226,75,74,0.08)":"rgba(212,168,52,0.08)",border:"1px solid "+(warn?"rgba(226,75,74,0.25)":"rgba(212,168,52,0.25)"),borderRadius:10,cursor:"help"}}>
+            ⚠ SUCVIEW {days}일 없음
+          </span>;
+        })()}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="winstrat" ch="🎯 작전"/><Tb id="chat" ch="AI 상담"/></div>
