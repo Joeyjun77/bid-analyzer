@@ -138,6 +138,7 @@ export function calcStats(recs,filter){const src=filter?recs.filter(filter):recs
   // Phase 14-5: 데이터 시점 컷오프 (2024년 이전 데이터는 학습 제외)
   const STALE_CUTOFF="2024-01-01";
   for(const r of src){if(r.br1==null)continue;
+    if(r.is_excluded===true)continue; // 비정상 건(수의시담·pc=1 등) 학습 제외
     const adj=r.br1-100;if(adj<-5||adj>5)continue;
     const bidRate=(r.bp&&r.xp&&r.xp>0)?r.bp/r.xp*100:null;
     const t=r.at||"기타";
