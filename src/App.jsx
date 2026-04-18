@@ -749,6 +749,18 @@ ${baseInfo}
             ⚠ SUCVIEW {days}일 없음
           </span>;
         })()}
+        {(()=>{
+          const now=Date.now();
+          const H24=24*3600*1000, H2=2*3600*1000;
+          const imm=notices.filter(n=>n.prediction_id&&n.od&&(new Date(n.od).getTime()-now)<=H24&&(new Date(n.od).getTime()-now)>0);
+          if(imm.length===0)return null;
+          const urgent=imm.some(n=>(new Date(n.od).getTime()-now)<=H2);
+          return<span title={"24시간 내 개찰: "+imm.length+"건"+(urgent?" (2시간 내 긴급 포함)":"")+"\n클릭 시 공고 탭으로 이동"}
+            onClick={()=>{setNoticeFilter("upcoming");setTab("notices");}}
+            style={{display:"inline-flex",alignItems:"center",gap:3,padding:"2px 7px",fontSize:9,color:urgent?"#e24b4a":"#d4a834",background:urgent?"rgba(226,75,74,0.12)":"rgba(212,168,52,0.12)",border:"1px solid "+(urgent?"rgba(226,75,74,0.35)":"rgba(212,168,52,0.35)"),borderRadius:10,cursor:"pointer",fontWeight:600}}>
+            ⏰ 임박 {imm.length}건
+          </span>;
+        })()}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="winstrat" ch="🎯 작전"/><Tb id="feedback" ch="📈 피드백"/><Tb id="chat" ch="AI 상담"/></div>

@@ -101,11 +101,16 @@ export default function NoticesTab({
               const atClr = AT_COLOR[n.at] || "#a8a8ff";
               const bid1st = hasPred && p.pred_bid_amount && p.pred_floor_rate ?
                 Math.round(Number(p.pred_bid_amount) * Number(p.pred_floor_rate) / (Number(p.pred_floor_rate) + (WIN_OPT_GAP[n.at] || 0.3))) : null;
+              const msToOd = n.od ? (new Date(n.od).getTime() - Date.now()) : null;
+              const urgent2h = msToOd != null && msToOd > 0 && msToOd <= 2 * 3600 * 1000;
+              const near24h = msToOd != null && msToOd > 2 * 3600 * 1000 && msToOd <= 24 * 3600 * 1000;
+              const leftBar = urgent2h ? "3px solid #e24b4a" : near24h ? "3px solid #d4a834" : "3px solid transparent";
               return (
-                <tr key={n.id} style={{ borderBottom: "1px solid " + C.bdr + "33", opacity: n.od && n.od.slice(0, 10) < today ? 0.55 : 1, transition: "background .1s" }}
+                <tr key={n.id} style={{ borderBottom: "1px solid " + C.bdr + "33", opacity: n.od && n.od.slice(0, 10) < today ? 0.55 : 1, transition: "background .1s", borderLeft: leftBar }}
                   onMouseEnter={e => e.currentTarget.style.background = C.bg3}
                   onMouseLeave={e => e.currentTarget.style.background = ""}>
-                  <td style={{ padding: "8px 10px", color: C.txt, whiteSpace: "nowrap", fontFamily: "monospace", fontSize: 10 }}>{fmtOd(n.od)}</td>
+                  <td style={{ padding: "8px 10px", color: urgent2h ? "#e24b4a" : near24h ? "#d4a834" : C.txt, whiteSpace: "nowrap", fontFamily: "monospace", fontSize: 10, fontWeight: urgent2h || near24h ? 700 : 400 }}
+                    title={urgent2h ? "⏰ 2시간 내 개찰 긴급" : near24h ? "⏰ 24시간 내 개찰 임박" : ""}>{urgent2h ? "⏰ " : near24h ? "⏰ " : ""}{fmtOd(n.od)}</td>
                   <td style={{ padding: "8px 10px", color: C.txt, maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={n.pn}>{n.pn}</td>
                   <td style={{ padding: "8px 10px", color: C.txm, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={n.ag}>{n.ag}</td>
                   <td style={{ padding: "8px 10px" }}><span style={{ fontSize: 9, padding: "1px 5px", background: atClr + "18", border: "1px solid " + atClr + "44", borderRadius: 4, color: atClr }}>{n.at}</span></td>

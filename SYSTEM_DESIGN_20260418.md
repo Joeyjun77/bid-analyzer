@@ -298,8 +298,8 @@ INSERT INTO model_release_gate(metric, comparator, tolerance_pct, scope) VALUES
 | ~~P1~~ ✅ | `weekly_quality_report` + `generate_weekly_quality_report()` + pg_cron 주간 (월 KST 05:00) | 예측코어×⑥ | 회귀 방지 |
 | ~~P2~~ ✅ | App.jsx 컴포넌트 분리 (WinStrategyDashboard 기존 · NoticesTab 신규 추출) | ④ | 변경 블래스트 반경 축소 |
 | ~~P2~~ ✅ | 낙찰 결과 자동 피드백 탭 (`📈 피드백` · PredictionFeedback.jsx) | ④×③ | 사용자 루프 완결 |
-| P3 | A/B 쉐도우 레인 구축 | 예측코어 | 무위험 모델 실험 |
-| P3 | 투찰 마감 임박 알림 | ⑤ | 사용자 신뢰 |
+| ~~P3~~ ✅ | A/B 쉐도우 레인 인프라 (`prediction_shadow` + `refresh_shadow_quality_daily` + `evaluate_model_release`) | 예측코어 | 무위험 모델 실험 |
+| ~~P3~~ ✅ | 투찰 마감 임박 알림 (헤더 `⏰ 임박 N건` 배지 + NoticesTab 행 좌측 색상 바·시각 강조) | ⑤ | 사용자 신뢰 |
 
 ### 2주 실측 관찰 윈도우 (04-20 ~ 05-04)
 - Phase 21 Bayesian shrinkage + amount_band_correction 실측 효과
@@ -363,7 +363,8 @@ INSERT INTO model_release_gate(metric, comparator, tolerance_pct, scope) VALUES
 - [x] 계약방법 구조적 필터 (bid_records.contract_method + 수의/지명 auto-exclude 트리거)
 - [x] 낙찰 자동 피드백 탭 (📈 피드백 · PredictionFeedback.jsx)
 - [x] App.jsx 컴포넌트 분리 (NoticesTab.jsx)
-- [ ] 투찰 마감 알림
+- [x] A/B 쉐도우 레인 인프라 (model_registry v6.2/v7.0 seed + prediction_shadow + evaluate_model_release)
+- [x] 투찰 마감 알림 (헤더 ⏰ 임박 배지 · 24h/2h 2단계 · NoticesTab 행 색상 바)
 
 ---
 
