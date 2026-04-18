@@ -279,6 +279,8 @@ INSERT INTO model_release_gate(metric, comparator, tolerance_pct, scope) VALUES
 | #25 | P0 예측코어 인프라 구축 — model_registry(v6.2/v5.3 시드) · prediction_quality_daily(90일 백필 212건) · model_release_gate(3 rule) · refresh 함수 · pg_cron 일배치(KST 04:00) |
 | #26 | P1-1 계약방법 구조적 필터 — bid_records.contract_method + upsert_bid_record 매핑 + 수의/지명 auto-exclude 트리거 |
 | #27 | P1-2 주간 자가검증 — weekly_quality_report 테이블·함수·pg_cron(월 KST 05:00) · overall gate 자동 판정 · drift_flag(ma7 +20%) |
+| #28 | P2-1 notices 탭 분리 — src/components/NoticesTab.jsx (~110줄) |
+| #29 | P2-2 낙찰 피드백 탭 신설 — src/components/PredictionFeedback.jsx (주간 요약 카드·Route×AT 성과·8주 추이·30일 일간 MAE) |
 
 **교훈**: 공고명 태그는 안내 문자열일 뿐. 계약 방식은 `cntrctCnclsMthdNm` API 필드 or `pc=1` 같은 구조적 지표로 판정해야 함.
 
@@ -294,8 +296,8 @@ INSERT INTO model_release_gate(metric, comparator, tolerance_pct, scope) VALUES
 | ~~P0~~ ✅ | `model_registry` 시드 (v5.3, v6.2 등록) + `model_release_gate` 3 rule | 예측코어×① | 버전 관리 시작 |
 | ~~P1~~ ✅ | `bid_records.contract_method` + `upsert_bid_record` 매핑 + 수의/지명 자동 is_excluded 트리거 | ② | 수의계약 구조적 필터 |
 | ~~P1~~ ✅ | `weekly_quality_report` + `generate_weekly_quality_report()` + pg_cron 주간 (월 KST 05:00) | 예측코어×⑥ | 회귀 방지 |
-| P2 | App.jsx 컴포넌트 분리 (WinStrategy 외 1~2개) | ④ | 변경 블래스트 반경 축소 |
-| P2 | 낙찰 결과 자동 피드백 탭 | ④×③ | 사용자 루프 완결 |
+| ~~P2~~ ✅ | App.jsx 컴포넌트 분리 (WinStrategyDashboard 기존 · NoticesTab 신규 추출) | ④ | 변경 블래스트 반경 축소 |
+| ~~P2~~ ✅ | 낙찰 결과 자동 피드백 탭 (`📈 피드백` · PredictionFeedback.jsx) | ④×③ | 사용자 루프 완결 |
 | P3 | A/B 쉐도우 레인 구축 | 예측코어 | 무위험 모델 실험 |
 | P3 | 투찰 마감 임박 알림 | ⑤ | 사용자 신뢰 |
 
@@ -359,7 +361,8 @@ INSERT INTO model_release_gate(metric, comparator, tolerance_pct, scope) VALUES
 - [x] 자동 드리프트 감지 배치 (pg_cron job#8, 매일 KST 04:00 최근 7일 재집계)
 - [x] 주간 자가검증 리포트 (pg_cron job#9, 매주 월 KST 05:00, gate/drift/delta 자동 평가)
 - [x] 계약방법 구조적 필터 (bid_records.contract_method + 수의/지명 auto-exclude 트리거)
-- [ ] 낙찰 자동 피드백 탭
+- [x] 낙찰 자동 피드백 탭 (📈 피드백 · PredictionFeedback.jsx)
+- [x] App.jsx 컴포넌트 분리 (NoticesTab.jsx)
 - [ ] 투찰 마감 알림
 
 ---
