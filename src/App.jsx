@@ -763,7 +763,7 @@ ${baseInfo}
         })()}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="winstrat" ch="🎯 작전"/><Tb id="feedback" ch="📈 피드백"/><Tb id="chat" ch="AI 상담"/></div>
+        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="chat" ch="AI 상담"/></div>
         <UserBadge/>
       </div>
     </div>
