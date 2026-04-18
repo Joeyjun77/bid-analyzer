@@ -188,6 +188,23 @@ export function calcStats(recs,filter){const src=filter?recs.filter(filter):recs
 
 // ─── 예측 v5 (51K 백테스트 기반 보정) ────────────────────────
 const rnd4=v=>Math.round((v||0)*10000)/10000;
+
+// Phase 21-R: 라우팅 분류기 — predictV5 내부의 암묵 분기를 명시 레이블로 노출
+// DB의 opt_adj_router 컬럼에 저장되며, route별 MAE 분해 분석에 사용
+export const AGENCY_LOOKUP_REDIRECT={
+  "한국토지주택공사":"한국토지주택공사 경기남부지역본부"
+};
+export function routePrediction({at,agName},ts,as){
+  const lookupKey=AGENCY_LOOKUP_REDIRECT[agName]||agName;
+  const agSt=as?.[lookupKey];
+  const tSt=ts?.[at];
+  const agN=agSt?.n||0;
+  if(AGENCY_LOOKUP_REDIRECT[agName]&&agSt)return{route:"agency_redirect",agN,tierExists:!!tSt};
+  if(agSt&&agN>=5)return{route:"agency_rich",agN,tierExists:!!tSt};
+  if(agSt&&agN>=2)return{route:"blend",agN,tierExists:!!tSt};
+  return{route:"tier_fallback",agN:0,tierExists:!!tSt};
+}
+
 export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred){
   if(!ba)return null;
   const tKeys=Object.keys(ts||{});
@@ -195,9 +212,6 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred){
   // Phase 14-5: LH 본사처럼 옛 데이터만 있는 발주사는 대체 발주사로 리다이렉트
   // calcStats에서 옛 데이터를 필터링했기 때문에 원래 키로는 as[agName]이 없음
   // 따라서 대체 키로 조회하여 예측에 사용
-  const AGENCY_LOOKUP_REDIRECT={
-    "한국토지주택공사":"한국토지주택공사 경기남부지역본부"
-  };
   const lookupKey=AGENCY_LOOKUP_REDIRECT[agName]||agName;
   const agSt=as[lookupKey];const tSt=ts[at]||ts[tKeys[0]];
   if(!tSt)return null;
@@ -307,11 +321,13 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred){
   }
   const off=typeOff+agencyOff;
   const optAdj=rnd4(ref.med+off);const optXp=calcXp(ref.med+off);const optBid=calcBid(ref.med+off);
+  const {route,agN:routeAgN}=routePrediction({at,agName},ts,as);
   return{scenarios,fr,src,bidRateRec,bidByRate,
     adjAvg:rnd4(ref.avg),adjStd:rnd4(ref.std),
     adj:rnd4(ref.med),xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:rnd4(ref.avg),
     detailInsight,biasAdj:rnd4(biasAdj),driftUsed:0,ci70,ci90,optAdj,optXp,optBid,optOffset:off,
-    typeOffset:typeOff,agencyOffset:agencyOff,agencyN:agPred?Number(agPred.n||0):0}}
+    typeOffset:typeOff,agencyOffset:agencyOff,agencyN:agPred?Number(agPred.n||0):0,
+    route,routeAgN}}
 
 // ─── 데이터 현황 (최근 업로드 + 실제 최신 개찰일 분리) ────
 export function calcDataStatus(rows){
