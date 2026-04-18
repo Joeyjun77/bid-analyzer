@@ -276,6 +276,7 @@ INSERT INTO model_release_gate(metric, comparator, tolerance_pct, scope) VALUES
 | #22 | blend MAE 2.82% → 단일 아웃라이어 규명 + 데이터 복구 3건 |
 | #23 | [수의] 태그 오판 → pc=1/[시담] 정밀 기준 88건 배제 |
 | #24 | SYSTEM_DESIGN 매트릭스 구조 개정 (이 문서) |
+| #25 | P0 예측코어 인프라 구축 — model_registry(v6.2/v5.3 시드) · prediction_quality_daily(90일 백필 212건) · model_release_gate(3 rule) · refresh 함수 · pg_cron 일배치(KST 04:00) |
 
 **교훈**: 공고명 태그는 안내 문자열일 뿐. 계약 방식은 `cntrctCnclsMthdNm` API 필드 or `pc=1` 같은 구조적 지표로 판정해야 함.
 
@@ -287,8 +288,8 @@ INSERT INTO model_release_gate(metric, comparator, tolerance_pct, scope) VALUES
 
 | 순위 | 작업 | 파트 | 기대 효과 |
 |---|---|---|---|
-| P0 | `prediction_quality_daily` 테이블·일배치 구현 | 예측코어×③ | 드리프트 가시화 |
-| P0 | `model_registry` 시드 (v5.3, v6.2 등록) | 예측코어×① | 버전 관리 시작 |
+| ~~P0~~ ✅ | `prediction_quality_daily` 테이블·일배치 구현 (pg_cron KST 04:00) | 예측코어×③ | 드리프트 가시화 |
+| ~~P0~~ ✅ | `model_registry` 시드 (v5.3, v6.2 등록) + `model_release_gate` 3 rule | 예측코어×① | 버전 관리 시작 |
 | P1 | 수집 API에 `cntrctCnclsMthdNm` 필드 추가 | ② | 수의계약 구조적 필터 |
 | P1 | 주간 자가검증 리포트 자동 생성 | 예측코어×⑥ | 회귀 방지 |
 | P2 | App.jsx 컴포넌트 분리 (WinStrategy 외 1~2개) | ④ | 변경 블래스트 반경 축소 |
@@ -352,8 +353,8 @@ INSERT INTO model_release_gate(metric, comparator, tolerance_pct, scope) VALUES
 - [x] 비정상 건 격리 (is_excluded + is_cancelled)
 - [x] 데이터 복구 3건
 - [x] 매트릭스 조직 구조 설계 확정
-- [ ] model_registry + prediction_quality_daily 구축
-- [ ] 자동 드리프트 감지 배치
+- [x] model_registry + prediction_quality_daily 구축
+- [x] 자동 드리프트 감지 배치 (pg_cron job#8, 매일 KST 04:00 최근 7일 재집계)
 - [ ] 주간 자가검증 리포트
 - [ ] 낙찰 자동 피드백 탭
 - [ ] 투찰 마감 알림
