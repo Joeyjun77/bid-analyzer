@@ -1122,6 +1122,10 @@ ${baseInfo}
             const confColor=dataConf==="high"?"#5dca96":dataConf==="med"?"#d4a834":"#a8b4ff";
             const confLabel=dataConf==="high"?"신뢰 높음":dataConf==="med"?"신뢰 보통":"데이터 부족";
             const winBid=finalBid1st||finalBid;
+            // 4대 출력 지표: 최소 하한금액 = 기초금액 × 낙찰하한율 (A값 있으면 av+(ba-av)×fr/100)
+            const fbBa=Number(d.ba||0),fbAv=Number(d.av||0),fbFr=Number(d.pred_floor_rate||0);
+            const floorBid=fbBa>0&&fbFr>0?(fbAv>0?Math.ceil(fbAv+(fbBa-fbAv)*fbFr/100):Math.ceil(fbBa*fbFr/100)):null;
+            const minAdj=d.rec_adj_p25!=null?Number(d.rec_adj_p25):null;
             const agEnv=assessPrediction(d,agencyStats,agencyPred);
             const isHard=agEnv&&agEnv.confidence>0.5&&(agEnv.n||0)>5;
             return<div style={{marginBottom:14,borderRadius:10,overflow:"hidden",border:"2px solid rgba(212,168,52,0.5)"}}>
@@ -1144,6 +1148,27 @@ ${baseInfo}
                   <div style={{fontSize:10,color:C.txm,marginBottom:3}}>💰 입찰 시 사용할 투찰금액</div>
                   <div style={{fontSize:28,fontWeight:700,color:C.gold,fontFamily:"monospace",lineHeight:1}}>{winBid?tc(winBid)+"원":"—"}</div>
                   <div style={{fontSize:10,color:C.txd,marginTop:3}}>낙찰하한율 {d.pred_floor_rate||"—"}% 적용{d.av&&Number(d.av)>0?" (A값 "+tc(Number(d.av))+"원)":""}</div>
+                </div>
+              </div>
+              {/* 📐 참고 지표 (4대 출력) */}
+              <div style={{padding:"10px 16px",background:"rgba(0,0,0,0.12)",borderTop:"1px solid "+C.bdr+"55"}}>
+                <div style={{fontSize:10,color:C.txm,marginBottom:6,fontWeight:600}}>📐 참고 지표 · 투찰 전 확인</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                  <div>
+                    <div style={{fontSize:10,color:C.txd,marginBottom:2}}>최소 사정률 (공격)</div>
+                    <div style={{fontSize:13,fontWeight:600,color:"#a8b4ff",fontFamily:"monospace"}}>{minAdj!=null?(100+minAdj).toFixed(4)+"%":"—"}</div>
+                    <div style={{fontSize:9,color:C.txd,marginTop:2}}>p25 공격적 시나리오</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:C.txd,marginBottom:2}}>최소 하한금액</div>
+                    <div style={{fontSize:13,fontWeight:600,color:"#e24b4a",fontFamily:"monospace"}}>{floorBid?tc(floorBid)+"원":"—"}</div>
+                    <div style={{fontSize:9,color:C.txd,marginTop:2}}>이하 투찰시 무효</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:C.txd,marginBottom:2}}>1위 목표 투찰금</div>
+                    <div style={{fontSize:13,fontWeight:600,color:C.gold,fontFamily:"monospace"}}>{finalBid1st?tc(finalBid1st)+"원":(finalBid?tc(finalBid)+"원":"—")}</div>
+                    <div style={{fontSize:9,color:C.txd,marginTop:2}}>WIN_OPT_GAP 보정</div>
+                  </div>
                 </div>
               </div>
               {/* 신뢰도 + 근거 */}
