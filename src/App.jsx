@@ -5,7 +5,7 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -158,6 +158,7 @@ export default function App(){
   const[scoringMap,setScoringMap]=useState({}); // Phase 5: ROI scoring (prediction_id → grade/win_prob/...)
   const[biasMap,setBiasMapState]=useState({agency:{},at:{}}); // Phase 5.4: 편차 보정 맵
   const[predBiasMap,setPredBiasMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Phase 23-2: 동적 편향 보정 (AG×금액대 다층)
+  const[basegFinetune,setBasegFinetune]=useState({}); // Phase 23-3: 한전·고양시 (ag,at,seg) median fine-tune
   const[trendMap,setTrendMapState]=useState({}); // Phase 5.4: 추세 맵
   const[claudeApiKey,setClaudeApiKey]=useState(""); // Phase 5.4-B: Edge Function 프록시 사용, 레거시 호환 유지
   const[aiAnalysisMap,setAiAnalysisMap]=useState({}); // 예측ID → AI 분석 결과
@@ -229,17 +230,23 @@ export default function App(){
     else if(p.at&&m.atBa&&m.atBa[p.at+'|'+seg]!=null){biasFix=-m.atBa[p.at+'|'+seg];biasSrc='AT×금액대'}
     else if(p.at&&m.at&&m.at[p.at]!=null){biasFix=-m.at[p.at];biasSrc='AT'}
     const fixStr=(biasFix>=0?'+':'')+biasFix.toFixed(3);
+    // Phase 23-3: 한전·고양시 ba_seg fine-tune (50:50 블렌드, 다른 영역은 무영향)
+    const ftKey=(p.canonical_ag||p.ag)+'|'+p.at+'|'+seg;
+    const ftHit=basegFinetune&&basegFinetune[ftKey];
     const calcBid=(adj)=>{
       if(!ba||!fr)return null;
       const xp=ba*(1+adj/100);
       return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100));
     };
-    // 1순위: opt_adj + 동적 보정
+    // 1순위: opt_adj + 동적 보정 (+ ba_seg 블렌드)
     if(p.opt_adj!=null){
-      const adjNum=Number(p.opt_adj)+biasFix;
+      let base=Number(p.opt_adj);
+      let ftSrc='';
+      if(ftHit){base=(base+ftHit.median)/2;ftSrc=` +FT(${ftHit.median.toFixed(2)},n${ftHit.n})`}
+      const adjNum=base+biasFix;
       const bid=calcBid(adjNum);
       const bid1st=calcWin1stBid(bid,fr,p.at);
-      return{adj:adjNum,bid,bid1st,source:`추천(보정:${biasSrc} ${fixStr})`};
+      return{adj:adjNum,bid,bid1st,source:`추천(보정:${biasSrc} ${fixStr}${ftSrc})`};
     }
     // 2순위 fallback: pred_adj_rate + 동적 보정
     if(p.pred_adj_rate!=null){
@@ -249,7 +256,7 @@ export default function App(){
       return{adj:adjNum,bid,bid1st,source:`순수예측(보정:${biasSrc} ${fixStr})`};
     }
     return{adj:null,bid:null,bid1st:null,source:null};
-  },[predBiasMap]);
+  },[predBiasMap,basegFinetune]);
 
   // AI 프롬프트 생성 (공통)
   const buildAiPrompt=(r,mode="initial")=>{
@@ -449,6 +456,7 @@ ${baseInfo}
     try{const mtx=await sbFetchRoiMatrix();if(mtx?.matrix)setWinProbMatrix(mtx.matrix)}catch(e){}
     try{const bm=await sbFetchBiasMap();if(bm){setBiasMap(bm);setBiasMapState(bm)}}catch(e){}
     try{const pbm=await sbFetchPredBiasMap();if(pbm)setPredBiasMap(pbm)}catch(e){}
+    try{const bf=await sbFetchBasegFinetune();if(bf)setBasegFinetune(bf)}catch(e){}
     try{const tm=await sbFetchTrendMap();if(tm){setTrendMap(tm);setTrendMapState(tm)}}catch(e){}
     // Phase 12-C: 발주사별 낙찰 예측 데이터 로드
     try{

@@ -144,6 +144,22 @@ export async function sbFetchPredBiasMap(){
   }catch(e){return{agBa:{},ag:{},atBa:{},at:{}}}
 }
 
+// ─── Phase 23-3: 한전·고양시 (canonical_ag, at, ba_seg) median fine-tune 맵 ──
+// pred_baseg_finetune VIEW에서 (ag|at|seg) → median lookup, 50:50 블렌드용
+export async function sbFetchBasegFinetune(){
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/pred_baseg_finetune?select=canonical_ag,at,ba_seg,n,ba_seg_median&limit=500",{headers:getHdrsSel()});
+    if(!res.ok)return{};
+    const rows=await res.json();
+    const m={};
+    for(const r of rows){
+      const v=Number(r.ba_seg_median);if(!isFinite(v))continue;
+      m[r.canonical_ag+'|'+r.at+'|'+r.ba_seg]={n:Number(r.n),median:v};
+    }
+    return m;
+  }catch(e){return{}}
+}
+
 // ─── 발주기관별 가정사정률 통계 ─────────────────────────
 export async function sbFetchAgAssumedStats(){
   try{const res=await fetch(SB_URL+"/rest/v1/ag_assumed_stats?select=ag,at,seg,n,p25,p50,p75&order=n.desc&limit=1000",{headers:getHdrsSel()});if(!res.ok)return{};const rows=await res.json();const map={};for(const r of rows){const k=r.ag+"|"+r.seg;map[k]={at:r.at,n:Number(r.n),p25:Number(r.p25),p50:Number(r.p50),p75:Number(r.p75)}}return map}catch(e){return{}}}
