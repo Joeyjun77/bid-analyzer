@@ -5,7 +5,7 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -157,6 +157,7 @@ export default function App(){
   const[noticeFilter,setNoticeFilter]=useState("upcoming"); // upcoming/all/registered
   const[scoringMap,setScoringMap]=useState({}); // Phase 5: ROI scoring (prediction_id → grade/win_prob/...)
   const[biasMap,setBiasMapState]=useState({agency:{},at:{}}); // Phase 5.4: 편차 보정 맵
+  const[predBiasMap,setPredBiasMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Phase 23-2: 동적 편향 보정 (AG×금액대 다층)
   const[trendMap,setTrendMapState]=useState({}); // Phase 5.4: 추세 맵
   const[claudeApiKey,setClaudeApiKey]=useState(""); // Phase 5.4-B: Edge Function 프록시 사용, 레거시 호환 유지
   const[aiAnalysisMap,setAiAnalysisMap]=useState({}); // 예측ID → AI 분석 결과
@@ -217,31 +218,38 @@ export default function App(){
     const ba=p.ba?Number(p.ba):0;
     const av=p.av?Number(p.av):0;
     const fr=Number(p.pred_floor_rate||0);
-    // Phase 23 (2026-04-19): 잔여 편향 보정 +0.09%p
-    // n=1,148 백테스트 — opt_adj 평균 bias -0.0885%p → +0.09 상향 보정 시
-    // 1위율 5.75→6.28% (+0.53%p), 탈락률 53.97→48.39% (-5.58%p)
-    const BIAS_FIX=0.09;
+    // Phase 23-2 (2026-04-19): 동적 편향 보정 (AG×금액대 다층 lookup)
+    // 우선순위: AG×BA(n≥10) > AG(n≥15) > AT×BA(n≥20) > AT(n≥30) > 보정 없음
+    // 핵심 영역(고양시 +0.10, 한전 -0.03, 군부대 -0.04)에서 고정 +0.09 적용 시 정확도 악화 → 영역별 역보정
+    const seg=ba<1e8?'S1':ba<3e8?'S2':ba<1e9?'S3':ba<3e9?'S4':'S5';
+    const m=predBiasMap||{};
+    let biasFix=0,biasSrc='없음';
+    if(p.ag&&m.agBa&&m.agBa[p.ag+'|'+seg]!=null){biasFix=-m.agBa[p.ag+'|'+seg];biasSrc='AG×금액대'}
+    else if(p.ag&&m.ag&&m.ag[p.ag]!=null){biasFix=-m.ag[p.ag];biasSrc='AG'}
+    else if(p.at&&m.atBa&&m.atBa[p.at+'|'+seg]!=null){biasFix=-m.atBa[p.at+'|'+seg];biasSrc='AT×금액대'}
+    else if(p.at&&m.at&&m.at[p.at]!=null){biasFix=-m.at[p.at];biasSrc='AT'}
+    const fixStr=(biasFix>=0?'+':'')+biasFix.toFixed(3);
     const calcBid=(adj)=>{
       if(!ba||!fr)return null;
       const xp=ba*(1+adj/100);
       return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100));
     };
-    // 1순위: opt_adj + 편향 보정
+    // 1순위: opt_adj + 동적 보정
     if(p.opt_adj!=null){
-      const adjNum=Number(p.opt_adj)+BIAS_FIX;
+      const adjNum=Number(p.opt_adj)+biasFix;
       const bid=calcBid(adjNum);
       const bid1st=calcWin1stBid(bid,fr,p.at);
-      return{adj:adjNum,bid,bid1st,source:"추천(+0.09 보정)"};
+      return{adj:adjNum,bid,bid1st,source:`추천(보정:${biasSrc} ${fixStr})`};
     }
-    // 2순위 fallback: pred_adj_rate + 편향 보정
+    // 2순위 fallback: pred_adj_rate + 동적 보정
     if(p.pred_adj_rate!=null){
-      const adjNum=Number(p.pred_adj_rate)+BIAS_FIX;
+      const adjNum=Number(p.pred_adj_rate)+biasFix;
       const bid=calcBid(adjNum);
       const bid1st=calcWin1stBid(bid,fr,p.at);
-      return{adj:adjNum,bid,bid1st,source:"순수예측(+0.09 보정)"};
+      return{adj:adjNum,bid,bid1st,source:`순수예측(보정:${biasSrc} ${fixStr})`};
     }
     return{adj:null,bid:null,bid1st:null,source:null};
-  },[]);
+  },[predBiasMap]);
 
   // AI 프롬프트 생성 (공통)
   const buildAiPrompt=(r,mode="initial")=>{
@@ -440,6 +448,7 @@ ${baseInfo}
     try{const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm)}catch(e){setScoringMap({})}
     try{const mtx=await sbFetchRoiMatrix();if(mtx?.matrix)setWinProbMatrix(mtx.matrix)}catch(e){}
     try{const bm=await sbFetchBiasMap();if(bm){setBiasMap(bm);setBiasMapState(bm)}}catch(e){}
+    try{const pbm=await sbFetchPredBiasMap();if(pbm)setPredBiasMap(pbm)}catch(e){}
     try{const tm=await sbFetchTrendMap();if(tm){setTrendMap(tm);setTrendMapState(tm)}}catch(e){}
     // Phase 12-C: 발주사별 낙찰 예측 데이터 로드
     try{

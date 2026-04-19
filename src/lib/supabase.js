@@ -125,6 +125,25 @@ export async function sbFetchDetails(){
 export async function sbFetchDetailsByAg(ag){
   try{const res=await fetch(SB_URL+"/rest/v1/bid_details?ag=eq."+encodeURIComponent(ag)+"&select=*&order=od.desc&limit=1000",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}}
 
+// ─── Phase 23-2: 발주기관×금액대 동적 편향 보정 맵 ──────────
+// pred_bias_map VIEW에서 4단계 grain (AG_BA, AG, AT_BA, AT) 다층 lookup용 map 생성
+export async function sbFetchPredBiasMap(){
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/pred_bias_map?select=grain,key1,key2,n,bias&limit=2000",{headers:getHdrsSel()});
+    if(!res.ok)return{agBa:{},ag:{},atBa:{},at:{}};
+    const rows=await res.json();
+    const m={agBa:{},ag:{},atBa:{},at:{}};
+    for(const r of rows){
+      const b=Number(r.bias);if(!isFinite(b))continue;
+      if(r.grain==='AG_BA')m.agBa[r.key1+'|'+r.key2]=b;
+      else if(r.grain==='AG')m.ag[r.key1]=b;
+      else if(r.grain==='AT_BA')m.atBa[r.key1+'|'+r.key2]=b;
+      else if(r.grain==='AT')m.at[r.key1]=b;
+    }
+    return m;
+  }catch(e){return{agBa:{},ag:{},atBa:{},at:{}}}
+}
+
 // ─── 발주기관별 가정사정률 통계 ─────────────────────────
 export async function sbFetchAgAssumedStats(){
   try{const res=await fetch(SB_URL+"/rest/v1/ag_assumed_stats?select=ag,at,seg,n,p25,p50,p75&order=n.desc&limit=1000",{headers:getHdrsSel()});if(!res.ok)return{};const rows=await res.json();const map={};for(const r of rows){const k=r.ag+"|"+r.seg;map[k]={at:r.at,n:Number(r.n),p25:Number(r.p25),p50:Number(r.p50),p75:Number(r.p75)}}return map}catch(e){return{}}}
