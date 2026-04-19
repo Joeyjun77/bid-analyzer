@@ -217,24 +217,28 @@ export default function App(){
     const ba=p.ba?Number(p.ba):0;
     const av=p.av?Number(p.av):0;
     const fr=Number(p.pred_floor_rate||0);
+    // Phase 23 (2026-04-19): 잔여 편향 보정 +0.09%p
+    // n=1,148 백테스트 — opt_adj 평균 bias -0.0885%p → +0.09 상향 보정 시
+    // 1위율 5.75→6.28% (+0.53%p), 탈락률 53.97→48.39% (-5.58%p)
+    const BIAS_FIX=0.09;
     const calcBid=(adj)=>{
       if(!ba||!fr)return null;
       const xp=ba*(1+adj/100);
       return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100));
     };
-    // 1순위: opt_adj (편향 보정 + OPT_OFFSET 적용된 최종값)
+    // 1순위: opt_adj + 편향 보정
     if(p.opt_adj!=null){
-      const adjNum=Number(p.opt_adj);
-      const bid=p.opt_bid?Number(p.opt_bid):calcBid(adjNum);
+      const adjNum=Number(p.opt_adj)+BIAS_FIX;
+      const bid=calcBid(adjNum);
       const bid1st=calcWin1stBid(bid,fr,p.at);
-      return{adj:adjNum,bid,bid1st,source:"추천"};
+      return{adj:adjNum,bid,bid1st,source:"추천(+0.09 보정)"};
     }
-    // 2순위 fallback: pred_adj_rate (편향 보정 전 순수 예측)
+    // 2순위 fallback: pred_adj_rate + 편향 보정
     if(p.pred_adj_rate!=null){
-      const adjNum=Number(p.pred_adj_rate);
-      const bid=p.pred_bid_amount?Number(p.pred_bid_amount):calcBid(adjNum);
+      const adjNum=Number(p.pred_adj_rate)+BIAS_FIX;
+      const bid=calcBid(adjNum);
       const bid1st=calcWin1stBid(bid,fr,p.at);
-      return{adj:adjNum,bid,bid1st,source:"순수예측"};
+      return{adj:adjNum,bid,bid1st,source:"순수예측(+0.09 보정)"};
     }
     return{adj:null,bid:null,bid1st:null,source:null};
   },[]);
@@ -1760,10 +1764,10 @@ ${baseInfo}
         </div>
         {compList.length>0?<div style={{overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"5%"}}/><col style={{width:"12%"}}/><col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"9%"}}/><col style={{width:"10%"}}/><col style={{width:"7%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
+            <colgroup><col style={{width:"6%"}}/><col style={{width:"14%"}}/><col style={{width:"10%"}}/><col style={{width:"9%"}}/><col style={{width:"11%"}}/><col style={{width:"7%"}}/><col style={{width:"9%"}}/><col style={{width:"7%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
             <thead>
               <tr><th colSpan={1} style={{padding:"4px 6px",fontSize:10,color:"#e24b4a",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"center",letterSpacing:1}}>P12</th>
-                <th colSpan={6} style={{padding:"4px 6px",fontSize:10,color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>투찰 전 추천</th>
+                <th colSpan={5} style={{padding:"4px 6px",fontSize:10,color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>투찰 전 추천</th>
                 <th colSpan={3} style={{padding:"4px 6px",fontSize:10,color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>입찰 후 결과</th>
                 <th colSpan={2} style={{padding:"4px 6px",fontSize:10,borderBottom:"1px solid "+C.bdr+"44"}}></th></tr>
               <tr style={{background:C.bg3}}>
@@ -1771,7 +1775,6 @@ ${baseInfo}
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 사정률(100%)</th>
-              <th style={{padding:"7px 4px",textAlign:"right",color:"#e24b4a",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}} title="자사 가정 사정률 = 추천 - 0.10%p (1위 노림 / 공격형)">자사 가정(공격)</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 투찰금</th>
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
               <th style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제 1위 사정률(100%)</th>
@@ -1812,9 +1815,6 @@ ${baseInfo}
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}} title={finalRec.source?"근거: "+finalRec.source:""}>
                   {finalAdj!=null?(100+Number(finalAdj)).toFixed(4)+"%":""}
-                </td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:"#e24b4a",fontWeight:600}} title="자사 가정 = 추천 - 0.10%p (1위 노림)">
-                  {finalAdj!=null?(100+Number(finalAdj)-0.10).toFixed(4)+"%":""}
                 </td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:700}}>
                   {(finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):""}</td>
