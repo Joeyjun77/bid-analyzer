@@ -36,6 +36,17 @@
 - bid_records (53,199+ 건), bid_predictions (855+ 건)
 - predict_v6 함수 (Phase 15 예측 엔진)
 - agency_win_stats (발주사별 낙찰 통계, Phase 12-C)
+- 검증 인프라: prediction_quality_daily, weekly_quality_report, phase17_validation, pred_bias_map VIEW
+- 검증 함수: evaluate_model_release(candidate, baseline, window_days), refresh_prediction_quality_daily(since, until, model_version)
+
+## Generator / Evaluator 분리 규칙 (Phase 23-3)
+예측 코드(`getFinalRecommendation`, `opt_adj` 계산, `pred_bias_map` 관련, 낙찰하한율 함수) 변경 시:
+1. 변경 직전에 baseline MAE를 `evaluate_model_release` 또는 bid_predictions 직접 쿼리로 측정
+2. 변경 후 `/evaluate` 슬래시 커맨드로 회귀 검증 (PASS/WARN/FAIL 3값 판정)
+3. FAIL 판정 시 git push 금지 → 롤백 또는 수정 후 재검증
+4. WARN 이상 판정 받은 변경은 배포 후 24시간 내 `/accuracy` 재측정 필수
+5. 핵심 영역(한전·고양시·군부대) MAE +0.02 이상 악화는 즉시 FAIL
+슬래시 커맨드: `.claude/commands/accuracy.md`, `.claude/commands/evaluate.md`
 
 ## 금기사항
 - Supabase SDK 설치하지 말 것 (기존 REST 패턴 유지)
