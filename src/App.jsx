@@ -659,7 +659,7 @@ ${baseInfo}
     else if(compFilter==="expired")list=p.filter(x=>x.match_status==="expired");
     else list=p.filter(x=>x.match_status!=="expired"); // 전체에서 expired 제외
     if(hideYuchal)list=list.filter(x=>!(x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)")));
-    if(hideSuui)list=list.filter(x=>{const y=x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)");return y||!(x.match_status==="matched"&&x.actual_adj_rate==null&&x.actual_winner!=null&&x.actual_winner!=="")});
+    if(hideSuui)list=list.filter(x=>!(x.is_negotiation===true&&x.actual_adj_rate==null));
     // Phase 5: 등급 필터
     if(gradeFilter!=="all"){list=list.filter(x=>{const g=scoringMap[x.id]?.roi_grade||"D";if(gradeFilter==="SA")return g==="S"||g==="A";if(gradeFilter==="SAB")return g==="S"||g==="A"||g==="B";if(gradeFilter==="notD")return g!=="D";return true})}
     // Phase 12-C: 발주사별 P5 숨김, 주력만 보기 (pending 건에만 적용)
@@ -1666,7 +1666,7 @@ ${baseInfo}
           </label>
           <label style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:10,color:hideSuui?C.txd:"#d4a834"}}>
             <input type="checkbox" checked={hideSuui} onChange={e=>{setHideSuui(e.target.checked);setPredListShow(50)}} style={{accentColor:"#d4a834",width:12,height:12}}/>
-            <span>수의 숨김 ({predictions.filter(p=>{const y=p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)");return !y&&p.match_status==="matched"&&p.actual_adj_rate==null&&p.actual_winner!=null&&p.actual_winner!==""}).length}건)</span>
+            <span>수의 숨김 ({predictions.filter(p=>p.is_negotiation===true&&p.actual_adj_rate==null).length}건)</span>
           </label>
         </div>
         {/* Phase 12-C: 발주사별 낙찰 예측 대시보드 */}
@@ -1809,8 +1809,10 @@ ${baseInfo}
               const errColor=isAnomaly?"#e24b4a":optErr!=null?(Math.abs(optErr)<0.3?"#5dca96":Math.abs(optErr)<1?"#d4a834":"#e24b4a"):C.txd;
               const canWin=!isAnomaly&&finalBid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(finalBid)<=Number(p.actual_bid_amount)&&Number(finalBid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
               const isYuchal=p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)");
-              // 수의계약: 매칭됐지만 actual_adj_rate NULL이고 유찰 아님 (복수예가 메커니즘 미적용)
-              const isSuui=!isYuchal&&p.match_status==="matched"&&p.actual_adj_rate==null&&p.actual_winner!=null&&p.actual_winner!=="";
+              // 수의계약: is_negotiation 플래그 기준 (복수예가 메커니즘 미적용)
+              const isSuui=!isYuchal&&p.is_negotiation===true&&p.actual_adj_rate==null;
+              // 데이터대기: 경쟁입찰인데 bid_records에 사정률 미입력된 불완전 레코드
+              const isDataWait=!isYuchal&&!isSuui&&p.match_status==="matched"&&p.actual_adj_rate==null&&p.actual_winner!=null&&p.actual_winner!=="";
               // AI 권장은 이제 최종 추천에 영향 없음 (참고용 탭에서만 확인)
               // Phase 12-C: 발주사별 낙찰 예측
               const agAsmt=assessPrediction(p,agencyStats,agencyPred);
@@ -1820,7 +1822,7 @@ ${baseInfo}
               const rowBorder=tierStyle&&agAsmt.tier<=2?{borderLeft:"3px solid "+tierStyle.border}:{};
               const p5Fade=agAsmt&&agAsmt.tier===5?0.55:1;
               const isFocused=focusedPredId===p.id;
-              return<tr key={p.id} id={"pred-row-"+p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:(isAnomaly||isYuchal||isSuui?0.5:1)*p5Fade,background:isFocused?"rgba(93,202,150,0.14)":"",boxShadow:isFocused?"inset 3px 0 0 #5dca96":"",transition:"background 0.3s",...rowBorder}}>
+              return<tr key={p.id} id={"pred-row-"+p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:(isAnomaly||isYuchal||isSuui||isDataWait?0.5:1)*p5Fade,background:isFocused?"rgba(93,202,150,0.14)":"",boxShadow:isFocused?"inset 3px 0 0 #5dca96":"",transition:"background 0.3s",...rowBorder}}>
                 <td style={{padding:"6px 2px",textAlign:"center"}}>
                   {agAsmt&&agAsmt.tier?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}} title={`${agAsmt.label}\n샘플 ${agAsmt.n}건\n이론 ${agAsmt.win_rate}%\n오차 ${agAsmt.mae}%`}>
                     <TierBadge tier={agAsmt.tier} compact={true}/>
@@ -1836,10 +1838,10 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:700}}>
                   {(finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11}}>{p.open_date||""}</td>
-                <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
-                <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
-                <td style={{padding:"6px",textAlign:"center"}}>{isYuchal?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.1)",color:"#e24b4a"}}>유찰</span>:isSuui?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(212,168,52,0.15)",color:"#d4a834"}}>수의</span>:<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span>}</td>
-                <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"&&!isYuchal&&!isSuui?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
+                <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":isDataWait?"#8a93a8":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:isDataWait?<span style={{fontSize:10}}>데이터대기</span>:p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
+                <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui||isDataWait?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
+                <td style={{padding:"6px",textAlign:"center"}}>{isYuchal?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.1)",color:"#e24b4a"}}>유찰</span>:isSuui?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(212,168,52,0.15)",color:"#d4a834"}}>수의</span>:isDataWait?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(138,147,168,0.15)",color:"#8a93a8"}}>데이터대기</span>:<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span>}</td>
+                <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"&&!isYuchal&&!isSuui&&!isDataWait?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><button onClick={async()=>{setDetailModal(p);setDetailTab("detail");setDetailAi(p.ai_advice||"");setDetailAiLoading(false);
                   // Phase 5.4: 저장된 AI 분석 자동 로드
                   if(!aiAnalysisMap[p.id]){
