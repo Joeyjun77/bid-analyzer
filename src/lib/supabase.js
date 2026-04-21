@@ -213,6 +213,16 @@ export async function sbFetchWatchlist(){
     return rows;
   }catch(e){return[]}
 }
+export async function sbFetchWatchlistHistory(days=14){
+  try{
+    const since=new Date(Date.now()-days*86400000).toISOString().slice(0,10);
+    const res=await fetch(SB_URL+"/rest/v1/watchlist_snapshots?select=snapshot_date,at,tier,n_total,mae_total,bias_total,mae_drift,bias_drift,grade&snapshot_date=gte."+since+"&order=snapshot_date.desc,at.asc,tier.asc",{headers:getHdrsSel()});
+    if(!res.ok)return[];
+    const rows=await res.json();
+    if(!Array.isArray(rows))return[];
+    return rows;
+  }catch(e){return[]}
+}
 
 // ─── bid_details CRUD ────────────────────────────────────
 export async function sbSaveDetail(detail){

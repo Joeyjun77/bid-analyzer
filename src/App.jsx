@@ -5,7 +5,7 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -190,6 +190,7 @@ export default function App(){
   const[weeklyQuality,setWeeklyQuality]=useState([]);
   const[biasHotspots,setBiasHotspots]=useState([]);
   const[watchlist,setWatchlist]=useState([]);
+  const[watchHistory,setWatchHistory]=useState([]);
   const[qualityLoading,setQualityLoading]=useState(false);
   const[showSim,setShowSim]=useState(false); // 수동 시뮬레이션 토글
   // Phase 12-C: 발주사별 낙찰 예측
@@ -505,7 +506,8 @@ ${baseInfo}
       sbFetchWeeklyQuality(40),
       sbFetchBiasHotspots(10,25),
       sbFetchWatchlist(),
-    ]).then(([d,w,b,wl])=>{setQualityDaily(d||[]);setWeeklyQuality(w||[]);setBiasHotspots(b||[]);setWatchlist(wl||[])})
+      sbFetchWatchlistHistory(14),
+    ]).then(([d,w,b,wl,wh])=>{setQualityDaily(d||[]);setWeeklyQuality(w||[]);setBiasHotspots(b||[]);setWatchlist(wl||[]);setWatchHistory(wh||[])})
       .catch(e=>console.warn("quality load failed:",e.message))
       .finally(()=>setQualityLoading(false));
   },[tab]);
@@ -2086,6 +2088,63 @@ ${baseInfo}
                   </td>
                 </tr>))}</tbody>
             </table>
+          </div>
+        })()}
+
+        {/* 1-C. 드리프트 이력 (최근 14일 grade/drift 추이) */}
+        {watchHistory.length>0&&(()=>{
+          const gradeDot=(g)=>g==="HOT"?"#e24b4a":g==="WARN"?"#d4a834":g==="OK"?"#5dca96":C.txd;
+          const tierLabel=(t)=>({S1_under3:"3억↓",S2_3to5:"3~5억",S3_5to10:"5~10억",S4_over10:"10억↑"}[t]||t);
+          // 세그먼트 키별 그룹
+          const byKey={};
+          for(const r of watchHistory){const k=r.at+"|"+r.tier;if(!byKey[k])byKey[k]=[];byKey[k].push(r)}
+          // 날짜 축 (최근→오래된)
+          const allDates=Array.from(new Set(watchHistory.map(r=>r.snapshot_date))).sort().reverse();
+          // 등급별 정렬: HOT > WARN > OK
+          const rank=(g)=>g==="HOT"?1:g==="WARN"?2:3;
+          const segKeys=Object.keys(byKey).sort((a,b)=>{
+            const la=byKey[a][0],lb=byKey[b][0];
+            return rank(la.grade)-rank(lb.grade)||(Number(lb.n_total)-Number(la.n_total));
+          });
+          return<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"14px 16px",marginBottom:14,overflowX:"auto"}}>
+            <div style={{fontSize:12,color:C.txm,fontWeight:600,marginBottom:4}}>🕑 드리프트 이력 (최근 {allDates.length}일)</div>
+            <div style={{fontSize:10,color:C.txd,marginBottom:10}}>매일 18:00 UTC 자동 스냅샷 · 등급 색(●) 변화로 세그먼트 안정성 추적 · HOT→WARN→OK 순</div>
+            <table style={{width:"100%",fontSize:11,borderCollapse:"collapse",minWidth:600}}>
+              <thead><tr style={{color:C.txd,fontSize:10}}>
+                <th style={{textAlign:"left",padding:"4px 6px",borderBottom:"1px solid "+C.bdr,position:"sticky",left:0,background:C.bg2}}>세그먼트</th>
+                {allDates.map(d=>(<th key={d} style={{textAlign:"center",padding:"4px 2px",borderBottom:"1px solid "+C.bdr,fontFamily:"monospace",fontSize:9}}>{d.slice(5)}</th>))}
+                <th style={{textAlign:"right",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>MAE 추이</th>
+                <th style={{textAlign:"right",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>bias 드리프트</th>
+              </tr></thead>
+              <tbody>{segKeys.map(k=>{
+                const rows=byKey[k];
+                const byDate={};for(const r of rows)byDate[r.snapshot_date]=r;
+                const latest=rows[0]; // 최근 (정렬 desc)
+                const oldest=rows[rows.length-1];
+                const maeTrend=(Number(latest.mae_total)-Number(oldest.mae_total)).toFixed(3);
+                const driftVal=latest.bias_drift;
+                return<tr key={k} style={{borderBottom:"1px solid "+C.bdr}}>
+                  <td style={{padding:"5px 6px",color:C.txt,whiteSpace:"nowrap",position:"sticky",left:0,background:C.bg2}}>
+                    {latest.at}<span style={{color:C.txd,marginLeft:4,fontSize:10}}>{tierLabel(latest.tier)}</span>
+                  </td>
+                  {allDates.map(d=>{
+                    const r=byDate[d];
+                    return <td key={d} style={{padding:"5px 2px",textAlign:"center"}}>
+                      {r?<span title={r.grade+" · MAE "+Number(r.mae_total).toFixed(3)+(r.bias_drift!=null?" · Δbias "+(Number(r.bias_drift)>0?"+":"")+Number(r.bias_drift).toFixed(2):"")} style={{color:gradeDot(r.grade),fontSize:14,lineHeight:1}}>●</span>:<span style={{color:C.txd,fontSize:10}}>·</span>}
+                    </td>;
+                  })}
+                  <td style={{padding:"5px 6px",textAlign:"right",fontFamily:"monospace",color:Number(maeTrend)>0.05?"#e24b4a":Number(maeTrend)<-0.05?"#5dca96":C.txm}}>
+                    {rows.length>1?(Number(maeTrend)>0?"+":"")+maeTrend:"—"}
+                  </td>
+                  <td style={{padding:"5px 6px",textAlign:"right",fontFamily:"monospace",color:driftVal==null?C.txd:Number(driftVal)>0.1?"#e24b4a":Number(driftVal)<-0.1?"#5dca96":C.txm}}>
+                    {driftVal==null?"—":(Number(driftVal)>0?"+":"")+Number(driftVal).toFixed(3)}
+                  </td>
+                </tr>;
+              })}</tbody>
+            </table>
+            <div style={{fontSize:10,color:C.txd,marginTop:8,textAlign:"right"}}>
+              총 {watchHistory.length}건 스냅샷 · {Object.keys(byKey).length}개 세그먼트 추적 · {allDates.length===1?"내일부터 추이 누적 시작":`${allDates.length}일 누적`}
+            </div>
           </div>
         })()}
 
