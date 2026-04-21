@@ -2047,6 +2047,53 @@ ${baseInfo}
           </div>
         </div>}
 
+        {/* 1-A2. 드리프트 알림 (임계값 기반 자동 감지) */}
+        {watchlist.length>0&&(()=>{
+          const histMap={};
+          for(const r of watchHistory){const k=r.at+"|"+r.tier;if(!histMap[k])histMap[k]=[];histMap[k].push(r)}
+          for(const k in histMap)histMap[k].sort((a,b)=>String(b.snapshot_date).localeCompare(String(a.snapshot_date)));
+          const alerts=[];
+          for(const s of watchlist){
+            const k=s.at+"|"+s.tier;
+            if(s.grade==="HOT"){
+              alerts.push({sev:"HIGH",tag:"HOT",at:s.at,tier:s.tier,msg:`MAE ${Number(s.mae_total).toFixed(3)} · bias ${Number(s.bias_total)>0?"+":""}${Number(s.bias_total).toFixed(3)} — 즉시 주시 필요`});
+            } else if(s.grade==="WARN"){
+              const hist=histMap[k]||[];
+              let streak=0;
+              for(const r of hist){if(r.grade==="WARN"||r.grade==="HOT")streak++;else break}
+              if(streak>=2)alerts.push({sev:"HIGH",tag:"지속",at:s.at,tier:s.tier,msg:`WARN ${streak}일 연속 — 구조 점검 검토`});
+            }
+            if(s.bias_drift!=null&&Math.abs(Number(s.bias_drift))>=0.5){
+              alerts.push({sev:"MED",tag:"편향역전",at:s.at,tier:s.tier,msg:`편향 드리프트 ${Number(s.bias_drift)>0?"+":""}${Number(s.bias_drift).toFixed(2)} — 최근 30d 편향 반전`});
+            }
+            if(s.mae_drift!=null&&Number(s.mae_drift)>=0.2){
+              alerts.push({sev:"MED",tag:"MAE악화",at:s.at,tier:s.tier,msg:`MAE 드리프트 +${Number(s.mae_drift).toFixed(2)} — 최근 30d 정확도 악화`});
+            }
+          }
+          if(alerts.length===0)return null;
+          alerts.sort((a,b)=>(a.sev==="HIGH"?0:1)-(b.sev==="HIGH"?0:1));
+          const tierLabel=(t)=>({S1_under3:"3억↓",S2_3to5:"3~5억",S3_5to10:"5~10억",S4_over10:"10억↑"}[t]||t);
+          const sevColor=(sev)=>sev==="HIGH"?"#e24b4a":"#d4a834";
+          const sevBg=(sev)=>sev==="HIGH"?"rgba(226,75,74,0.12)":"rgba(212,168,52,0.10)";
+          const highN=alerts.filter(a=>a.sev==="HIGH").length;
+          const medN=alerts.length-highN;
+          return<div style={{background:C.bg2,border:"1px solid "+(highN>0?"#e24b4a":"#d4a834"),borderRadius:8,padding:"14px 16px",marginBottom:14}}>
+            <div style={{fontSize:12,color:highN>0?"#e24b4a":"#d4a834",fontWeight:700,marginBottom:4}}>🚨 드리프트 알림 ({alerts.length}건)</div>
+            <div style={{fontSize:10,color:C.txd,marginBottom:10}}>HOT / WARN 2일 연속 → HIGH · |bias드리프트|≥0.5, MAE드리프트≥0.2 → MED · 매일 18:00 UTC 갱신</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {alerts.map((a,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 10px",background:sevBg(a.sev),borderRadius:6,borderLeft:"3px solid "+sevColor(a.sev)}}>
+                  <span style={{fontSize:9,fontWeight:700,color:sevColor(a.sev),minWidth:30,fontFamily:"monospace"}}>{a.sev}</span>
+                  <span style={{fontSize:10,color:C.txm,minWidth:56}}>{a.tag}</span>
+                  <span style={{fontSize:11,color:C.txt,fontWeight:600,minWidth:140}}>{a.at}<span style={{color:C.txd,marginLeft:4,fontSize:10}}>{tierLabel(a.tier)}</span></span>
+                  <span style={{fontSize:10,color:C.txm,flex:1}}>{a.msg}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{fontSize:9,color:C.txd,marginTop:8,textAlign:"right"}}>HIGH {highN}건 · MED {medN}건</div>
+          </div>
+        })()}
+
         {/* 1-B. 관찰 지점 (세그먼트 드리프트) */}
         {watchlist.length>0&&(()=>{
           const gradeColor=(g)=>g==="HOT"?"#e24b4a":g==="WARN"?"#d4a834":"#5dca96";
