@@ -204,6 +204,15 @@ export async function sbFetchBiasHotspots(minN=10,limit=30){
     return rows.sort((a,b)=>Math.abs(Number(b.bias))-Math.abs(Number(a.bias)));
   }catch(e){return[]}
 }
+export async function sbFetchWatchlist(){
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/watchlist_segments?select=*",{headers:getHdrsSel()});
+    if(!res.ok)return[];
+    const rows=await res.json();
+    if(!Array.isArray(rows))return[];
+    return rows;
+  }catch(e){return[]}
+}
 
 // ─── bid_details CRUD ────────────────────────────────────
 export async function sbSaveDetail(detail){
