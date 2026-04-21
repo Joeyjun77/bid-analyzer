@@ -5,7 +5,7 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -185,6 +185,11 @@ export default function App(){
   const[strategiesLoadingId,setStrategiesLoadingId]=useState(null);
   // ★ v7-ops-2: 전략별 Pwin 캘리브레이션 현황 (n, 실측률, fallback)
   const[pwinCal,setPwinCal]=useState({});
+  // ★ v7-ops-4B: 모델 검증 탭 데이터
+  const[qualityDaily,setQualityDaily]=useState([]);
+  const[weeklyQuality,setWeeklyQuality]=useState([]);
+  const[biasHotspots,setBiasHotspots]=useState([]);
+  const[qualityLoading,setQualityLoading]=useState(false);
   const[showSim,setShowSim]=useState(false); // 수동 시뮬레이션 토글
   // Phase 12-C: 발주사별 낙찰 예측
   const[agencyStats,setAgencyStats]=useState({}); // ag → {tier, win_rate, confidence, ...}
@@ -486,6 +491,20 @@ ${baseInfo}
 
   // 예측 탭 진입 시 자동 새로고침
   useEffect(()=>{if(tab==="predict"&&!dbLoading){refreshPredictions()}},[tab,dbLoading]);
+
+  // ★ v7-ops-4B: 모델 검증 탭 진입 시 1회 로드
+  useEffect(()=>{
+    if(tab!=="quality")return;
+    if(qualityDaily.length||weeklyQuality.length||biasHotspots.length)return;
+    setQualityLoading(true);
+    Promise.all([
+      sbFetchQualityDaily(30),
+      sbFetchWeeklyQuality(40),
+      sbFetchBiasHotspots(10,25),
+    ]).then(([d,w,b])=>{setQualityDaily(d||[]);setWeeklyQuality(w||[]);setBiasHotspots(b||[])})
+      .catch(e=>console.warn("quality load failed:",e.message))
+      .finally(()=>setQualityLoading(false));
+  },[tab]);
 
   // ★ v7 Phase C-small (a-R1): 전략옵션 탭 열릴 때 recommend_strategies RPC 호출
   useEffect(()=>{
@@ -830,7 +849,7 @@ ${baseInfo}
         })()}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="chat" ch="AI 상담"/></div>
+        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="quality" ch="🔬 검증"/><Tb id="chat" ch="AI 상담"/></div>
         <UserBadge/>
       </div>
     </div>
@@ -1972,6 +1991,108 @@ ${baseInfo}
 
     {/* ═══ Phase 22 P2-2: 낙찰 결과 자동 피드백 탭 ═══ */}
     {tab==="feedback"&&<PredictionFeedback/>}
+
+    {/* ═══ v7-ops-4B: 모델 검증 탭 ═══ */}
+    {tab==="quality"&&(()=>{
+      const latestWeek=weeklyQuality.find(w=>w.scope==="overall");
+      const atWeekly=weeklyQuality.filter(w=>w.scope==="at").slice(0,12);
+      const routeWeekly=weeklyQuality.filter(w=>w.scope==="route").slice(0,6);
+      const dailyOverall=qualityDaily.filter(d=>!d.at&&!d.route).slice(0,14);
+      const biasColor=(b)=>{const a=Math.abs(Number(b));if(a<0.05)return C.txm;if(a<0.10)return "#d4a834";if(a<0.20)return "#e8954b";return "#e24b4a"};
+      const maeColor=(m)=>{const v=Number(m);if(v<0.50)return "#5dca96";if(v<0.70)return "#d4a834";return "#e24b4a"};
+      return<div style={{padding:"14px 16px",maxWidth:1100,margin:"0 auto"}}>
+        <div style={{fontSize:18,fontWeight:700,color:C.txt,marginBottom:4}}>🔬 모델 검증 대시보드</div>
+        <div style={{fontSize:11,color:C.txm,marginBottom:18}}>예측 엔진 품질 모니터링 — 일별 MAE · 주간 드리프트 · 기관별 편향</div>
+        {qualityLoading&&<div style={{padding:20,textAlign:"center",color:C.txm,fontSize:12}}>…데이터 로드 중</div>}
+        {!qualityLoading&&!weeklyQuality.length&&!qualityDaily.length&&<div style={{padding:20,textAlign:"center",color:C.txd,fontSize:12,background:C.bg3,borderRadius:8}}>검증 데이터 없음. 일일 cron이 아직 실행 안 됐을 수 있습니다.</div>}
+
+        {/* 1. Overall 주간 요약 */}
+        {latestWeek&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"14px 16px",marginBottom:14}}>
+          <div style={{fontSize:12,color:C.txm,marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontWeight:600}}>📊 이번 주 전체 품질</span>
+            <span style={{fontSize:10,color:C.txd}}>{latestWeek.report_week} 주차 · n={latestWeek.n_week}</span>
+            {latestWeek.gate_status&&<span style={{fontSize:10,color:latestWeek.gate_status==="pass"?"#5dca96":"#e24b4a",background:(latestWeek.gate_status==="pass"?"rgba(93,202,165,":"rgba(226,75,74,")+"0.12)",padding:"2px 8px",borderRadius:3,fontWeight:600,textTransform:"uppercase"}}>{latestWeek.gate_status}</span>}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+            <div style={{padding:"10px 12px",background:C.bg3,borderRadius:6}}>
+              <div style={{fontSize:9,color:C.txd,marginBottom:4}}>주간 MAE</div>
+              <div style={{fontSize:20,fontWeight:700,color:maeColor(latestWeek.mae_week),fontFamily:"monospace"}}>{Number(latestWeek.mae_week).toFixed(3)}%</div>
+              {latestWeek.mae_delta!=null&&<div style={{fontSize:10,color:Number(latestWeek.mae_delta)<=0?"#5dca96":"#e24b4a",marginTop:2,fontFamily:"monospace"}}>Δ {Number(latestWeek.mae_delta)>0?"+":""}{Number(latestWeek.mae_delta).toFixed(3)}</div>}
+            </div>
+            <div style={{padding:"10px 12px",background:C.bg3,borderRadius:6}}>
+              <div style={{fontSize:9,color:C.txd,marginBottom:4}}>드리프트</div>
+              <div style={{fontSize:14,fontWeight:700,color:latestWeek.drift_flag?"#e24b4a":"#5dca96",marginTop:4}}>{latestWeek.drift_flag?"⚠ 감지됨":"안정"}</div>
+            </div>
+            <div style={{padding:"10px 12px",background:C.bg3,borderRadius:6}}>
+              <div style={{fontSize:9,color:C.txd,marginBottom:4}}>표본 수</div>
+              <div style={{fontSize:20,fontWeight:700,color:C.gold,fontFamily:"monospace",marginTop:2}}>{latestWeek.n_week}</div>
+            </div>
+          </div>
+        </div>}
+
+        {/* 2. 기관별 주간 MAE */}
+        {atWeekly.length>0&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"14px 16px",marginBottom:14}}>
+          <div style={{fontSize:12,color:C.txm,fontWeight:600,marginBottom:10}}>🏢 기관별 주간 MAE</div>
+          <table style={{width:"100%",fontSize:11,borderCollapse:"collapse"}}>
+            <thead><tr style={{color:C.txd,fontSize:10}}>
+              <th style={{textAlign:"left",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>주차</th>
+              <th style={{textAlign:"left",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>기관</th>
+              <th style={{textAlign:"right",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>n</th>
+              <th style={{textAlign:"right",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>MAE</th>
+              <th style={{textAlign:"right",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>Δ 전주</th>
+              <th style={{textAlign:"center",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>드리프트</th>
+            </tr></thead>
+            <tbody>{atWeekly.map((w,i)=>(
+              <tr key={i} style={{borderBottom:"1px solid "+C.bdr}}>
+                <td style={{padding:"6px",color:C.txd,fontFamily:"monospace"}}>{w.report_week}</td>
+                <td style={{padding:"6px",color:C.txt}}>{w.dimension_value}</td>
+                <td style={{padding:"6px",textAlign:"right",color:C.txm,fontFamily:"monospace"}}>{w.n_week}</td>
+                <td style={{padding:"6px",textAlign:"right",color:maeColor(w.mae_week),fontFamily:"monospace",fontWeight:600}}>{Number(w.mae_week).toFixed(3)}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",color:w.mae_delta==null?C.txd:(Number(w.mae_delta)<=0?"#5dca96":"#e24b4a")}}>{w.mae_delta==null?"—":(Number(w.mae_delta)>0?"+":"")+Number(w.mae_delta).toFixed(3)}</td>
+                <td style={{padding:"6px",textAlign:"center"}}>{w.drift_flag?<span style={{color:"#e24b4a"}}>⚠</span>:<span style={{color:C.txd}}>·</span>}</td>
+              </tr>))}</tbody>
+          </table>
+        </div>}
+
+        {/* 3. 기관별 편향 핫스팟 */}
+        {biasHotspots.length>0&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"14px 16px",marginBottom:14}}>
+          <div style={{fontSize:12,color:C.txm,fontWeight:600,marginBottom:4}}>🎯 편향 핫스팟 (|bias|≥0.05)</div>
+          <div style={{fontSize:10,color:C.txd,marginBottom:10}}>음수=과소예측(실제가 더 높음), 양수=과대예측(실제가 더 낮음) · 자동 보정은 bias_profile에 이미 반영됨</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            {biasHotspots.filter(h=>Math.abs(Number(h.bias))>=0.05).slice(0,20).map((h,i)=>(
+              <div key={i} style={{padding:"6px 10px",background:C.bg3,borderRadius:4,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:9,color:C.txd}}>{h.grain}{h.key2?" · "+h.key2:""} · n={h.n}</div>
+                  <div style={{color:C.txt,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h.key1}</div>
+                </div>
+                <div style={{color:biasColor(h.bias),fontFamily:"monospace",fontWeight:600,marginLeft:8}}>{Number(h.bias)>0?"+":""}{Number(h.bias).toFixed(3)}</div>
+              </div>))}
+          </div>
+        </div>}
+
+        {/* 4. 일별 전체 MAE (최근 14일) */}
+        {dailyOverall.length>0&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"14px 16px"}}>
+          <div style={{fontSize:12,color:C.txm,fontWeight:600,marginBottom:10}}>📅 일별 전체 MAE (최근 {dailyOverall.length}일)</div>
+          <table style={{width:"100%",fontSize:11,borderCollapse:"collapse"}}>
+            <thead><tr style={{color:C.txd,fontSize:10}}>
+              <th style={{textAlign:"left",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>측정일</th>
+              <th style={{textAlign:"right",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>n</th>
+              <th style={{textAlign:"right",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>MAE</th>
+              <th style={{textAlign:"right",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>hit±0.5%</th>
+              <th style={{textAlign:"right",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>floor safe</th>
+            </tr></thead>
+            <tbody>{dailyOverall.map((d,i)=>(
+              <tr key={i} style={{borderBottom:"1px solid "+C.bdr}}>
+                <td style={{padding:"6px",color:C.txd,fontFamily:"monospace"}}>{d.measured_on}</td>
+                <td style={{padding:"6px",textAlign:"right",color:C.txm,fontFamily:"monospace"}}>{d.n}</td>
+                <td style={{padding:"6px",textAlign:"right",color:maeColor(d.mae),fontFamily:"monospace",fontWeight:600}}>{Number(d.mae).toFixed(3)}</td>
+                <td style={{padding:"6px",textAlign:"right",color:C.txm,fontFamily:"monospace"}}>{d.hit_0_5_pct!=null?Number(d.hit_0_5_pct).toFixed(1)+"%":"—"}</td>
+                <td style={{padding:"6px",textAlign:"right",color:C.txm,fontFamily:"monospace"}}>{d.floor_safe_pct!=null?Number(d.floor_safe_pct).toFixed(1)+"%":"—"}</td>
+              </tr>))}</tbody>
+          </table>
+        </div>}
+      </div>
+    })()}
 
     {/* ═══ AI 상담 탭 ═══ */}
     {tab==="chat"&&(()=>{

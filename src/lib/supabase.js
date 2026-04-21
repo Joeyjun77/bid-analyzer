@@ -179,6 +179,31 @@ export async function sbFetchPwinCalibration(){
     return out;
   }catch(e){return{}}
 }
+// Phase v7-ops-4B: 모델 검증 대시보드용 helpers
+export async function sbFetchQualityDaily(sinceDays=30){
+  try{
+    const since=new Date(Date.now()-sinceDays*86400000).toISOString().slice(0,10);
+    const res=await fetch(SB_URL+"/rest/v1/prediction_quality_daily?select=measured_on,model_version,route,at,n,mae,hit_0_5_pct,hit_0_3_pct,floor_safe_pct,direction_pct&measured_on=gte."+since+"&order=measured_on.desc",{headers:getHdrsSel()});
+    if(!res.ok)return[];
+    return await res.json();
+  }catch(e){return[]}
+}
+export async function sbFetchWeeklyQuality(limit=20){
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/weekly_quality_report?select=report_week,scope,dimension_value,n_week,mae_week,mae_delta,drift_flag,gate_status&order=report_week.desc&limit="+limit,{headers:getHdrsSel()});
+    if(!res.ok)return[];
+    return await res.json();
+  }catch(e){return[]}
+}
+export async function sbFetchBiasHotspots(minN=10,limit=30){
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/pred_bias_map?select=grain,key1,key2,n,bias&n=gte."+minN+"&order=bias.desc&limit="+limit,{headers:getHdrsSel()});
+    if(!res.ok)return[];
+    const rows=await res.json();
+    if(!Array.isArray(rows))return[];
+    return rows.sort((a,b)=>Math.abs(Number(b.bias))-Math.abs(Number(a.bias)));
+  }catch(e){return[]}
+}
 
 // ─── bid_details CRUD ────────────────────────────────────
 export async function sbSaveDetail(detail){
