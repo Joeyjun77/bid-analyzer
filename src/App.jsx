@@ -2203,8 +2203,24 @@ ${baseInfo}
                       {r?<span title={r.grade+" · MAE "+Number(r.mae_total).toFixed(3)+(r.bias_drift!=null?" · Δbias "+(Number(r.bias_drift)>0?"+":"")+Number(r.bias_drift).toFixed(2):"")} style={{color:gradeDot(r.grade),fontSize:14,lineHeight:1}}>●</span>:<span style={{color:C.txd,fontSize:10}}>·</span>}
                     </td>;
                   })}
-                  <td style={{padding:"5px 6px",textAlign:"right",fontFamily:"monospace",color:Number(maeTrend)>0.05?"#e24b4a":Number(maeTrend)<-0.05?"#5dca96":C.txm}}>
-                    {rows.length>1?(Number(maeTrend)>0?"+":"")+maeTrend:"—"}
+                  <td style={{padding:"5px 6px",textAlign:"right",fontFamily:"monospace"}}>
+                    {rows.length<2?<span style={{color:C.txd}}>—</span>:(()=>{
+                      const sorted=[...rows].sort((a,b)=>String(a.snapshot_date).localeCompare(String(b.snapshot_date)));
+                      const maes=sorted.map(r=>Number(r.mae_total));
+                      const mn=Math.min(...maes),mx=Math.max(...maes);
+                      const w=68,h=18,pad=2;
+                      const sx=(i)=>pad+(i/(maes.length-1))*(w-2*pad);
+                      const sy=(m)=>mx===mn?h/2:pad+(1-(m-mn)/(mx-mn))*(h-2*pad);
+                      const pts=maes.map((m,i)=>`${sx(i).toFixed(1)},${sy(m).toFixed(1)}`).join(" ");
+                      const trendColor=Number(maeTrend)>0.05?"#e24b4a":Number(maeTrend)<-0.05?"#5dca96":C.txm;
+                      return<span style={{display:"inline-flex",alignItems:"center",gap:6}}>
+                        <svg width={w} height={h} style={{verticalAlign:"middle"}}>
+                          <polyline points={pts} fill="none" stroke={trendColor} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>
+                          <circle cx={sx(maes.length-1)} cy={sy(maes[maes.length-1])} r="2" fill={trendColor}/>
+                        </svg>
+                        <span style={{color:trendColor,fontSize:10,minWidth:42,textAlign:"right"}}>{Number(maeTrend)>0?"+":""}{maeTrend}</span>
+                      </span>;
+                    })()}
                   </td>
                   <td style={{padding:"5px 6px",textAlign:"right",fontFamily:"monospace",color:driftVal==null?C.txd:Number(driftVal)>0.1?"#e24b4a":Number(driftVal)<-0.1?"#5dca96":C.txm}}>
                     {driftVal==null?"—":(Number(driftVal)>0?"+":"")+Number(driftVal).toFixed(3)}
