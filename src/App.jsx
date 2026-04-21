@@ -5,7 +5,7 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbLogStrategy, sbUpdateStrategyOutcomes, sbFetchStrategyLog } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -183,6 +183,9 @@ export default function App(){
   // ★ v7 Phase C-small (a-R1): 전략 RPC 결과 캐시 (pred_id → [공격형/균형형/안정형])
   const[strategiesMap,setStrategiesMap]=useState({});
   const[strategiesLoadingId,setStrategiesLoadingId]=useState(null);
+  // ★ v7 Phase a-R2: 사용자가 이미 확정한 전략 집합 (pred_id → Set(strategy_type))
+  const[selectedStrategyMap,setSelectedStrategyMap]=useState({});
+  const[loggingStrategyKey,setLoggingStrategyKey]=useState(null); // `${predId}:${strategy}`
   const[showSim,setShowSim]=useState(false); // 수동 시뮬레이션 토글
   // Phase 12-C: 발주사별 낙찰 예측
   const[agencyStats,setAgencyStats]=useState({}); // ag → {tier, win_rate, confidence, ...}
@@ -429,6 +432,11 @@ ${baseInfo}
       // 자동 매칭 시도
       const matched=await sbMatchPredictions(preds,rows);
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds)}
+      // ★ v7 a-R2: 매칭된 예측의 strategy_log outcome 백필 (최근 60일)
+      if(matched>0){try{
+        const since=new Date(Date.now()-60*86400000).toISOString().slice(0,10);
+        await sbUpdateStrategyOutcomes(since);
+      }catch(e){console.warn("strategy outcome 백필 실패:",e.message)}}
       return{records:rows.length,predictions:(preds||[]).length,details:(dets||[]).length,matched}
     }catch(e){return null}},[refreshStats]);;
 
@@ -481,26 +489,39 @@ ${baseInfo}
   useEffect(()=>{if(tab==="predict"&&!dbLoading){refreshPredictions()}},[tab,dbLoading]);
 
   // ★ v7 Phase C-small (a-R1): 전략옵션 탭 열릴 때 recommend_strategies RPC 호출
+  // + a-R2: 기존 strategy_log 조회하여 "이미 확정한 전략" 표시
   useEffect(()=>{
     if(detailTab!=="strategy"||!detailModal?.id)return;
     const pid=detailModal.id;
-    if(strategiesMap[pid]||strategiesLoadingId===pid)return;
     (async()=>{
-      setStrategiesLoadingId(pid);
-      try{
-        const res=await fetch(`${SB_URL}/rest/v1/rpc/recommend_strategies`,{
-          method:"POST",
-          headers:{...getHdrs(),"Content-Type":"application/json"},
-          body:JSON.stringify({p_pred_id:pid})
-        });
-        if(!res.ok)throw new Error(`HTTP ${res.status}`);
-        const rows=await res.json();
-        setStrategiesMap(prev=>({...prev,[pid]:rows}));
-      }catch(e){
-        console.warn("recommend_strategies failed:",e.message);
-        setStrategiesMap(prev=>({...prev,[pid]:[]}));
-      }finally{
-        setStrategiesLoadingId(null);
+      // 1) 전략 RPC 캐시
+      if(!strategiesMap[pid]&&strategiesLoadingId!==pid){
+        setStrategiesLoadingId(pid);
+        try{
+          const res=await fetch(`${SB_URL}/rest/v1/rpc/recommend_strategies`,{
+            method:"POST",
+            headers:{...getHdrs(),"Content-Type":"application/json"},
+            body:JSON.stringify({p_pred_id:pid})
+          });
+          if(!res.ok)throw new Error(`HTTP ${res.status}`);
+          const rows=await res.json();
+          setStrategiesMap(prev=>({...prev,[pid]:rows}));
+        }catch(e){
+          console.warn("recommend_strategies failed:",e.message);
+          setStrategiesMap(prev=>({...prev,[pid]:[]}));
+        }finally{
+          setStrategiesLoadingId(null);
+        }
+      }
+      // 2) 기존 strategy_log 조회 (확정 상태 복원)
+      if(selectedStrategyMap[pid]===undefined){
+        try{
+          const rows=await sbFetchStrategyLog([pid]);
+          const set=new Set((rows||[]).map(r=>r.strategy_type));
+          setSelectedStrategyMap(prev=>({...prev,[pid]:set}));
+        }catch(e){
+          setSelectedStrategyMap(prev=>({...prev,[pid]:new Set()}));
+        }
       }
     })();
   },[detailTab,detailModal?.id]);
@@ -552,6 +573,11 @@ ${baseInfo}
     try{const[rows,preds,dets]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails()]);
       setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));setBidDetails(dets||[]);
       const matched=await sbMatchPredictions(preds,rows);
+      // ★ v7 a-R2: 매칭 후 strategy_log outcome 백필 (최근 60일)
+      if(matched>0){try{
+        const since=new Date(Date.now()-60*86400000).toISOString().slice(0,10);
+        await sbUpdateStrategyOutcomes(since);
+      }catch(e){console.warn("strategy outcome 백필 실패:",e.message)}}
       // Phase 5.2: 신규 예측에 대해 자동 scoring
       const existingIds=new Set(Object.keys(scoringMap).map(Number));
       const newPreds=(matched>0?await sbFetchPredictions():preds).filter(p=>!existingIds.has(p.id));
@@ -559,6 +585,8 @@ ${baseInfo}
         const scoringRows=newPreds.map(p=>{const sc=calcRoiV2(p);return{prediction_id:p.id,...sc}});
         await sbBatchUpsertScoring(scoringRows);
         const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm);
+        // ★ v7 a-R2: 신규 예측에 대해 snapshot 기록 (UPSERT, 실패는 경고만)
+        try{await sbRecordSnapshots(newPreds.map(p=>p.id))}catch(e){console.warn("snapshot 실패:",e.message)}
       }
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭 · 신규 ${newPreds.length}건 scoring`})}
       else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:`업로드 완료 · 신규 ${newPreds.length}건 scoring`})}
@@ -592,6 +620,8 @@ ${baseInfo}
         const scoringRows=newPreds.map(p=>{const sc=calcRoiV2(p);return{prediction_id:p.id,...sc}});
         await sbBatchUpsertScoring(scoringRows);
         const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm);
+        // ★ v7 a-R2: 신규 예측에 대해 snapshot 기록 (UPSERT, 실패는 경고만)
+        try{await sbRecordSnapshots(newPreds.map(p=>p.id))}catch(e){console.warn("snapshot 실패:",e.message)}
       }
     }
     const summary=fileList.length===1?logs[0]?.ok?`${totalResults.length}건 예측 완료 · DB 저장`:logs[0]?.msg
@@ -1327,15 +1357,15 @@ ${baseInfo}
               const rpcRows=strategiesMap[d.id];
               const isLoading=strategiesLoadingId===d.id&&!rpcRows;
               const useRpc=Array.isArray(rpcRows)&&rpcRows.length>0;
-              // RPC 반환 strategy 값은 한글("공격형"/"균형형"/"안정형") — 해당 키로 매칭
+              // RPC 반환 strategy 값은 영문 enum (aggressive/balanced/safe) — UI 라벨은 meta에서 한글
               const meta={
-                "공격형":{label:"공격",icon:"🔴",color:"#e24b4a",desc:"1위 노림 (승률 最高)"},
-                "균형형":{label:"균형 (추천)",icon:"🟡",color:"#d4a834",desc:"승률·안전 절충"},
-                "안정형":{label:"안전",icon:"🟢",color:"#5dca96",desc:"하한선 여유 확보"}
+                aggressive:{label:"공격",icon:"🔴",color:"#e24b4a",desc:"1위 노림 (승률 最高)"},
+                balanced:{label:"균형 (추천)",icon:"🟡",color:"#d4a834",desc:"승률·안전 절충"},
+                safe:{label:"안전",icon:"🟢",color:"#5dca96",desc:"하한선 여유 확보"}
               };
               let strategies;
               if(useRpc){
-                const order={"공격형":0,"균형형":1,"안정형":2};
+                const order={aggressive:0,balanced:1,safe:2};
                 strategies=[...rpcRows].sort((a,b)=>(order[a.strategy]??9)-(order[b.strategy]??9)).map(r=>{
                   const m=meta[r.strategy]||{label:r.strategy,icon:"•",color:C.txm,desc:""};
                   return{
@@ -1358,9 +1388,9 @@ ${baseInfo}
                 const mk=(dx)=>base!=null?Math.round((base+dx)*10000)/10000:null;
                 const aggrAdj=mk(-0.10),balAdj=mk(0),safeAdj=mk(0.10);
                 strategies=[
-                  {k:"공격형",...meta["공격형"],adj:aggrAdj,bid:aggrAdj!=null?calcBid(aggrAdj):null,pwin:null},
-                  {k:"균형형",...meta["균형형"],adj:balAdj,bid:balAdj!=null?calcBid(balAdj):null,pwin:null},
-                  {k:"안정형",...meta["안정형"],adj:safeAdj,bid:safeAdj!=null?calcBid(safeAdj):null,pwin:null}
+                  {k:"aggressive",...meta.aggressive,adj:aggrAdj,bid:aggrAdj!=null?calcBid(aggrAdj):null,pwin:null},
+                  {k:"balanced",...meta.balanced,adj:balAdj,bid:balAdj!=null?calcBid(balAdj):null,pwin:null},
+                  {k:"safe",...meta.safe,adj:safeAdj,bid:safeAdj!=null?calcBid(safeAdj):null,pwin:null}
                 ];
               }
               const anyBias=useRpc&&strategies.some(s=>s.bias!=null&&Math.abs(s.bias)>=0.05);
@@ -1374,8 +1404,40 @@ ${baseInfo}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
                   {strategies.map(s=>{
-                    const isRec=s.k==="균형형";
+                    const isRec=s.k==="balanced";
                     const pwinPct=s.pwin!=null?(s.pwin*100).toFixed(1):null;
+                    const selected=selectedStrategyMap[d.id]?.has?.(s.k);
+                    const logKey=`${d.id}:${s.k}`;
+                    const isLogging=loggingStrategyKey===logKey;
+                    const canLog=s.adj!=null&&!selected&&!isLogging;
+                    const onConfirm=async()=>{
+                      if(!canLog)return;
+                      setLoggingStrategyKey(logKey);
+                      try{
+                        await sbLogStrategy({
+                          pred_id:d.id,
+                          strategy_type:s.k,
+                          recommended_adj:Number(s.adj),
+                          estimated_pwin:s.pwin!=null?Number(s.pwin):null,
+                          bid_amount:s.bid!=null?Number(s.bid):null,
+                          open_date:d.open_date||null,
+                          ag:d.ag||null,
+                          at:d.at||null,
+                          ba:d.ba!=null?Number(d.ba):null,
+                          source:"user",
+                          model_version:useRpc?"v7.0":"v7.0-fallback"
+                        });
+                        setSelectedStrategyMap(prev=>{
+                          const cur=prev[d.id] instanceof Set?new Set(prev[d.id]):new Set();
+                          cur.add(s.k);
+                          return{...prev,[d.id]:cur};
+                        });
+                      }catch(e){
+                        alert("투찰 확정 저장 실패: "+e.message);
+                      }finally{
+                        setLoggingStrategyKey(null);
+                      }
+                    };
                     return<div key={s.k} style={{padding:"12px 10px",background:isRec?s.color+"20":C.bg3,borderRadius:8,border:isRec?"2px solid "+s.color:"1px solid "+C.bdr,textAlign:"center",position:"relative"}}>
                       {isRec&&<div style={{position:"absolute",top:-9,left:"50%",transform:"translateX(-50%)",background:s.color,color:"#000",fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:3,letterSpacing:0.5}}>권장</div>}
                       <div style={{fontSize:11,color:s.color,fontWeight:700,marginBottom:8}}>{s.icon} {s.label}</div>
@@ -1386,7 +1448,10 @@ ${baseInfo}
                         <div style={{fontSize:9,color:C.txd,marginBottom:2}}>1위 낙찰 확률</div>
                         <div style={{fontSize:14,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{pwinPct}%</div>
                       </div>}
-                      {s.risk&&<div style={{fontSize:9,color:C.txd,marginTop:4}}>{s.risk==="높음"?"⚠ 고위험":s.risk==="낮음"?"🛡 저위험":"⚖ 중위험"}</div>}
+                      {s.risk&&<div style={{fontSize:9,color:C.txd,marginTop:4}}>{s.risk==="high"?"⚠ 고위험":s.risk==="low"?"🛡 저위험":"⚖ 중위험"}</div>}
+                      <button disabled={!canLog} onClick={onConfirm} style={{marginTop:8,width:"100%",padding:"6px 8px",fontSize:10,fontWeight:600,background:selected?"rgba(93,202,165,0.15)":canLog?s.color:C.bg3,color:selected?"#5dca96":canLog?"#000":C.txd,border:"1px solid "+(selected?"rgba(93,202,165,0.4)":canLog?s.color:C.bdr),borderRadius:4,cursor:canLog?"pointer":"default",letterSpacing:0.3}}>
+                        {selected?"✅ 확정됨":isLogging?"저장 중…":"✅ 이 전략으로 투찰"}
+                      </button>
                     </div>
                   })}
                 </div>

@@ -117,6 +117,57 @@ async function sbRefreshAgAssumedStats(agNames,records){
 // ─── bid_predictions 삭제 ──────────────────────────────────
 export async function sbDeletePredictions(ids){const BATCH=50;for(let i=0;i<ids.length;i+=BATCH){await fetch(SB_URL+"/rest/v1/bid_predictions?id=in.("+ids.slice(i,i+BATCH).join(",")+")",{method:"DELETE",headers:getHdrs()})}}
 
+// ─── v7 Phase a-R2: prediction_snapshot / strategy_log 수집 훅 ──────
+// 예측 저장 직후 각 pred_id에 대해 v7 snapshot 일괄 기록 (UPSERT). 실패는 경고만.
+export async function sbRecordSnapshots(predIds,modelVersion="v7.0"){
+  if(!Array.isArray(predIds)||!predIds.length)return 0;
+  const BATCH=10;let ok=0;
+  for(let i=0;i<predIds.length;i+=BATCH){
+    const chunk=predIds.slice(i,i+BATCH);
+    const results=await Promise.allSettled(chunk.map(id=>
+      fetch(SB_URL+"/rest/v1/rpc/record_prediction_snapshot",{
+        method:"POST",
+        headers:{...getHdrs(),"Content-Type":"application/json"},
+        body:JSON.stringify({p_pred_id:id,p_model_version:modelVersion})
+      }).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r})
+    ));
+    ok+=results.filter(r=>r.status==="fulfilled").length;
+  }
+  return ok;
+}
+// 사용자가 전략 카드를 "확정" 했을 때 strategy_log INSERT
+export async function sbLogStrategy(payload){
+  const body=sanitizeJson(JSON.stringify(payload));
+  const res=await fetch(SB_URL+"/rest/v1/strategy_log",{
+    method:"POST",
+    headers:{...getHdrs(),"Prefer":"return=representation"},
+    body
+  });
+  if(!res.ok)throw new Error("strategy_log insert: HTTP "+res.status);
+  const rows=await res.json();
+  return Array.isArray(rows)?rows[0]:rows;
+}
+// 기존 strategy_log에 낙찰 결과(actual_adj/would_have_won/regret) 백필
+export async function sbUpdateStrategyOutcomes(since=null){
+  const payload=since?{p_pred_id:null,p_since:since}:{p_pred_id:null,p_since:null};
+  const res=await fetch(SB_URL+"/rest/v1/rpc/update_strategy_log_outcomes",{
+    method:"POST",
+    headers:{...getHdrs(),"Content-Type":"application/json"},
+    body:JSON.stringify(payload)
+  });
+  if(!res.ok)throw new Error("update_strategy_log_outcomes: HTTP "+res.status);
+  return await res.json();
+}
+// 특정 예측의 기존 strategy_log rows 조회 (사용자 확정만; 백테스트 데이터 제외)
+export async function sbFetchStrategyLog(predIds){
+  if(!Array.isArray(predIds)||!predIds.length)return[];
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/strategy_log?select=id,pred_id,strategy_type,created_at,source&pred_id=in.("+predIds.join(",")+")&source=eq.user",{headers:getHdrsSel()});
+    if(!res.ok)return[];
+    return await res.json();
+  }catch(e){return[]}
+}
+
 // ─── bid_details CRUD ────────────────────────────────────
 export async function sbSaveDetail(detail){
   const body=sanitizeJson(JSON.stringify(detail));
