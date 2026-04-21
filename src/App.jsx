@@ -5,7 +5,7 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbLogStrategy, sbUpdateStrategyOutcomes, sbFetchStrategyLog } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -180,12 +180,9 @@ export default function App(){
   const[detailModal,setDetailModal]=useState(null); // 상세 모달 (prediction 객체)
   const[detailTab,setDetailTab]=useState("detail"); // Phase 5.6: 상세 모달 탭 (detail|strategy|ai|pattern|info)
   const[detailAi,setDetailAi]=useState("");const[detailAiLoading,setDetailAiLoading]=useState(false); // 모달 AI
-  // ★ v7 Phase C-small (a-R1): 전략 RPC 결과 캐시 (pred_id → [공격형/균형형/안정형])
+  // ★ v7 Phase C-small (a-R1): 전략 RPC 결과 캐시 (pred_id → [aggressive/balanced/safe])
   const[strategiesMap,setStrategiesMap]=useState({});
   const[strategiesLoadingId,setStrategiesLoadingId]=useState(null);
-  // ★ v7 Phase a-R2: 사용자가 이미 확정한 전략 집합 (pred_id → Set(strategy_type))
-  const[selectedStrategyMap,setSelectedStrategyMap]=useState({});
-  const[loggingStrategyKey,setLoggingStrategyKey]=useState(null); // `${predId}:${strategy}`
   const[showSim,setShowSim]=useState(false); // 수동 시뮬레이션 토글
   // Phase 12-C: 발주사별 낙찰 예측
   const[agencyStats,setAgencyStats]=useState({}); // ag → {tier, win_rate, confidence, ...}
@@ -489,39 +486,26 @@ ${baseInfo}
   useEffect(()=>{if(tab==="predict"&&!dbLoading){refreshPredictions()}},[tab,dbLoading]);
 
   // ★ v7 Phase C-small (a-R1): 전략옵션 탭 열릴 때 recommend_strategies RPC 호출
-  // + a-R2: 기존 strategy_log 조회하여 "이미 확정한 전략" 표시
   useEffect(()=>{
     if(detailTab!=="strategy"||!detailModal?.id)return;
     const pid=detailModal.id;
+    if(strategiesMap[pid]||strategiesLoadingId===pid)return;
     (async()=>{
-      // 1) 전략 RPC 캐시
-      if(!strategiesMap[pid]&&strategiesLoadingId!==pid){
-        setStrategiesLoadingId(pid);
-        try{
-          const res=await fetch(`${SB_URL}/rest/v1/rpc/recommend_strategies`,{
-            method:"POST",
-            headers:{...getHdrs(),"Content-Type":"application/json"},
-            body:JSON.stringify({p_pred_id:pid})
-          });
-          if(!res.ok)throw new Error(`HTTP ${res.status}`);
-          const rows=await res.json();
-          setStrategiesMap(prev=>({...prev,[pid]:rows}));
-        }catch(e){
-          console.warn("recommend_strategies failed:",e.message);
-          setStrategiesMap(prev=>({...prev,[pid]:[]}));
-        }finally{
-          setStrategiesLoadingId(null);
-        }
-      }
-      // 2) 기존 strategy_log 조회 (확정 상태 복원)
-      if(selectedStrategyMap[pid]===undefined){
-        try{
-          const rows=await sbFetchStrategyLog([pid]);
-          const set=new Set((rows||[]).map(r=>r.strategy_type));
-          setSelectedStrategyMap(prev=>({...prev,[pid]:set}));
-        }catch(e){
-          setSelectedStrategyMap(prev=>({...prev,[pid]:new Set()}));
-        }
+      setStrategiesLoadingId(pid);
+      try{
+        const res=await fetch(`${SB_URL}/rest/v1/rpc/recommend_strategies`,{
+          method:"POST",
+          headers:{...getHdrs(),"Content-Type":"application/json"},
+          body:JSON.stringify({p_pred_id:pid})
+        });
+        if(!res.ok)throw new Error(`HTTP ${res.status}`);
+        const rows=await res.json();
+        setStrategiesMap(prev=>({...prev,[pid]:rows}));
+      }catch(e){
+        console.warn("recommend_strategies failed:",e.message);
+        setStrategiesMap(prev=>({...prev,[pid]:[]}));
+      }finally{
+        setStrategiesLoadingId(null);
       }
     })();
   },[detailTab,detailModal?.id]);
@@ -1406,38 +1390,6 @@ ${baseInfo}
                   {strategies.map(s=>{
                     const isRec=s.k==="balanced";
                     const pwinPct=s.pwin!=null?(s.pwin*100).toFixed(1):null;
-                    const selected=selectedStrategyMap[d.id]?.has?.(s.k);
-                    const logKey=`${d.id}:${s.k}`;
-                    const isLogging=loggingStrategyKey===logKey;
-                    const canLog=s.adj!=null&&!selected&&!isLogging;
-                    const onConfirm=async()=>{
-                      if(!canLog)return;
-                      setLoggingStrategyKey(logKey);
-                      try{
-                        await sbLogStrategy({
-                          pred_id:d.id,
-                          strategy_type:s.k,
-                          recommended_adj:Number(s.adj),
-                          estimated_pwin:s.pwin!=null?Number(s.pwin):null,
-                          bid_amount:s.bid!=null?Number(s.bid):null,
-                          open_date:d.open_date||null,
-                          ag:d.ag||null,
-                          at:d.at||null,
-                          ba:d.ba!=null?Number(d.ba):null,
-                          source:"user",
-                          model_version:useRpc?"v7.0":"v7.0-fallback"
-                        });
-                        setSelectedStrategyMap(prev=>{
-                          const cur=prev[d.id] instanceof Set?new Set(prev[d.id]):new Set();
-                          cur.add(s.k);
-                          return{...prev,[d.id]:cur};
-                        });
-                      }catch(e){
-                        alert("투찰 확정 저장 실패: "+e.message);
-                      }finally{
-                        setLoggingStrategyKey(null);
-                      }
-                    };
                     return<div key={s.k} style={{padding:"12px 10px",background:isRec?s.color+"20":C.bg3,borderRadius:8,border:isRec?"2px solid "+s.color:"1px solid "+C.bdr,textAlign:"center",position:"relative"}}>
                       {isRec&&<div style={{position:"absolute",top:-9,left:"50%",transform:"translateX(-50%)",background:s.color,color:"#000",fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:3,letterSpacing:0.5}}>권장</div>}
                       <div style={{fontSize:11,color:s.color,fontWeight:700,marginBottom:8}}>{s.icon} {s.label}</div>
@@ -1449,9 +1401,6 @@ ${baseInfo}
                         <div style={{fontSize:14,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{pwinPct}%</div>
                       </div>}
                       {s.risk&&<div style={{fontSize:9,color:C.txd,marginTop:4}}>{s.risk==="high"?"⚠ 고위험":s.risk==="low"?"🛡 저위험":"⚖ 중위험"}</div>}
-                      <button disabled={!canLog} onClick={onConfirm} style={{marginTop:8,width:"100%",padding:"6px 8px",fontSize:10,fontWeight:600,background:selected?"rgba(93,202,165,0.15)":canLog?s.color:C.bg3,color:selected?"#5dca96":canLog?"#000":C.txd,border:"1px solid "+(selected?"rgba(93,202,165,0.4)":canLog?s.color:C.bdr),borderRadius:4,cursor:canLog?"pointer":"default",letterSpacing:0.3}}>
-                        {selected?"✅ 확정됨":isLogging?"저장 중…":"✅ 이 전략으로 투찰"}
-                      </button>
                     </div>
                   })}
                 </div>
