@@ -57,6 +57,12 @@ const RATE_TABLE={
 export function getFloorRate(at,ep,isNew){const tbl=RATE_TABLE[at]||RATE_TABLE["조달청"];const rules=isNew?tbl.new:tbl.old;for(const r of rules){if(ep>=r.min&&ep<r.max)return r.rate}return rules[rules.length-1].rate}
 export function getCutoffDate(at){return(RATE_TABLE[at]||RATE_TABLE["조달청"]).cutoff}
 export function isNewEra(at,od){if(!od)return false;return od>=getCutoffDate(at)}
+// LH 종심제/순심제 대형 공사 감지 — 예측 모델이 -2.941로 수렴하는 구조적 미지원 구간
+export function isLhJongsim(at,ba,pn){
+  if(at!=="LH")return false;
+  if((Number(ba)||0)<1e10)return false;
+  return /\[공의\]|종합심사|종심제|순심제/.test(String(pn||""));
+}
 // Phase 12: 표준 RATE_TABLE만 사용 (여성기업 가산 등 특수 규정 제외)
 export function eraFR(at,ep,od){return getFloorRate(at,ep||0,isNewEra(at,od))}
 // ─── 유틸 ──────────────────────────────────────────────────

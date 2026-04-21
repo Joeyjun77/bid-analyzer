@@ -4,7 +4,7 @@ import { C, PAGE, inpS, SB_URL, hdrs, getHdrs } from "./lib/constants.js";
 import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid } from "./lib/utils.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid } from "./lib/utils.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
@@ -227,6 +227,8 @@ export default function App(){
   // 4월 14일 개찰 이후 실제 1위 사정률(100%)과 이 값을 직접 비교하여 낙찰 여부 판정 가능.
   const getFinalRecommendation=useCallback((p)=>{
     if(!p)return{adj:null,bid:null,source:null};
+    // LH 종심제/순심제 대형 공사 — 예측 모델 구조적 미지원 (고정 -2.941 수렴)
+    if(isLhJongsim(p.at,p.ba,p.pn))return{adj:null,bid:null,bid1st:null,source:'jongsim_unsupported',jongsim:true};
     const ba=p.ba?Number(p.ba):0;
     const av=p.av?Number(p.av):0;
     const fr=Number(p.pred_floor_rate||0);
@@ -1203,6 +1205,17 @@ ${baseInfo}
             const minAdj=d.rec_adj_p25!=null?Number(d.rec_adj_p25):null;
             const agEnv=assessPrediction(d,agencyStats,agencyPred);
             const isHard=agEnv&&agEnv.confidence>0.5&&(agEnv.n||0)>5;
+            // LH 종심제 — 예측 모델 구조적 미지원
+            if(finalRec.jongsim)return<div style={{marginBottom:14,borderRadius:10,overflow:"hidden",border:"2px solid rgba(226,75,74,0.5)"}}>
+              <div style={{background:"rgba(226,75,74,0.12)",padding:"9px 16px"}}>
+                <span style={{fontSize:12,fontWeight:700,color:"#e24b4a"}}>⚠ LH 종심제·순심제 (예측 미지원)</span>
+              </div>
+              <div style={{padding:"14px 16px",background:"rgba(0,0,0,0.2)",fontSize:12,color:C.txm,lineHeight:1.6}}>
+                <div>이 공고는 <b style={{color:C.txt}}>종합심사제/순위평가제</b> 대형 공사(100억 이상)로, 일반 적격심사와 사정률 분포가 다릅니다.</div>
+                <div style={{marginTop:6}}>현재 예측 엔진은 이 유형을 모델링하지 않아 <b style={{color:"#e24b4a"}}>부정확한 값</b>이 나오므로 표시하지 않습니다. 나라장터에서 해당 공고의 과거 낙찰률 분포를 직접 참고하십시오.</div>
+                <div style={{fontSize:10,color:C.txd,marginTop:8,fontFamily:"monospace"}}>at={d.at} · ba={tc(Number(d.ba||0))}원 · [공의]/종심 키워드 감지</div>
+              </div>
+            </div>;
             return<div style={{marginBottom:14,borderRadius:10,overflow:"hidden",border:"2px solid rgba(212,168,52,0.5)"}}>
               {/* 헤더 */}
               <div style={{background:"rgba(212,168,52,0.12)",padding:"9px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -1945,11 +1958,11 @@ ${baseInfo}
                 </td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:500}} title={finalRec.source?"근거: "+finalRec.source:""}>
-                  {finalAdj!=null?(100+Number(finalAdj)).toFixed(4)+"%":""}
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:finalRec.jongsim?"#e24b4a":C.gold,fontWeight:500}} title={finalRec.jongsim?"LH 종심제·순심제 (예측 미지원)":(finalRec.source?"근거: "+finalRec.source:"")}>
+                  {finalRec.jongsim?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.12)"}}>⚠ 종심제</span>:(finalAdj!=null?(100+Number(finalAdj)).toFixed(4)+"%":"")}
                 </td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:700}}>
-                  {(finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):""}</td>
+                  {finalRec.jongsim?<span style={{fontSize:10,color:C.txd}}>—</span>:((finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):"")}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":isDataWait?"#8a93a8":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:isDataWait?<span style={{fontSize:10}}>데이터대기</span>:p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui||isDataWait?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
