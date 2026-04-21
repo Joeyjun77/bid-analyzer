@@ -2047,50 +2047,73 @@ ${baseInfo}
           </div>
         </div>}
 
-        {/* 1-A2. 드리프트 알림 (임계값 기반 자동 감지) */}
+        {/* 1-A2. 드리프트 알림 (임계값 기반 자동 감지 · 세그먼트 병합 + 표본 가드) */}
         {watchlist.length>0&&(()=>{
           const histMap={};
           for(const r of watchHistory){const k=r.at+"|"+r.tier;if(!histMap[k])histMap[k]=[];histMap[k].push(r)}
           for(const k in histMap)histMap[k].sort((a,b)=>String(b.snapshot_date).localeCompare(String(a.snapshot_date)));
-          const alerts=[];
+          // 세그먼트별 신호 수집 → 병합
+          const bySeg={};
+          const put=(s,sev,tag,msg,reason)=>{
+            const k=s.at+"|"+s.tier;
+            if(!bySeg[k])bySeg[k]={at:s.at,tier:s.tier,n_recent:s.n_recent,sev,tags:[tag],msgs:[msg],reasons:[reason]};
+            else{
+              if(sev==="HIGH")bySeg[k].sev="HIGH";
+              bySeg[k].tags.push(tag);bySeg[k].msgs.push(msg);bySeg[k].reasons.push(reason);
+            }
+          };
           for(const s of watchlist){
             const k=s.at+"|"+s.tier;
+            const nRec=Number(s.n_recent||0);
+            // HIGH: HOT 즉시
             if(s.grade==="HOT"){
-              alerts.push({sev:"HIGH",tag:"HOT",at:s.at,tier:s.tier,msg:`MAE ${Number(s.mae_total).toFixed(3)} · bias ${Number(s.bias_total)>0?"+":""}${Number(s.bias_total).toFixed(3)} — 즉시 주시 필요`});
+              put(s,"HIGH","HOT",`MAE ${Number(s.mae_total).toFixed(3)} · bias ${Number(s.bias_total)>0?"+":""}${Number(s.bias_total).toFixed(3)}`,"hot");
             } else if(s.grade==="WARN"){
               const hist=histMap[k]||[];
               let streak=0;
               for(const r of hist){if(r.grade==="WARN"||r.grade==="HOT")streak++;else break}
-              if(streak>=2)alerts.push({sev:"HIGH",tag:"지속",at:s.at,tier:s.tier,msg:`WARN ${streak}일 연속 — 구조 점검 검토`});
+              if(streak>=2)put(s,"HIGH","지속",`WARN ${streak}일 연속`,"streak");
             }
-            if(s.bias_drift!=null&&Math.abs(Number(s.bias_drift))>=0.5){
-              alerts.push({sev:"MED",tag:"편향역전",at:s.at,tier:s.tier,msg:`편향 드리프트 ${Number(s.bias_drift)>0?"+":""}${Number(s.bias_drift).toFixed(2)} — 최근 30d 편향 반전`});
+            // MED drift — 표본 가드: n_recent<15면 억제 (HOT 세그먼트는 이미 HIGH로 포함)
+            const sampleOK=nRec>=15;
+            if(sampleOK&&s.bias_drift!=null&&Math.abs(Number(s.bias_drift))>=0.5){
+              put(s,"MED","편향역전",`bias drift ${Number(s.bias_drift)>0?"+":""}${Number(s.bias_drift).toFixed(2)}`,"bias");
             }
-            if(s.mae_drift!=null&&Number(s.mae_drift)>=0.2){
-              alerts.push({sev:"MED",tag:"MAE악화",at:s.at,tier:s.tier,msg:`MAE 드리프트 +${Number(s.mae_drift).toFixed(2)} — 최근 30d 정확도 악화`});
+            if(sampleOK&&s.mae_drift!=null&&Number(s.mae_drift)>=0.2){
+              put(s,"MED","MAE악화",`MAE drift +${Number(s.mae_drift).toFixed(2)}`,"mae");
             }
           }
-          if(alerts.length===0)return null;
-          alerts.sort((a,b)=>(a.sev==="HIGH"?0:1)-(b.sev==="HIGH"?0:1));
+          const merged=Object.values(bySeg);
+          if(merged.length===0)return null;
+          // HIGH 승격: MAE악화 + 편향역전 동시 = 구조적 시그널
+          for(const m of merged)if(m.reasons.includes("mae")&&m.reasons.includes("bias"))m.sev="HIGH";
+          merged.sort((a,b)=>(a.sev==="HIGH"?0:1)-(b.sev==="HIGH"?0:1));
           const tierLabel=(t)=>({S1_under3:"3억↓",S2_3to5:"3~5억",S3_5to10:"5~10억",S4_over10:"10억↑"}[t]||t);
           const sevColor=(sev)=>sev==="HIGH"?"#e24b4a":"#d4a834";
           const sevBg=(sev)=>sev==="HIGH"?"rgba(226,75,74,0.12)":"rgba(212,168,52,0.10)";
-          const highN=alerts.filter(a=>a.sev==="HIGH").length;
-          const medN=alerts.length-highN;
+          const highN=merged.filter(a=>a.sev==="HIGH").length;
+          const medN=merged.length-highN;
+          // 기관별 분포
+          const byAt={};for(const m of merged)byAt[m.at]=(byAt[m.at]||0)+1;
+          const distro=Object.entries(byAt).sort((a,b)=>b[1]-a[1]).map(([at,n])=>`${at} ${n}`).join(" · ");
           return<div style={{background:C.bg2,border:"1px solid "+(highN>0?"#e24b4a":"#d4a834"),borderRadius:8,padding:"14px 16px",marginBottom:14}}>
-            <div style={{fontSize:12,color:highN>0?"#e24b4a":"#d4a834",fontWeight:700,marginBottom:4}}>🚨 드리프트 알림 ({alerts.length}건)</div>
-            <div style={{fontSize:10,color:C.txd,marginBottom:10}}>HOT / WARN 2일 연속 → HIGH · |bias드리프트|≥0.5, MAE드리프트≥0.2 → MED · 매일 18:00 UTC 갱신</div>
+            <div style={{fontSize:12,color:highN>0?"#e24b4a":"#d4a834",fontWeight:700,marginBottom:4}}>🚨 드리프트 알림 ({merged.length}건)</div>
+            <div style={{fontSize:10,color:C.txd,marginBottom:10}}>HOT / WARN 2일 연속 / MAE+bias 동시 → HIGH · |bias|≥0.5, MAE≥0.2 → MED · n_recent&lt;15 억제 · 매일 18:00 UTC 갱신</div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {alerts.map((a,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 10px",background:sevBg(a.sev),borderRadius:6,borderLeft:"3px solid "+sevColor(a.sev)}}>
-                  <span style={{fontSize:9,fontWeight:700,color:sevColor(a.sev),minWidth:30,fontFamily:"monospace"}}>{a.sev}</span>
-                  <span style={{fontSize:10,color:C.txm,minWidth:56}}>{a.tag}</span>
-                  <span style={{fontSize:11,color:C.txt,fontWeight:600,minWidth:140}}>{a.at}<span style={{color:C.txd,marginLeft:4,fontSize:10}}>{tierLabel(a.tier)}</span></span>
-                  <span style={{fontSize:10,color:C.txm,flex:1}}>{a.msg}</span>
+              {merged.map((m,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 10px",background:sevBg(m.sev),borderRadius:6,borderLeft:"3px solid "+sevColor(m.sev)}}>
+                  <span style={{fontSize:9,fontWeight:700,color:sevColor(m.sev),minWidth:30,fontFamily:"monospace"}}>{m.sev}</span>
+                  <span style={{fontSize:10,color:C.txm,minWidth:90}}>{m.tags.join(" + ")}</span>
+                  <span style={{fontSize:11,color:C.txt,fontWeight:600,minWidth:140}}>{m.at}<span style={{color:C.txd,marginLeft:4,fontSize:10}}>{tierLabel(m.tier)}</span></span>
+                  <span style={{fontSize:10,color:C.txm,flex:1}}>{m.msgs.join(" · ")}</span>
+                  <span style={{fontSize:9,color:C.txd,fontFamily:"monospace",minWidth:40,textAlign:"right"}}>n={m.n_recent}</span>
                 </div>
               ))}
             </div>
-            <div style={{fontSize:9,color:C.txd,marginTop:8,textAlign:"right"}}>HIGH {highN}건 · MED {medN}건</div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:C.txd,marginTop:8}}>
+              <span>집중도: {distro}</span>
+              <span>HIGH {highN} · MED {medN}</span>
+            </div>
           </div>
         })()}
 
