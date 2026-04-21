@@ -180,6 +180,9 @@ export default function App(){
   const[detailModal,setDetailModal]=useState(null); // 상세 모달 (prediction 객체)
   const[detailTab,setDetailTab]=useState("detail"); // Phase 5.6: 상세 모달 탭 (detail|strategy|ai|pattern|info)
   const[detailAi,setDetailAi]=useState("");const[detailAiLoading,setDetailAiLoading]=useState(false); // 모달 AI
+  // ★ v7 Phase C-small (a-R1): 전략 RPC 결과 캐시 (pred_id → [공격형/균형형/안정형])
+  const[strategiesMap,setStrategiesMap]=useState({});
+  const[strategiesLoadingId,setStrategiesLoadingId]=useState(null);
   const[showSim,setShowSim]=useState(false); // 수동 시뮬레이션 토글
   // Phase 12-C: 발주사별 낙찰 예측
   const[agencyStats,setAgencyStats]=useState({}); // ag → {tier, win_rate, confidence, ...}
@@ -476,6 +479,31 @@ ${baseInfo}
 
   // 예측 탭 진입 시 자동 새로고침
   useEffect(()=>{if(tab==="predict"&&!dbLoading){refreshPredictions()}},[tab,dbLoading]);
+
+  // ★ v7 Phase C-small (a-R1): 전략옵션 탭 열릴 때 recommend_strategies RPC 호출
+  useEffect(()=>{
+    if(detailTab!=="strategy"||!detailModal?.id)return;
+    const pid=detailModal.id;
+    if(strategiesMap[pid]||strategiesLoadingId===pid)return;
+    (async()=>{
+      setStrategiesLoadingId(pid);
+      try{
+        const res=await fetch(`${SB_URL}/rest/v1/rpc/recommend_strategies`,{
+          method:"POST",
+          headers:{...getHdrs(),"Content-Type":"application/json"},
+          body:JSON.stringify({p_pred_id:pid})
+        });
+        if(!res.ok)throw new Error(`HTTP ${res.status}`);
+        const rows=await res.json();
+        setStrategiesMap(prev=>({...prev,[pid]:rows}));
+      }catch(e){
+        console.warn("recommend_strategies failed:",e.message);
+        setStrategiesMap(prev=>({...prev,[pid]:[]}));
+      }finally{
+        setStrategiesLoadingId(null);
+      }
+    })();
+  },[detailTab,detailModal?.id]);
 
   // 파일 업로드 (3종 자동 판별: SUCVIEW / 입찰서류함 / 낙찰정보리스트)
   const loadFiles=useCallback(async(fileList)=>{
@@ -1294,45 +1322,77 @@ ${baseInfo}
 
           {/* ───────── 전략옵션 탭 ───────── */}
           {detailTab==="strategy"&&<div>
-            {/* ★ Phase 6-A: 전략옵션은 오직 opt_adj 기준 ±0.1%p (AI 혼재 제거) */}
-            {/* AI 분석의 3전략 값은 "🤖 AI 분석" 탭에서만 표시 (참고용) */}
+            {/* ★ v7 (Phase a-R1): recommend_strategies RPC 승률 기반 3전략 / 실패 시 opt_adj±0.1 폴백 */}
             {(()=>{
-              let safeAdj,balAdj,aggrAdj,safeBid,balBid,aggrBid;
-              // opt_adj 기준 고정:
-              // 공격 = opt_adj - 0.10 (낙찰 가능성↑, 하한선 밑 위험↑)
-              // 균형 = opt_adj 그대로 (= 리스트/메인의 "추천 사정률(100%)")
-              // 안전 = opt_adj + 0.10 (하한선 여유↑)
-              const base=d.opt_adj!=null?Number(d.opt_adj):(d.pred_adj_rate!=null?Number(d.pred_adj_rate):null);
-              if(base!=null){
-                aggrAdj=Math.round((base-0.10)*10000)/10000;
-                balAdj=Math.round(base*10000)/10000;
-                safeAdj=Math.round((base+0.10)*10000)/10000;
+              const rpcRows=strategiesMap[d.id];
+              const isLoading=strategiesLoadingId===d.id&&!rpcRows;
+              const useRpc=Array.isArray(rpcRows)&&rpcRows.length>0;
+              const meta={
+                aggressive:{label:"공격",icon:"🔴",color:"#e24b4a",desc:"1위 노림 (승률 最高)"},
+                balanced:{label:"균형 (추천)",icon:"🟡",color:"#d4a834",desc:"승률·안전 절충"},
+                safe:{label:"안전",icon:"🟢",color:"#5dca96",desc:"하한선 여유 확보"}
+              };
+              let strategies;
+              if(useRpc){
+                const order={aggressive:0,balanced:1,safe:2};
+                strategies=[...rpcRows].sort((a,b)=>(order[a.strategy]??9)-(order[b.strategy]??9)).map(r=>{
+                  const m=meta[r.strategy]||{label:r.strategy,icon:"•",color:C.txm,desc:""};
+                  return{
+                    k:r.strategy,
+                    label:m.label,
+                    icon:m.icon,
+                    color:m.color,
+                    desc:m.desc,
+                    adj:r.recommended_adj!=null?Number(r.recommended_adj):null,
+                    bid:r.bid_amount!=null?Number(r.bid_amount):null,
+                    pwin:r.win_probability!=null?Number(r.win_probability):null,
+                    risk:r.risk_level,
+                    confidence:r.confidence,
+                    bias:r.bias_applied!=null?Number(r.bias_applied):null
+                  };
+                });
+              }else{
+                // 폴백: opt_adj ±0.1
+                const base=d.opt_adj!=null?Number(d.opt_adj):(d.pred_adj_rate!=null?Number(d.pred_adj_rate):null);
+                const mk=(dx)=>base!=null?Math.round((base+dx)*10000)/10000:null;
+                const aggrAdj=mk(-0.10),balAdj=mk(0),safeAdj=mk(0.10);
+                strategies=[
+                  {k:"aggressive",...meta.aggressive,adj:aggrAdj,bid:aggrAdj!=null?calcBid(aggrAdj):null,pwin:null},
+                  {k:"balanced",...meta.balanced,adj:balAdj,bid:balAdj!=null?calcBid(balAdj):null,pwin:null},
+                  {k:"safe",...meta.safe,adj:safeAdj,bid:safeAdj!=null?calcBid(safeAdj):null,pwin:null}
+                ];
               }
-              safeBid=safeAdj!=null?calcBid(safeAdj):null;
-              balBid=balAdj!=null?calcBid(balAdj):null;
-              aggrBid=aggrAdj!=null?calcBid(aggrAdj):null;
-              const strategies=[
-                {k:"aggressive",label:"공격",icon:"🔴",adj:aggrAdj,bid:aggrBid,color:"#e24b4a",desc:"낙찰가 최저 노림"},
-                {k:"balanced",label:"균형 (추천)",icon:"🟡",adj:balAdj,bid:balBid,color:"#d4a834",desc:"시스템 기본 추천 = 리스트 값"},
-                {k:"safe",label:"안전",icon:"🟢",adj:safeAdj,bid:safeBid,color:"#5dca96",desc:"하한선 여유 확보"}
-              ];
+              const anyBias=useRpc&&strategies.some(s=>s.bias!=null&&Math.abs(s.bias)>=0.05);
+              const sampleConf=useRpc?strategies.find(s=>s.confidence)?.confidence:null;
               return<div>
-                <div style={{fontSize:12,color:C.txm,marginBottom:10}}>
-                  🎯 자사 투찰용 가정 사정률 — 3안 중 선택
-                  <span style={{color:C.txd,fontSize:10,marginLeft:6}}>(공격 = 1위 노림 / 균형 = MAE 최소화 / 안전 = 탈락 방지)</span>
+                <div style={{fontSize:12,color:C.txm,marginBottom:10,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <span>🎯 자사 투찰용 가정 사정률 — 3안 중 선택</span>
+                  {useRpc&&<span style={{fontSize:10,color:"#5dca96",background:"rgba(93,202,165,0.10)",border:"1px solid rgba(93,202,165,0.3)",borderRadius:3,padding:"1px 6px"}}>v7 승률 기반</span>}
+                  {!useRpc&&!isLoading&&<span style={{fontSize:10,color:C.txd,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:3,padding:"1px 6px"}}>폴백 (opt_adj ±0.1)</span>}
+                  {isLoading&&<span style={{fontSize:10,color:C.txm}}>…승률 계산 중</span>}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
                   {strategies.map(s=>{
                     const isRec=s.k==="balanced";
+                    const pwinPct=s.pwin!=null?(s.pwin*100).toFixed(1):null;
                     return<div key={s.k} style={{padding:"12px 10px",background:isRec?s.color+"20":C.bg3,borderRadius:8,border:isRec?"2px solid "+s.color:"1px solid "+C.bdr,textAlign:"center",position:"relative"}}>
                       {isRec&&<div style={{position:"absolute",top:-9,left:"50%",transform:"translateX(-50%)",background:s.color,color:"#000",fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:3,letterSpacing:0.5}}>권장</div>}
                       <div style={{fontSize:11,color:s.color,fontWeight:700,marginBottom:8}}>{s.icon} {s.label}</div>
                       <div style={{fontSize:9,color:C.txd,marginBottom:6}}>{s.desc}</div>
                       <div style={{fontSize:15,fontWeight:700,color:C.txt,fontFamily:"monospace",marginBottom:4}}>{fmtAdj(s.adj)}</div>
-                      {s.bid&&<div style={{fontSize:10,color:C.txm,fontFamily:"monospace",marginBottom:6}}>{tc(s.bid)}원</div>}
+                      {s.bid!=null&&<div style={{fontSize:10,color:C.txm,fontFamily:"monospace",marginBottom:6}}>{tc(s.bid)}원</div>}
+                      {pwinPct!=null&&<div style={{marginTop:6,padding:"4px 6px",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.25)",borderRadius:4}}>
+                        <div style={{fontSize:9,color:C.txd,marginBottom:2}}>1위 낙찰 확률</div>
+                        <div style={{fontSize:14,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{pwinPct}%</div>
+                      </div>}
+                      {s.risk&&<div style={{fontSize:9,color:C.txd,marginTop:4}}>{s.risk==="high"?"⚠ 고위험":s.risk==="low"?"🛡 저위험":"⚖ 중위험"}</div>}
                     </div>
                   })}
                 </div>
+                {useRpc&&(anyBias||sampleConf)&&<div style={{padding:"8px 12px",background:"rgba(93,202,165,0.05)",border:"1px solid rgba(93,202,165,0.2)",borderRadius:6,fontSize:10,color:C.txm,marginBottom:10}}>
+                  {sampleConf&&<span>신뢰도 <span style={{color:sampleConf==="high"?"#5dca96":sampleConf==="medium"?"#d4a834":"#e24b4a",fontWeight:600}}>{sampleConf==="high"?"높음":sampleConf==="medium"?"보통":"낮음"}</span></span>}
+                  {anyBias&&<span style={{marginLeft:sampleConf?10:0}}>편향 보정 적용 (bias_profile 365d)</span>}
+                </div>}
                 {/* AI 분석 안내 */}
                 <div style={{padding:"10px 12px",background:"rgba(168,85,247,0.06)",border:"1px solid rgba(168,85,247,0.25)",borderRadius:6,fontSize:11,color:"#c89dff",marginBottom:12,textAlign:"center"}}>
                   💡 AI의 의견이 궁금하면 <strong>🤖 AI 분석 탭</strong>을 참고하세요 (최종 추천에 영향 없음)
