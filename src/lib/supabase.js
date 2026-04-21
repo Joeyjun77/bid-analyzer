@@ -167,6 +167,18 @@ export async function sbFetchStrategyLog(predIds){
     return await res.json();
   }catch(e){return[]}
 }
+// Phase v7-ops-2: 전략별 Pwin 캘리브레이션 현황 (sample_n, actual_rate, fallback 여부)
+export async function sbFetchPwinCalibration(){
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/pwin_calibration_by_strategy?select=strategy_type,sample_n,actual_rate,use_fallback,updated_at",{headers:getHdrsSel()});
+    if(!res.ok)return{};
+    const rows=await res.json();
+    if(!Array.isArray(rows))return{};
+    const out={};
+    for(const r of rows){out[r.strategy_type]=r}
+    return out;
+  }catch(e){return{}}
+}
 
 // ─── bid_details CRUD ────────────────────────────────────
 export async function sbSaveDetail(detail){

@@ -5,7 +5,7 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -183,6 +183,8 @@ export default function App(){
   // ★ v7 Phase C-small (a-R1): 전략 RPC 결과 캐시 (pred_id → [aggressive/balanced/safe])
   const[strategiesMap,setStrategiesMap]=useState({});
   const[strategiesLoadingId,setStrategiesLoadingId]=useState(null);
+  // ★ v7-ops-2: 전략별 Pwin 캘리브레이션 현황 (n, 실측률, fallback)
+  const[pwinCal,setPwinCal]=useState({});
   const[showSim,setShowSim]=useState(false); // 수동 시뮬레이션 토글
   // Phase 12-C: 발주사별 낙찰 예측
   const[agencyStats,setAgencyStats]=useState({}); // ag → {tier, win_rate, confidence, ...}
@@ -488,6 +490,8 @@ ${baseInfo}
   // ★ v7 Phase C-small (a-R1): 전략옵션 탭 열릴 때 recommend_strategies RPC 호출
   useEffect(()=>{
     if(detailTab!=="strategy"||!detailModal?.id)return;
+    // v7-ops-2 캘리브레이션 현황 1회 로드
+    if(!Object.keys(pwinCal).length){sbFetchPwinCalibration().then(m=>setPwinCal(m||{})).catch(()=>{})}
     const pid=detailModal.id;
     if(strategiesMap[pid]||strategiesLoadingId===pid)return;
     (async()=>{
@@ -1379,6 +1383,11 @@ ${baseInfo}
               }
               const anyBias=useRpc&&strategies.some(s=>s.bias!=null&&Math.abs(s.bias)>=0.05);
               const sampleConf=useRpc?strategies.find(s=>s.confidence)?.confidence:null;
+              // v7-ops-2: 캘리브레이션 현황 (전략별 n, 실측률, fallback)
+              const anyFallback=useRpc&&strategies.some(s=>pwinCal[s.k]?.use_fallback);
+              const calMinN=useRpc?Math.min(...strategies.map(s=>pwinCal[s.k]?.sample_n||0).filter(n=>n>0)):0;
+              const calUpdated=pwinCal.balanced?.updated_at||pwinCal.aggressive?.updated_at||null;
+              const calDaysAgo=calUpdated?Math.floor((Date.now()-new Date(calUpdated).getTime())/86400000):null;
               return<div>
                 <div style={{fontSize:12,color:C.txm,marginBottom:10,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <span>🎯 자사 투찰용 가정 사정률 — 3안 중 선택</span>
@@ -1401,9 +1410,17 @@ ${baseInfo}
                         <div style={{fontSize:14,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{pwinPct}%</div>
                       </div>}
                       {s.risk&&<div style={{fontSize:9,color:C.txd,marginTop:4}}>{s.risk==="high"?"⚠ 고위험":s.risk==="low"?"🛡 저위험":"⚖ 중위험"}</div>}
+                      {useRpc&&pwinCal[s.k]&&<div style={{fontSize:9,color:pwinCal[s.k].use_fallback?"#d4a834":C.txd,marginTop:6,paddingTop:6,borderTop:"1px dashed "+C.bdr,fontFamily:"monospace"}}>
+                        n={pwinCal[s.k].sample_n} · 실측 {(Number(pwinCal[s.k].actual_rate)*100).toFixed(1)}%
+                        {pwinCal[s.k].use_fallback&&<div style={{fontSize:8,marginTop:2}}>⚠ fallback (상수)</div>}
+                      </div>}
                     </div>
                   })}
                 </div>
+                {useRpc&&calMinN>0&&<div style={{fontSize:9,color:C.txd,textAlign:"right",marginBottom:8,fontFamily:"monospace"}}>
+                  캘리브레이션 n≥{calMinN}{calDaysAgo!=null?` · ${calDaysAgo===0?"오늘":calDaysAgo+"일 전"} 갱신`:""}
+                  {anyFallback&&<span style={{color:"#d4a834",marginLeft:6}}>· 일부 fallback</span>}
+                </div>}
                 {useRpc&&(anyBias||sampleConf)&&<div style={{padding:"8px 12px",background:"rgba(93,202,165,0.05)",border:"1px solid rgba(93,202,165,0.2)",borderRadius:6,fontSize:10,color:C.txm,marginBottom:10}}>
                   {sampleConf&&<span>신뢰도 <span style={{color:sampleConf==="high"?"#5dca96":sampleConf==="medium"?"#d4a834":"#e24b4a",fontWeight:600}}>{sampleConf==="high"?"높음":sampleConf==="medium"?"보통":"낮음"}</span></span>}
                   {anyBias&&<span style={{marginLeft:sampleConf?10:0}}>편향 보정 적용 (bias_profile 365d)</span>}
