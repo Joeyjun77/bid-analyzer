@@ -1327,14 +1327,15 @@ ${baseInfo}
               const rpcRows=strategiesMap[d.id];
               const isLoading=strategiesLoadingId===d.id&&!rpcRows;
               const useRpc=Array.isArray(rpcRows)&&rpcRows.length>0;
+              // RPC 반환 strategy 값은 한글("공격형"/"균형형"/"안정형") — 해당 키로 매칭
               const meta={
-                aggressive:{label:"공격",icon:"🔴",color:"#e24b4a",desc:"1위 노림 (승률 最高)"},
-                balanced:{label:"균형 (추천)",icon:"🟡",color:"#d4a834",desc:"승률·안전 절충"},
-                safe:{label:"안전",icon:"🟢",color:"#5dca96",desc:"하한선 여유 확보"}
+                "공격형":{label:"공격",icon:"🔴",color:"#e24b4a",desc:"1위 노림 (승률 最高)"},
+                "균형형":{label:"균형 (추천)",icon:"🟡",color:"#d4a834",desc:"승률·안전 절충"},
+                "안정형":{label:"안전",icon:"🟢",color:"#5dca96",desc:"하한선 여유 확보"}
               };
               let strategies;
               if(useRpc){
-                const order={aggressive:0,balanced:1,safe:2};
+                const order={"공격형":0,"균형형":1,"안정형":2};
                 strategies=[...rpcRows].sort((a,b)=>(order[a.strategy]??9)-(order[b.strategy]??9)).map(r=>{
                   const m=meta[r.strategy]||{label:r.strategy,icon:"•",color:C.txm,desc:""};
                   return{
@@ -1357,9 +1358,9 @@ ${baseInfo}
                 const mk=(dx)=>base!=null?Math.round((base+dx)*10000)/10000:null;
                 const aggrAdj=mk(-0.10),balAdj=mk(0),safeAdj=mk(0.10);
                 strategies=[
-                  {k:"aggressive",...meta.aggressive,adj:aggrAdj,bid:aggrAdj!=null?calcBid(aggrAdj):null,pwin:null},
-                  {k:"balanced",...meta.balanced,adj:balAdj,bid:balAdj!=null?calcBid(balAdj):null,pwin:null},
-                  {k:"safe",...meta.safe,adj:safeAdj,bid:safeAdj!=null?calcBid(safeAdj):null,pwin:null}
+                  {k:"공격형",...meta["공격형"],adj:aggrAdj,bid:aggrAdj!=null?calcBid(aggrAdj):null,pwin:null},
+                  {k:"균형형",...meta["균형형"],adj:balAdj,bid:balAdj!=null?calcBid(balAdj):null,pwin:null},
+                  {k:"안정형",...meta["안정형"],adj:safeAdj,bid:safeAdj!=null?calcBid(safeAdj):null,pwin:null}
                 ];
               }
               const anyBias=useRpc&&strategies.some(s=>s.bias!=null&&Math.abs(s.bias)>=0.05);
@@ -1373,7 +1374,7 @@ ${baseInfo}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
                   {strategies.map(s=>{
-                    const isRec=s.k==="balanced";
+                    const isRec=s.k==="균형형";
                     const pwinPct=s.pwin!=null?(s.pwin*100).toFixed(1):null;
                     return<div key={s.k} style={{padding:"12px 10px",background:isRec?s.color+"20":C.bg3,borderRadius:8,border:isRec?"2px solid "+s.color:"1px solid "+C.bdr,textAlign:"center",position:"relative"}}>
                       {isRec&&<div style={{position:"absolute",top:-9,left:"50%",transform:"translateX(-50%)",background:s.color,color:"#000",fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:3,letterSpacing:0.5}}>권장</div>}
@@ -1385,7 +1386,7 @@ ${baseInfo}
                         <div style={{fontSize:9,color:C.txd,marginBottom:2}}>1위 낙찰 확률</div>
                         <div style={{fontSize:14,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{pwinPct}%</div>
                       </div>}
-                      {s.risk&&<div style={{fontSize:9,color:C.txd,marginTop:4}}>{s.risk==="high"?"⚠ 고위험":s.risk==="low"?"🛡 저위험":"⚖ 중위험"}</div>}
+                      {s.risk&&<div style={{fontSize:9,color:C.txd,marginTop:4}}>{s.risk==="높음"?"⚠ 고위험":s.risk==="낮음"?"🛡 저위험":"⚖ 중위험"}</div>}
                     </div>
                   })}
                 </div>
