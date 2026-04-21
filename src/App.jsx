@@ -2023,6 +2023,72 @@ ${baseInfo}
         {qualityLoading&&<div style={{padding:20,textAlign:"center",color:C.txm,fontSize:12}}>…데이터 로드 중</div>}
         {!qualityLoading&&!weeklyQuality.length&&!qualityDaily.length&&<div style={{padding:20,textAlign:"center",color:C.txd,fontSize:12,background:C.bg3,borderRadius:8}}>검증 데이터 없음. 일일 cron이 아직 실행 안 됐을 수 있습니다.</div>}
 
+        {/* 0. 요약 스트립 (4-카드: 주간MAE · 알림 · 관찰세그먼트 · 이력) */}
+        {(latestWeek||watchlist.length>0)&&(()=>{
+          let highN=0,medN=0;
+          if(watchlist.length>0){
+            const histMap={};
+            for(const r of watchHistory){const k=r.at+"|"+r.tier;if(!histMap[k])histMap[k]=[];histMap[k].push(r)}
+            for(const k in histMap)histMap[k].sort((a,b)=>String(b.snapshot_date).localeCompare(String(a.snapshot_date)));
+            const bySeg={};
+            const bump=(k,sev)=>{if(!bySeg[k])bySeg[k]=sev;else if(sev==="HIGH")bySeg[k]="HIGH"};
+            for(const s of watchlist){
+              const k=s.at+"|"+s.tier;const nRec=Number(s.n_recent||0);
+              if(s.grade==="HOT")bump(k,"HIGH");
+              else if(s.grade==="WARN"){const hist=histMap[k]||[];let streak=0;for(const r of hist){if(r.grade==="WARN"||r.grade==="HOT")streak++;else break}if(streak>=2)bump(k,"HIGH")}
+              if(nRec>=15&&s.bias_drift!=null&&Math.abs(Number(s.bias_drift))>=0.5)bump(k,"MED");
+              if(nRec>=15&&s.mae_drift!=null&&Number(s.mae_drift)>=0.2)bump(k,"MED");
+            }
+            for(const sev of Object.values(bySeg)){if(sev==="HIGH")highN++;else medN++}
+          }
+          const hotN=watchlist.filter(s=>s.grade==="HOT").length;
+          const warnN=watchlist.filter(s=>s.grade==="WARN").length;
+          const okN=watchlist.filter(s=>s.grade==="OK").length;
+          const histDates=Array.from(new Set(watchHistory.map(r=>r.snapshot_date))).length;
+          const cardS={padding:"10px 12px",background:C.bg3,borderRadius:6,minHeight:62,display:"flex",flexDirection:"column",justifyContent:"space-between"};
+          const labS={fontSize:9,color:C.txd,marginBottom:4,textTransform:"uppercase",letterSpacing:0.3};
+          return<div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:8,marginBottom:14}}>
+            <div style={cardS}>
+              <div style={labS}>📊 주간 MAE</div>
+              {latestWeek?<div>
+                <div style={{fontSize:18,fontWeight:700,color:maeColor(latestWeek.mae_week),fontFamily:"monospace"}}>{Number(latestWeek.mae_week).toFixed(3)}%</div>
+                {latestWeek.mae_delta!=null&&<div style={{fontSize:9,color:Number(latestWeek.mae_delta)<=0?"#5dca96":"#e24b4a",fontFamily:"monospace"}}>Δ {Number(latestWeek.mae_delta)>0?"+":""}{Number(latestWeek.mae_delta).toFixed(3)} · n={latestWeek.n_week}</div>}
+              </div>:<div style={{fontSize:12,color:C.txd}}>—</div>}
+            </div>
+            <div style={cardS}>
+              <div style={labS}>🚨 드리프트 알림</div>
+              {highN+medN===0?
+                <div style={{fontSize:14,fontWeight:600,color:"#5dca96"}}>✅ 이슈 없음</div>:
+                <div style={{fontSize:14,fontWeight:700,fontFamily:"monospace"}}>
+                  {highN>0&&<span style={{color:"#e24b4a"}}>HIGH {highN}</span>}
+                  {highN>0&&medN>0&&<span style={{color:C.txd,margin:"0 4px"}}>·</span>}
+                  {medN>0&&<span style={{color:"#d4a834"}}>MED {medN}</span>}
+                </div>
+              }
+            </div>
+            <div style={cardS}>
+              <div style={labS}>🎯 관찰 세그먼트</div>
+              <div>
+                <div style={{fontSize:12,fontWeight:600,fontFamily:"monospace"}}>
+                  {hotN>0&&<span style={{color:"#e24b4a"}}>HOT {hotN}</span>}
+                  {hotN>0&&(warnN>0||okN>0)&&<span style={{color:C.txd,margin:"0 3px"}}>·</span>}
+                  {warnN>0&&<span style={{color:"#d4a834"}}>WARN {warnN}</span>}
+                  {warnN>0&&okN>0&&<span style={{color:C.txd,margin:"0 3px"}}>·</span>}
+                  {okN>0&&<span style={{color:"#5dca96"}}>OK {okN}</span>}
+                </div>
+                <div style={{fontSize:9,color:C.txd,fontFamily:"monospace",marginTop:2}}>전체 {watchlist.length}개 추적</div>
+              </div>
+            </div>
+            <div style={cardS}>
+              <div style={labS}>🕑 스냅샷 이력</div>
+              <div>
+                <div style={{fontSize:18,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{histDates}일</div>
+                <div style={{fontSize:9,color:C.txd,marginTop:2}}>{histDates<2?"2일차부터 추세 시각화":`누적 ${watchHistory.length}건`}</div>
+              </div>
+            </div>
+          </div>;
+        })()}
+
         {/* 1. Overall 주간 요약 */}
         {latestWeek&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"14px 16px",marginBottom:14}}>
           <div style={{fontSize:12,color:C.txm,marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
