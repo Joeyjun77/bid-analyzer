@@ -1,5 +1,6 @@
 import { SB_URL, getHdrs, getHdrsSel } from "./constants.js";
 import { sanitizeJson } from "./utils.js";
+import { authedFetch } from "../auth.js";
 
 // ─── Supabase CRUD ─────────────────────────────────────────
 export async function sbFetchAll(){const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_records?select=*&order=od.desc&offset="+offset+"&limit="+PAGE,{headers:getHdrsSel()});const rows=await res.json();if(!Array.isArray(rows))break;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}
@@ -233,6 +234,21 @@ export async function sbFetchDetails(){
   try{const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_details?select=*&order=od.desc&offset="+offset+"&limit="+PAGE,{headers:getHdrsSel()});if(!res.ok)return all;const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}catch(e){return[]}}
 export async function sbFetchDetailsByAg(ag){
   try{const res=await fetch(SB_URL+"/rest/v1/bid_details?ag=eq."+encodeURIComponent(ag)+"&select=*&order=od.desc&limit=1000",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}}
+
+// ─── Phase 4-C: 관리자 페이지 — auth.users 읽기 전용 조회 ──────
+export async function sbAdminListUsers(){
+  const res=await authedFetch("/rest/v1/rpc/admin_list_users",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:"{}"
+  });
+  if(!res.ok){
+    const txt=await res.text().catch(()=> "");
+    if(res.status===403||/FORBIDDEN/i.test(txt))throw new Error("관리자만 조회 가능합니다");
+    throw new Error("사용자 목록 조회 실패 ("+res.status+")");
+  }
+  return await res.json();
+}
 
 // ─── Phase 23-4: SUCVIEW 기반 at × floor_rate 1위 마진 벤치마크 ──────
 // floor_margin_benchmark VIEW → {`${at}|${floor_rate}` : {med, n, std}}

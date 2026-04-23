@@ -14,7 +14,7 @@
 //   }
 
 import { useState, useEffect } from 'react';
-import { getSession, signIn, signUp, signOut, getUser, refreshSession, AuthContext } from '../auth';
+import { getSession, signIn, signUp, signOut, getUser, refreshSession, AuthContext, isAdminEmail } from '../auth';
 
 export default function AuthGate({ children }) {
   const [user, setUser] = useState(getUser());
@@ -71,7 +71,7 @@ export default function AuthGate({ children }) {
   // 로그인 상태면 Context 로 user/signOut 제공 → 하위(App.jsx 헤더)에서 useAuth()
   if (user) {
     return (
-      <AuthContext.Provider value={{ user, signOut: handleSignOut }}>
+      <AuthContext.Provider value={{ user, isAdmin: isAdminEmail(user.email), signOut: handleSignOut }}>
         {children}
       </AuthContext.Provider>
     );

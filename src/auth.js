@@ -14,11 +14,17 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 // 세션 저장 키
 const STORAGE_KEY = 'bid-analyzer.session';
 
+// Phase 4-C: 관리자 이메일 화이트리스트
+export const ADMIN_EMAILS = ['lgooa@naver.com'];
+export function isAdminEmail(email) {
+  return !!email && ADMIN_EMAILS.includes(email.toLowerCase());
+}
+
 // ============================================================================
 // React Context (패턴 B: AuthGate가 Provider로 감싸고, 하위에서 useAuth()로 사용)
 // ============================================================================
 
-export const AuthContext = createContext({ user: null, signOut: () => {} });
+export const AuthContext = createContext({ user: null, isAdmin: false, signOut: () => {} });
 export const useAuth = () => useContext(AuthContext);
 
 // ============================================================================

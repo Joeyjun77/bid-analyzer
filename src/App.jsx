@@ -4,6 +4,7 @@ import { C, PAGE, inpS, SB_URL, hdrs, getHdrs } from "./lib/constants.js";
 import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
+import AdminTab from "./components/AdminTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid } from "./lib/utils.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
@@ -138,6 +139,7 @@ function SplitBadge({sim,compact=false}){
 
 // ═══════════════════════════════════════════════════════════
 export default function App(){
+  const{isAdmin}=useAuth();
   const[tab,setTab]=useState("dash");
   const[recs,setRecs]=useState([]);
   const[allS,setAllS]=useState({ts:{},as:{}});const[newS,setNewS]=useState({ts:{},as:{}});const[oldS,setOldS]=useState({ts:{},as:{}});
@@ -857,7 +859,7 @@ ${baseInfo}
         })()}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="quality" ch="🔬 검증"/><Tb id="chat" ch="AI 상담"/></div>
+        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="quality" ch="🔬 검증"/><Tb id="chat" ch="AI 상담"/>{isAdmin&&<Tb id="admin" ch="👤 관리자"/>}</div>
         <UserBadge/>
       </div>
     </div>
@@ -2371,6 +2373,9 @@ ${baseInfo}
         </div>}
       </div>
     })()}
+
+    {/* ═══ 관리자 탭 (Phase 4-C) ═══ */}
+    {tab==="admin"&&isAdmin&&<AdminTab C={C}/>}
 
     {/* ═══ AI 상담 탭 ═══ */}
     {tab==="chat"&&(()=>{
