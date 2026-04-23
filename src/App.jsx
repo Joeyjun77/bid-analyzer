@@ -865,7 +865,7 @@ ${baseInfo}
     </div>
     {msg.text&&<div style={{margin:"0 auto",maxWidth:1000,padding:"8px 16px"}}><div style={{padding:"8px 14px",background:msg.type==="ok"?"rgba(93,202,165,0.08)":"rgba(220,50,50,0.08)",border:`1px solid ${msg.type==="ok"?"rgba(93,202,165,0.3)":"rgba(220,50,50,0.3)"}`,borderRadius:6,fontSize:12,color:msg.type==="ok"?"#5ca":"#e55"}}>{msg.type==="ok"?"✓ ":"✕ "}{msg.text}</div></div>}
 
-    <div style={{maxWidth:1000,margin:"0 auto",padding:"16px 16px"}}>
+    <div style={{maxWidth:1000,margin:"0 auto",padding:"16px 16px",overflowX:"hidden"}}>
 
     {/* ═══ 대시보드 탭 ═══ */}
     {tab==="dash"&&<div>

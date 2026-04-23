@@ -84,9 +84,9 @@ export default function NoticesTab({
         <span style={{ fontSize: 10, color: C.txd, marginLeft: 4 }}>30분마다 자동 업데이트</span>
       </div>
       <div style={{ border: "1px solid " + C.bdr, borderRadius: 8, overflowX: "auto", maxWidth: "100%" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 1050 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 900 }}>
           <thead><tr style={{ background: C.bg3 }}>
-            {["개찰일시", "공고명", "발주기관", "유형", "추정가격", "예측 사정률", "추천 투찰금", "🎯 벤치마크 사정률", "액션"].map((h, i) => (
+            {["개찰일시", "공고명", "발주기관", "유형", "추정가격", "예측 사정률", "추천 투찰금", "벤치마크(%)", "액션"].map((h, i) => (
               <th key={i} style={{ padding: "8px 10px", textAlign: i >= 4 && i <= 7 ? "right" : "left", color: h.includes("벤치마크") ? "#a8b4ff" : C.txd, fontWeight: 600, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap", fontSize: 10 }} title={h.includes("벤치마크") ? "SUCVIEW 기반 1위 투찰률에서 역산한 사정률 (100% 기준, n≥5)" : ""}>{h}</th>
             ))}
           </tr></thead>
