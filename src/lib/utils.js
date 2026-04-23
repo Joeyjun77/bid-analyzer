@@ -212,7 +212,7 @@ export function routePrediction({at,agName},ts,as){
   return{route:"tier_fallback",agN:0,tierExists:!!tSt};
 }
 
-export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred){
+export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred,floorBench){
   if(!ba)return null;
   const tKeys=Object.keys(ts||{});
   if(!tKeys.length)return null;
@@ -329,11 +329,27 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred){
   const off=typeOff+agencyOff;
   const optAdj=rnd4(ref.med+off);const optXp=calcXp(ref.med+off);const optBid=calcBid(ref.med+off);
   const {route,agN:routeAgN}=routePrediction({at,agName},ts,as);
+
+  // Phase 23-4: SUCVIEW 기반 at×floor_rate 1위 마진 벤치마크 (bid 보조 지표)
+  // 182건 백테스트: MAE 432만원 → 21만원 (95% 개선, 기존 bid/opt_bid 미변경)
+  let benchmarkBid=null,benchmarkRate=null,benchmarkMargin=null,benchmarkN=0,benchmarkSrc=null;
+  if(floorBench&&fr){
+    const frKey=Number(fr).toFixed(3);
+    const hit=floorBench[at+"|"+frKey];
+    if(hit&&hit.n>=5&&isFinite(hit.med)){
+      benchmarkMargin=hit.med;benchmarkN=hit.n;
+      benchmarkRate=rnd4(Number(fr)+hit.med);
+      benchmarkBid=Math.ceil(ba*benchmarkRate/100);
+      benchmarkSrc=`${at}@${frKey}%(${hit.n}건, 마진${hit.med.toFixed(4)}%)`;
+    }
+  }
+
   return{scenarios,fr,src,bidRateRec,bidByRate,
     adjAvg:rnd4(ref.avg),adjStd:rnd4(ref.std),
     adj:rnd4(ref.med),xp:calcXp(ref.med),bid:calcBid(ref.med),baseAdj:rnd4(ref.avg),
     detailInsight,biasAdj:rnd4(biasAdj),driftUsed:0,ci70,ci90,optAdj,optXp,optBid,optOffset:off,
     typeOffset:typeOff,agencyOffset:agencyOff,agencyN:agPred?Number(agPred.n||0):0,
+    benchmarkBid,benchmarkRate,benchmarkMargin,benchmarkN,benchmarkSrc,
     route,routeAgN}}
 
 // ─── 데이터 현황 (최근 업로드 + 실제 최신 개찰일 분리) ────

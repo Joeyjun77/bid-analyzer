@@ -234,6 +234,22 @@ export async function sbFetchDetails(){
 export async function sbFetchDetailsByAg(ag){
   try{const res=await fetch(SB_URL+"/rest/v1/bid_details?ag=eq."+encodeURIComponent(ag)+"&select=*&order=od.desc&limit=1000",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}}
 
+// ─── Phase 23-4: SUCVIEW 기반 at × floor_rate 1위 마진 벤치마크 ──────
+// floor_margin_benchmark VIEW → {`${at}|${floor_rate}` : {med, n, std}}
+export async function sbFetchFloorBench(){
+  try{
+    const res=await fetch(SB_URL+"/rest/v1/floor_margin_benchmark?select=at,floor_rate,n,med_margin,std_margin&limit=500",{headers:getHdrsSel()});
+    if(!res.ok)return{};
+    const rows=await res.json();
+    const m={};
+    for(const r of rows){
+      const key=r.at+"|"+Number(r.floor_rate).toFixed(3);
+      m[key]={med:Number(r.med_margin),n:Number(r.n),std:Number(r.std_margin)};
+    }
+    return m;
+  }catch(e){return{}}
+}
+
 // ─── Phase 23-2: 발주기관×금액대 동적 편향 보정 맵 ──────────
 // pred_bias_map VIEW에서 4단계 grain (AG_BA, AG, AT_BA, AT) 다층 lookup용 map 생성
 export async function sbFetchPredBiasMap(){
