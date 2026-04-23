@@ -1,6 +1,19 @@
 import * as XLSX from "xlsx";
 import { CHO } from "./constants.js";
 
+// Phase 23-4-B: 벤치마크 투찰금 → 사정률(%) 역산
+// A값 유무에 따라 예정가격(ep) 역산 공식이 다르므로 통합 처리
+export function calcBenchmarkAdj(pred) {
+  if (!pred) return null;
+  const benchBid = Number(pred.benchmark_bid || 0);
+  const ba = Number(pred.ba || 0);
+  const fr = Number(pred.pred_floor_rate || 0);
+  const av = Number(pred.av || 0);
+  if (benchBid <= 0 || ba <= 0 || fr <= 0) return null;
+  const benchEp = av > 0 ? av + (benchBid - av) * 100 / fr : benchBid * 100 / fr;
+  return (benchEp / ba - 1) * 100;
+}
+
 // ─── Phase 17-A: 1위 목표 투찰금 보정 ──────────────────────
 // 근거: bid_details 315건 자사 입찰 분석 — 자사 투찰률이 1위보다 기관유형별 중앙값만큼 높음
 // bid1st = opt_bid × fr / (fr + gap)  ← 1위 수준으로 낮춤

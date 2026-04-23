@@ -1,6 +1,6 @@
 import React from 'react';
 import { C } from '../lib/constants.js';
-import { WIN_OPT_GAP, tc } from '../lib/utils.js';
+import { WIN_OPT_GAP, tc, calcBenchmarkAdj } from '../lib/utils.js';
 import { sbPredictNotice } from '../lib/supabase.js';
 
 const AT_COLOR = {
@@ -86,8 +86,8 @@ export default function NoticesTab({
       <div style={{ border: "1px solid " + C.bdr, borderRadius: 8, overflowX: "auto", maxWidth: "100%" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 1050 }}>
           <thead><tr style={{ background: C.bg3 }}>
-            {["개찰일시", "공고명", "발주기관", "유형", "추정가격", "예측 사정률", "추천 투찰금", "🎯 벤치마크", "액션"].map((h, i) => (
-              <th key={i} style={{ padding: "8px 10px", textAlign: i >= 4 && i <= 7 ? "right" : "left", color: h === "🎯 벤치마크" ? "#a8b4ff" : C.txd, fontWeight: 600, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap", fontSize: 10 }} title={h === "🎯 벤치마크" ? "SUCVIEW 기반 1위 투찰 추정 (n≥5)" : ""}>{h}</th>
+            {["개찰일시", "공고명", "발주기관", "유형", "추정가격", "예측 사정률", "추천 투찰금", "🎯 벤치마크 사정률", "액션"].map((h, i) => (
+              <th key={i} style={{ padding: "8px 10px", textAlign: i >= 4 && i <= 7 ? "right" : "left", color: h.includes("벤치마크") ? "#a8b4ff" : C.txd, fontWeight: 600, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap", fontSize: 10 }} title={h.includes("벤치마크") ? "SUCVIEW 기반 1위 투찰률에서 역산한 사정률 (100% 기준, n≥5)" : ""}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -121,10 +121,15 @@ export default function NoticesTab({
                   <td style={{ padding: "8px 10px", textAlign: "right", color: hasPred ? C.gold : C.txd, fontFamily: "monospace", fontWeight: hasPred ? 700 : 400, fontSize: 10 }}>
                     {hasPred && bid1st ? tc(bid1st) : (hasPred && p.pred_bid_amount ? tc(Number(p.pred_bid_amount)) : "—")}
                   </td>
-                  <td style={{ padding: "8px 10px", textAlign: "right", color: p?.benchmark_bid ? "#a8b4ff" : C.txd, fontFamily: "monospace", fontWeight: p?.benchmark_bid ? 600 : 400, fontSize: 10 }}
-                      title={p?.benchmark_n ? "n=" + p.benchmark_n + (p.benchmark_rate != null ? " · " + Number(p.benchmark_rate).toFixed(4) + "%" : "") : ""}>
-                    {p?.benchmark_bid ? tc(Number(p.benchmark_bid)) : "—"}
-                  </td>
+                  {(() => {
+                    const benchAdj = calcBenchmarkAdj(p);
+                    return (
+                      <td style={{ padding: "8px 10px", textAlign: "right", color: benchAdj != null ? "#a8b4ff" : C.txd, fontFamily: "monospace", fontWeight: benchAdj != null ? 600 : 400, fontSize: 10 }}
+                          title={p?.benchmark_n ? "n=" + p.benchmark_n + (p.benchmark_bid ? " · 투찰 " + tc(Number(p.benchmark_bid)) + "원" : "") : ""}>
+                        {benchAdj != null ? (100 + benchAdj).toFixed(4) + "%" : "—"}
+                      </td>
+                    );
+                  })()}
                   <td style={{ padding: "8px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
                     {isUmm ? <span style={{ fontSize: 9, color: C.txd }}>엑셀 업로드</span> :
                       hasPred ? <button onClick={() => {
