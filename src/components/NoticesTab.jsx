@@ -55,7 +55,7 @@ export default function NoticesTab({
   };
 
   return (
-    <div style={{ padding: "16px 20px", maxWidth: "100%", boxSizing: "border-box" }}>
+    <div style={{ padding: "16px 20px", boxSizing: "border-box", maxWidth: "100%" }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 14 }}>
         {[
           { l: "전체 수집", v: notices.length + "건", c: C.txm },
