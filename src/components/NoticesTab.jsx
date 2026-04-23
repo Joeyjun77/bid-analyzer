@@ -86,12 +86,12 @@ export default function NoticesTab({
       <div style={{ border: "1px solid " + C.bdr, borderRadius: 8, overflow: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 900 }}>
           <thead><tr style={{ background: C.bg3 }}>
-            {["개찰일시", "공고명", "발주기관", "유형", "추정가격", "예측 사정률", "추천 투찰금", "액션"].map((h, i) => (
-              <th key={i} style={{ padding: "8px 10px", textAlign: i >= 4 && i <= 6 ? "right" : "left", color: C.txd, fontWeight: 600, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap", fontSize: 10 }}>{h}</th>
+            {["개찰일시", "공고명", "발주기관", "유형", "추정가격", "예측 사정률", "추천 투찰금", "🎯 벤치마크", "액션"].map((h, i) => (
+              <th key={i} style={{ padding: "8px 10px", textAlign: i >= 4 && i <= 7 ? "right" : "left", color: h === "🎯 벤치마크" ? "#a8b4ff" : C.txd, fontWeight: 600, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap", fontSize: 10 }} title={h === "🎯 벤치마크" ? "SUCVIEW 기반 1위 투찰 추정 (n≥5)" : ""}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={8} style={{ padding: "24px", textAlign: "center", color: C.txd, fontSize: 12 }}>공고 없음</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={9} style={{ padding: "24px", textAlign: "center", color: C.txd, fontSize: 12 }}>공고 없음</td></tr>}
             {filtered.map(n => {
               const p = n.prediction_id ? predMap[n.prediction_id] : null;
               const hasPred = p?.pred_adj_rate != null;
@@ -120,6 +120,10 @@ export default function NoticesTab({
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", color: hasPred ? C.gold : C.txd, fontFamily: "monospace", fontWeight: hasPred ? 700 : 400, fontSize: 10 }}>
                     {hasPred && bid1st ? tc(bid1st) : (hasPred && p.pred_bid_amount ? tc(Number(p.pred_bid_amount)) : "—")}
+                  </td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", color: p?.benchmark_bid ? "#a8b4ff" : C.txd, fontFamily: "monospace", fontWeight: p?.benchmark_bid ? 600 : 400, fontSize: 10 }}
+                      title={p?.benchmark_n ? "n=" + p.benchmark_n + (p.benchmark_rate != null ? " · " + Number(p.benchmark_rate).toFixed(4) + "%" : "") : ""}>
+                    {p?.benchmark_bid ? tc(Number(p.benchmark_bid)) : "—"}
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
                     {isUmm ? <span style={{ fontSize: 9, color: C.txd }}>엑셀 업로드</span> :
