@@ -5,7 +5,7 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj } from "./lib/utils.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow } from "./lib/utils.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
@@ -1163,6 +1163,8 @@ ${baseInfo}
         const finalAdj=finalRec.adj;
         const finalBid=finalRec.bid;
         const finalBid1st=finalRec.bid1st;
+        // Phase 23-5: 실측 방향 힌트 (pred_bias_map 기반 화살표)
+        const biasArrow=getBiasArrow(predBiasMap,{at:d.at,ag:d.ag,ba:d.ba});
         const finalSource=finalRec.source==="추천"?"통계 예측 + 편향 보정":
                           finalRec.source==="순수예측"?"순수 통계 예측":"—";
         const fr2=Number(d.pred_floor_rate||0);
@@ -1235,7 +1237,15 @@ ${baseInfo}
               <div style={{padding:"14px 16px",background:"rgba(0,0,0,0.2)",display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <div>
                   <div style={{fontSize:10,color:C.txm,marginBottom:3}}>📌 입찰 시 사용할 사정률(100%)</div>
-                  <div style={{fontSize:28,fontWeight:700,color:"#5dca96",fontFamily:"monospace",lineHeight:1}}>{fmtAdj(finalAdj)}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:28,fontWeight:700,color:"#5dca96",fontFamily:"monospace",lineHeight:1}}>{fmtAdj(finalAdj)}</span>
+                    {biasArrow&&finalAdj!=null&&(
+                      <span
+                        style={{fontSize:biasArrow.size==='large'?26:biasArrow.size==='medium'?22:biasArrow.size==='small'?18:14,color:biasArrow.color,lineHeight:1,userSelect:"none",fontFamily:"monospace",fontWeight:700}}
+                        title={`실측 방향 힌트: ${biasArrow.label}\n${biasArrow.sign>=0?'↑ 상향':'↓ 하향'} ${Math.abs(biasArrow.actualDir).toFixed(3)}%p\n근거: ${biasArrow.source}\n(pred_bias_map 기반 — 이 기관/금액대의 역사적 편향 방향)`}
+                      >{biasArrow.glyph}</span>
+                    )}
+                  </div>
                   <div style={{fontSize:10,color:C.txd,marginTop:3}}>이 예정가격을 기초금액으로 계산한 값</div>
                 </div>
                 <div>

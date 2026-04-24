@@ -209,6 +209,31 @@ export function calcStats(recs,filter){const src=filter?recs.filter(filter):recs
 // ─── 예측 v5 (51K 백테스트 기반 보정) ────────────────────────
 const rnd4=v=>Math.round((v||0)*10000)/10000;
 
+// ─── Phase 23-5: 추천값 방향·크기 힌트 (pred_bias_map 기반 화살표) ──
+// getFinalRecommendation의 lookup 순서(AG×BA → AG → AT×BA → AT)를 재사용.
+// biasMap 저장값 해석: predicted - actual (overshoot 양수).
+// 화살표 방향 = 실측 위치 = -bias (양수면 실측이 상향, 음수면 하향).
+// 크기 임계값: 이론 노이즈 바닥 0.642% 절반 이하를 기준선으로 3단계 + 중립.
+export function getBiasArrow(biasMap,{at,ag,ba}){
+  if(!biasMap||!at)return null;
+  const baNum=Number(ba)||0;
+  const seg=baNum<1e8?'S1':baNum<3e8?'S2':baNum<1e9?'S3':baNum<3e9?'S4':'S5';
+  let bias=null,src='';
+  if(ag&&biasMap.agBa&&biasMap.agBa[ag+'|'+seg]!=null){bias=biasMap.agBa[ag+'|'+seg];src='AG×금액대'}
+  else if(ag&&biasMap.ag&&biasMap.ag[ag]!=null){bias=biasMap.ag[ag];src='AG'}
+  else if(biasMap.atBa&&biasMap.atBa[at+'|'+seg]!=null){bias=biasMap.atBa[at+'|'+seg];src='AT×금액대'}
+  else if(biasMap.at&&biasMap.at[at]!=null){bias=biasMap.at[at];src='AT'}
+  if(bias==null)return null;
+  const actualDir=-bias;
+  const mag=Math.abs(actualDir);
+  let size,glyph,color,label;
+  if(mag<0.03){size='neutral';glyph='·';color='#666680';label='중립'}
+  else if(mag<0.10){size='small';glyph=actualDir>0?'▴':'▾';color='#85b7eb';label='우수'}
+  else if(mag<0.25){size='medium';glyph=actualDir>0?'▲':'▼';color='#d4a834';label='보통'}
+  else{size='large';glyph=actualDir>0?'⇈':'⇊';color='#e24b4a';label='이상치'}
+  return{glyph,color,label,size,sign:Math.sign(actualDir),bias,actualDir,source:src};
+}
+
 // Phase 21-R: 라우팅 분류기 — predictV5 내부의 암묵 분기를 명시 레이블로 노출
 // DB의 opt_adj_router 컬럼에 저장되며, route별 MAE 분해 분석에 사용
 export const AGENCY_LOOKUP_REDIRECT={
