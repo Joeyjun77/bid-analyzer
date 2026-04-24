@@ -1953,6 +1953,8 @@ ${baseInfo}
               // Phase 5.6: 통합 최종 추천 (모달과 동일 로직: AI > Enhanced > opt_adj > pred)
               const finalRec=getFinalRecommendation(p);
               const finalAdj=finalRec.adj;const finalBid=finalRec.bid;const finalBid1st=finalRec.bid1st;
+              // Phase 23-5: 실측 방향 힌트 (리스트용, 셀 폭 고려해 글리프 축소)
+              const biasArrow=getBiasArrow(predBiasMap,{at:p.at,ag:p.ag,ba:p.ba});
               const optErr=(finalAdj!=null&&p.actual_adj_rate!=null)?Number(finalAdj)-Number(p.actual_adj_rate):null;
               const isAnomaly=optErr!=null&&Math.abs(optErr)>5;
               const errColor=isAnomaly?"#e24b4a":optErr!=null?(Math.abs(optErr)<0.3?"#5dca96":Math.abs(optErr)<1?"#d4a834":"#e24b4a"):C.txd;
@@ -1982,7 +1984,15 @@ ${baseInfo}
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:finalRec.jongsim?"#e24b4a":C.gold,fontWeight:500}} title={finalRec.jongsim?"LH 종심제·순심제 (예측 미지원)":(finalRec.source?"근거: "+finalRec.source:"")}>
-                  {finalRec.jongsim?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.12)"}}>⚠ 종심제</span>:(finalAdj!=null?(100+Number(finalAdj)).toFixed(4)+"%":"")}
+                  {finalRec.jongsim?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.12)"}}>⚠ 종심제</span>:(finalAdj!=null?(
+                    <span style={{display:"inline-flex",alignItems:"center",gap:4,justifyContent:"flex-end"}}>
+                      <span>{(100+Number(finalAdj)).toFixed(4)+"%"}</span>
+                      {biasArrow&&<span
+                        style={{color:biasArrow.color,fontSize:biasArrow.size==='large'?13:biasArrow.size==='medium'?12:11,lineHeight:1,fontWeight:700}}
+                        title={`실측 방향 힌트: ${biasArrow.label} (${biasArrow.sign>=0?'↑ 상향':'↓ 하향'} ${Math.abs(biasArrow.actualDir).toFixed(3)}%p · 근거 ${biasArrow.source})`}
+                      >{biasArrow.glyph}</span>}
+                    </span>
+                  ):"")}
                 </td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:700}}>
                   {finalRec.jongsim?<span style={{fontSize:10,color:C.txd}}>—</span>:((finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):"")}</td>
