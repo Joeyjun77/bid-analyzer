@@ -14,7 +14,7 @@
 //   }
 
 import { useState, useEffect } from 'react';
-import { getSession, signIn, signUp, signOut, getUser, refreshSession, AuthContext, isAdminEmail } from '../auth';
+import { getSession, signIn, signUp, signOut, getUser, refreshSession, AuthContext, isAdminEmail, installAutoRefresh, AUTH_EVENT_NAME } from '../auth';
 
 export default function AuthGate({ children }) {
   const [user, setUser] = useState(getUser());
@@ -25,16 +25,34 @@ export default function AuthGate({ children }) {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
-  // 세션이 있으나 만료 가까웠으면 미리 갱신
+  // 세션 자동 유지 (keepalive + visibilitychange + online) 설치
+  // 세션 만료 이벤트 수신 시 로그인 화면으로 복귀하여 "데이터 0" 현상 방지
   useEffect(() => {
+    installAutoRefresh();
+
+    // 마운트 시 만료 임박이면 즉시 갱신
     const session = getSession();
     if (session?.expires_at) {
       const timeLeft = session.expires_at * 1000 - Date.now();
       if (timeLeft < 5 * 60 * 1000) {
-        // 5분 이하 남으면 즉시 갱신
         refreshSession().then((u) => u && setUser(u));
       }
     }
+
+    const onAuth = (e) => {
+      const type = e?.detail?.type;
+      if (type === 'expired') {
+        // 세션 복구 불가 → 사용자 상태를 null로 되돌려 로그인 화면 표시
+        // (자식 트리가 unmount되어 stale 데이터/빈 배열 표시 방지)
+        setUser(null);
+        setError('장시간 미사용으로 세션이 만료되어 다시 로그인이 필요합니다.');
+      } else if (type === 'refreshed') {
+        // 갱신 성공: 기존 user가 있으면 유지, 없으면 로컬에서 재조회
+        setUser((prev) => prev || getUser());
+      }
+    };
+    window.addEventListener(AUTH_EVENT_NAME, onAuth);
+    return () => window.removeEventListener(AUTH_EVENT_NAME, onAuth);
   }, []);
 
   const handleSubmit = async (e) => {
