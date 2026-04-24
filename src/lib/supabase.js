@@ -305,16 +305,9 @@ export async function sbFetchBasegFinetune(){
 export async function sbFetchAgAssumedStats(){
   try{const res=await fetch(SB_URL+"/rest/v1/ag_assumed_stats?select=ag,at,seg,n,p25,p50,p75&order=n.desc&limit=1000",{headers:getHdrsSel()});if(!res.ok)return{};const rows=await res.json();const map={};for(const r of rows){const k=r.ag+"|"+r.seg;map[k]={at:r.at,n:Number(r.n),p25:Number(r.p25),p50:Number(r.p50),p75:Number(r.p75)}}return map}catch(e){return{}}}
 
-// ─── Phase 12: Phase 6~10 스텁 (드롭된 테이블 참조 제거) ─────
-// 이 함수들은 Phase 6~10에서 만들어졌으나, 여성기업 가산 오염으로 백지화됨.
-// App.jsx 호환성 유지를 위해 no-op으로 유지. 다음 정리 시 App.jsx에서 호출 제거 예정.
-export async function sbFetchScoring(){return[]}
-export async function sbBatchUpsertScoring(rows){return}
-export async function sbFetchRoiMatrix(){return[]}
-export async function sbFetchBiasMap(){return{agency:{},at:{}}}
-export async function sbFetchTrendMap(){return{}}
-export async function sbSaveAiAnalysis(predId,analysis){return}
-export async function sbFetchAiAnalysis(){return{}}
+// Phase 6~10 no-op 스텁(sbFetchScoring / sbBatchUpsertScoring / sbFetchRoiMatrix /
+// sbFetchBiasMap / sbFetchTrendMap / sbSaveAiAnalysis / sbFetchAiAnalysis)은
+// App.jsx 호출부와 함께 정리되어 제거됨.
 
 // ─── Phase 12: 타깃팅 데이터 로딩 ────────────────────────
 export async function sbFetchTargetMatrix(){

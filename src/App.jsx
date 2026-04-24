@@ -5,8 +5,8 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, setBiasMap, setTrendMap, getEnhancedAdj, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchScoring, sbBatchUpsertScoring, sbFetchRoiMatrix, sbFetchBiasMap, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchTrendMap, sbSaveAiAnalysis, sbFetchAiAnalysis, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory } from "./lib/supabase.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, setWinProbMatrix, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow } from "./lib/utils.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -435,11 +435,9 @@ ${baseInfo}
     try{const preds=await sbFetchPredictions();setPredictions(preds||[]);return preds}catch(e){return predictions}},[predictions]);
   // ★ 전체 데이터 새로고침 (새로고침 버튼용)
   const refreshAll=useCallback(async()=>{
-    try{const[rows,preds,dets,agStats,scoring]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails(),sbFetchAgAssumedStats(),sbFetchScoring()]);
+    try{const[rows,preds,dets,agStats]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails(),sbFetchAgAssumedStats()]);
       setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));
       setPredictions(preds||[]);setBidDetails(dets||[]);setAgAss(agStats||{});
-      // scoring map 구성
-      const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm);
       // 자동 매칭 시도
       const matched=await sbMatchPredictions(preds,rows);
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds)}
@@ -474,13 +472,9 @@ ${baseInfo}
       if(dets&&dets.length>0){const latest=dets.reduce((a,b)=>(a.created_at>b.created_at?a:b));setLastSucviewAt(latest.created_at)}
     }catch(e){setBidDetails([])}
     try{const agStats=await sbFetchAgAssumedStats();setAgAss(agStats||{})}catch(e){setAgAss({})}
-    try{const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm)}catch(e){setScoringMap({})}
-    try{const mtx=await sbFetchRoiMatrix();if(mtx?.matrix)setWinProbMatrix(mtx.matrix)}catch(e){}
-    try{const bm=await sbFetchBiasMap();if(bm){setBiasMap(bm);setBiasMapState(bm)}}catch(e){}
     try{const pbm=await sbFetchPredBiasMap();if(pbm)setPredBiasMap(pbm)}catch(e){}
     try{const fb=await sbFetchFloorBench();if(fb)setFloorBench(fb)}catch(e){}
     try{const bf=await sbFetchBasegFinetune();if(bf)setBasegFinetune(bf)}catch(e){}
-    try{const tm=await sbFetchTrendMap();if(tm){setTrendMap(tm);setTrendMapState(tm)}}catch(e){}
     // Phase 12-C: 발주사별 낙찰 예측 데이터 로드
     try{
       const [aws,apr]=await Promise.all([sbFetchAgencyWinStats(),sbFetchAgencyPredictor()]);
@@ -599,14 +593,11 @@ ${baseInfo}
       const existingIds=new Set(Object.keys(scoringMap).map(Number));
       const newPreds=(matched>0?await sbFetchPredictions():preds).filter(p=>!existingIds.has(p.id));
       if(newPreds.length>0){
-        const scoringRows=newPreds.map(p=>{const sc=calcRoiV2(p);return{prediction_id:p.id,...sc}});
-        await sbBatchUpsertScoring(scoringRows);
-        const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm);
         // ★ v7 a-R2: 신규 예측에 대해 snapshot 기록 (UPSERT, 실패는 경고만)
         try{await sbRecordSnapshots(newPreds.map(p=>p.id))}catch(e){console.warn("snapshot 실패:",e.message)}
       }
-      if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭 · 신규 ${newPreds.length}건 scoring`})}
-      else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:`업로드 완료 · 신규 ${newPreds.length}건 scoring`})}
+      if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭 · 신규 ${newPreds.length}건`})}
+      else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:`업로드 완료 · 신규 ${newPreds.length}건`})}
     }catch(e){setMsg({type:"err",text:"DB 재로드 실패"})}
     setSel({});setBusy(false)},[refreshStats,allS,bidDetails,agencyPred,floorBench,agAss]);
 
@@ -630,13 +621,9 @@ ${baseInfo}
       setPredResults(prev=>{const dkSet=new Set(totalResults.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...totalResults]});
       const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,source:"file_upload",match_status:"pending"}));
       await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds);
-      // Phase 5.2: 신규 예측 자동 scoring
       const existingIds=new Set(Object.keys(scoringMap).map(Number));
       const newPreds=preds.filter(p=>!existingIds.has(p.id));
       if(newPreds.length>0){
-        const scoringRows=newPreds.map(p=>{const sc=calcRoiV2(p);return{prediction_id:p.id,...sc}});
-        await sbBatchUpsertScoring(scoringRows);
-        const scoring=await sbFetchScoring();const sm={};(scoring||[]).forEach(s=>{sm[s.prediction_id]=s});setScoringMap(sm);
         // ★ v7 a-R2: 신규 예측에 대해 snapshot 기록 (UPSERT, 실패는 경고만)
         try{await sbRecordSnapshots(newPreds.map(p=>p.id))}catch(e){console.warn("snapshot 실패:",e.message)}
       }
@@ -1172,8 +1159,6 @@ ${baseInfo}
         const fmtAdj=(adj)=>adj==null?"—":(100+Number(adj)).toFixed(4)+"%";
         const ai=aiAnalysisMap[d.id];
         const aiLoading=aiLoadingPredId===d.id;
-        // Enhanced (전략 탭용)
-        const enhanced=getEnhancedAdj(d);
         // 등급
         const sc=scoringMap[d.id];
         const grade=sc?sc.roi_grade:null;
@@ -1510,7 +1495,6 @@ ${baseInfo}
                 try{setAiLoadingPredId(d.id);
                   const ctx=buildAiContext(d,scoringMap,biasMap,trendMap,recs);
                   const result=await callClaudeAi(ctx,null);
-                  await sbSaveAiAnalysis(d.id,d.pn_no,result);
                   setAiAnalysisMap(prev=>({...prev,[d.id]:result}))
                 }catch(e){alert("AI 분석 실패: "+e.message)}
                 finally{setAiLoadingPredId(null)}
@@ -2019,11 +2003,7 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui||isDataWait?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{isYuchal?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.1)",color:"#e24b4a"}}>유찰</span>:isSuui?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(212,168,52,0.15)",color:"#d4a834"}}>수의</span>:isDataWait?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(138,147,168,0.15)",color:"#8a93a8"}}>데이터대기</span>:<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span>}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"&&!isYuchal&&!isSuui&&!isDataWait?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
-                <td style={{padding:"6px",textAlign:"center"}}><button onClick={async()=>{setDetailModal(p);setDetailTab("detail");setDetailAi(p.ai_advice||"");setDetailAiLoading(false);
-                  // Phase 5.4: 저장된 AI 분석 자동 로드
-                  if(!aiAnalysisMap[p.id]){
-                    try{const ai=await sbFetchAiAnalysis(p.id);if(ai)setAiAnalysisMap(prev=>({...prev,[p.id]:ai}))}catch(e){}
-                  }
+                <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>{setDetailModal(p);setDetailTab("detail");setDetailAi(p.ai_advice||"");setDetailAiLoading(false);
                 }} style={{padding:"2px 8px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.25)",borderRadius:4,color:"#a8b4ff",cursor:"pointer"}}>상세</button></td>
               </tr>})}</tbody>
           </table>

@@ -669,83 +669,12 @@ export const calcRoiV2=(p)=>{
 // 등급 색상
 export const GRADE_COLORS={S:"#a855f7",A:"#5dca96",B:"#d4a834",C:"#a8b4ff",D:"#666680"};
 
-// ============ Phase 5.4: AI 전략 — 편차 보정 + 추세 적용 ============
+// Phase 5.4의 BIAS_MAP / TREND_MAP / getEnhancedAdj 체인은 제거됨
+// — 공급원 sbFetchBiasMap / sbFetchTrendMap 이 Phase 12에서 no-op 화된 뒤
+// 실질적으로 항상 빈 맵을 사용하던 dead path였음.
+// 현재 편향 보정은 getFinalRecommendation(App.jsx) + pred_bias_map VIEW로 대체.
 
-// 편차 보정 맵 (DB에서 로드)
-export let BIAS_MAP={agency:{},at:{}};
-export function setBiasMap(newMap){if(newMap)BIAS_MAP=newMap;return true}
-
-// 추세 맵 (DB에서 로드)
-export let TREND_MAP={};
-export function setTrendMap(newMap){if(newMap)TREND_MAP=newMap;return true}
-
-// 전략 1: 편차 보정 적용
-// 발주기관 단위 편차가 있으면 우선, 없으면 기관유형 편차 사용
-export function applyBiasCorrection(prediction){
-  if(!prediction)return prediction;
-  const ag=prediction.ag||"";
-  const at=prediction.at||"";
-  // 발주기관 편차 우선 (신뢰도 가중)
-  const agBias=BIAS_MAP.agency[ag];
-  const atBias=BIAS_MAP.at[at];
-  let bias=0,source="none",conf=0;
-  if(agBias&&agBias.n>=5){
-    bias=agBias.offset*agBias.confidence;
-    source=`agency(n=${agBias.n})`;conf=agBias.confidence
-  }else if(atBias&&atBias.n>=3){
-    bias=atBias.offset*atBias.confidence*0.7; // 기관유형은 70%만 적용
-    source=`at(n=${atBias.n})`;conf=atBias.confidence*0.7
-  }
-  return{
-    ...prediction,
-    adj_corrected:Number(prediction.opt_adj||prediction.pred_adj_rate||0)+bias,
-    bias_offset:Math.round(bias*10000)/10000,
-    bias_source:source,
-    bias_confidence:conf
-  }
-}
-
-// 전략 2: 추세 보정 적용 (기관유형 단위)
-export function applyTrendCorrection(prediction){
-  if(!prediction)return prediction;
-  const at=prediction.at||"";
-  const trend=TREND_MAP[at];
-  if(!trend)return{...prediction,trend_offset:0,trend_direction:"none"};
-  const t30=Number(trend.trend_30d||0);
-  const tall=Number(trend.trend_all||0);
-  const drift=t30-tall; // 최근이 전체 평균 대비 얼마나 변했는지
-  // 추세 강도가 높을 때만 50% 반영 (보수적)
-  const trendOffset=drift*Number(trend.trend_strength||0)*0.5;
-  return{
-    ...prediction,
-    trend_offset:Math.round(trendOffset*10000)/10000,
-    trend_direction:trend.direction,
-    trend_strength:trend.trend_strength
-  }
-}
-
-// 통합: 편차 + 추세 모두 적용한 최종 추천 사정률
-export function getEnhancedAdj(prediction){
-  if(!prediction)return null;
-  const baseAdj=Number(prediction.opt_adj||prediction.pred_adj_rate||0);
-  const withBias=applyBiasCorrection(prediction);
-  const withTrend=applyTrendCorrection(prediction);
-  const enhancedAdj=baseAdj+(withBias.bias_offset||0)+(withTrend.trend_offset||0);
-  return{
-    base:Math.round(baseAdj*10000)/10000,
-    enhanced:Math.round(enhancedAdj*10000)/10000,
-    biasOffset:withBias.bias_offset||0,
-    trendOffset:withTrend.trend_offset||0,
-    biasSource:withBias.bias_source,
-    trendDirection:withTrend.trend_direction,
-    explanation:[
-      withBias.bias_source!=="none"?`편차 보정 ${(withBias.bias_offset>=0?"+":"")}${(withBias.bias_offset).toFixed(3)}%p (${withBias.bias_source})`:null,
-      withTrend.trend_offset!==0?`추세 보정 ${(withTrend.trend_offset>=0?"+":"")}${withTrend.trend_offset.toFixed(3)}%p (${withTrend.trend_direction})`:null
-    ].filter(Boolean)
-  }
-}
-
-// ============ Phase 5.4 전략 3: Claude API 통합 ============
+// ============ Claude API 통합 ============
 
 // Claude API 호출용 컨텍스트 구성
 export function buildAiContext(prediction,scoringMap,biasMap,trendMap,records){
