@@ -1,5 +1,8 @@
 import * as XLSX from "xlsx";
 import { CHO } from "./constants.js";
+import { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf } from "./constants-tables.js";
+// 도메인 상수 테이블은 constants-tables.js에 분리. 아래는 App.jsx 호환을 위한 re-export.
+export { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf };
 
 // Phase 23-4-B: 벤치마크 투찰금 → 사정률(%) 역산
 // A값 유무에 따라 예정가격(ep) 역산 공식이 다르므로 통합 처리
@@ -17,56 +20,14 @@ export function calcBenchmarkAdj(pred) {
 // ─── Phase 17-A: 1위 목표 투찰금 보정 ──────────────────────
 // 근거: bid_details 315건 자사 입찰 분석 — 자사 투찰률이 1위보다 기관유형별 중앙값만큼 높음
 // bid1st = opt_bid × fr / (fr + gap)  ← 1위 수준으로 낮춤
-export const WIN_OPT_GAP={
-  "지자체":    0.493,
-  "군시설":    0.385,
-  "교육청":    0.533,
-  "한전":      0.367,
-  "조달청":    0.676,
-  "LH":        0.088,
-  "수자원공사": 0.003,
-};
+// WIN_OPT_GAP 상수는 constants-tables.js에 분리됨.
 export function calcWin1stBid(bid, fr, at){
   if(!bid||!fr)return null;
   const gap=WIN_OPT_GAP[at]??0.3;
   return Math.round(Number(bid)*Number(fr)/(Number(fr)+gap));
 }
 
-// ─── 낙찰하한율 (2026 기관별 개정 반영) ──────────────────────
-// ─── 낙찰하한율 (2026 기관별 개정 반영) ──────────────────────
-// 구기준: 산식기준 88/100 기반
-// 신기준: 조달청계열 → 90/100, 지자체/교육청 → 88/100 유지 (구간만 변경)
-// 시행일: 기관별 상이 (cutoffDate 참조)
-const RATE_TABLE={
-  // ── 조달청 (시행 2026.01.30) ── 별표5/6: 3억미만은 90/100 기준(90.25%)
-  "조달청":{cutoff:"2026-01-30",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
-  // ── 지자체 (행정안전부 기준, 시행 2025.07.01) ── 3억미만: 88/100→90/100 별표전환
-  "지자체":{cutoff:"2025-07-01",
-    old:[{min:1e10,max:3e11,rate:79.995},{min:5e9,max:1e10,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:4e8,max:1e9,rate:87.745},{min:3e8,max:4e8,rate:87.745},{min:0,max:3e8,rate:88.25}],
-    new:[{min:1e10,max:3e11,rate:81.995},{min:5e9,max:1e10,rate:87.495},{min:3e9,max:5e9,rate:88.745},{min:1e9,max:3e9,rate:88.745},{min:4e8,max:1e9,rate:89.745},{min:3e8,max:4e8,rate:89.745},{min:0,max:3e8,rate:90.25}]},
-  // ── 교육청 (행정안전부 기준 준용) ──
-  "교육청":{cutoff:"2025-07-01",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:4e8,max:1e9,rate:87.745},{min:3e8,max:4e8,rate:87.745},{min:0,max:3e8,rate:88.25}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:3e9,max:5e9,rate:88.745},{min:1e9,max:3e9,rate:88.745},{min:4e8,max:1e9,rate:89.745},{min:3e8,max:4e8,rate:89.745},{min:0,max:3e8,rate:90.25}]},
-  // ── 한전 (한국전력공사) ── 자체 적격심사 기준 사용, 2026 개정 미적용 (데이터 검증: 144건 중앙값 87.745%)
-  "한전":{cutoff:"2099-12-31",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
-    new:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}]},
-  // ── LH (한국토지주택공사, 시행 2026.02.01) ──
-  "LH":{cutoff:"2026-02-01",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
-  // ── 군시설 (시행 2026.01.19, 자체훈령/계약예규 상이 가능) ──
-  "군시설":{cutoff:"2026-01-19",
-    old:[{min:5e9,max:1e11,rate:83.495},{min:1e9,max:5e9,rate:84.745},{min:3e8,max:1e9,rate:85.745},{min:0,max:3e8,rate:86.25}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
-  // ── 수자원공사 (시행 2026.02.27) ──
-  "수자원공사":{cutoff:"2026-02-27",
-    old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
-    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]}
-};
+// 낙찰하한율 테이블은 constants-tables.js에 분리됨.
 export function getFloorRate(at,ep,isNew){const tbl=RATE_TABLE[at]||RATE_TABLE["조달청"];const rules=isNew?tbl.new:tbl.old;for(const r of rules){if(ep>=r.min&&ep<r.max)return r.rate}return rules[rules.length-1].rate}
 export function getCutoffDate(at){return(RATE_TABLE[at]||RATE_TABLE["조달청"]).cutoff}
 export function isNewEra(at,od){if(!od)return false;return od>=getCutoffDate(at)}
@@ -344,15 +305,7 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred,floorBen
   //   발주사별(agSt) 데이터를 우선 사용 중. OPT_CONFIG는 그 위에 얹는 최종 보정층.
   //   agency_predictor 테이블이 114개 발주사의 개별 adj_offset을 제공하며,
   //   이 값이 n/10 shrinkage로 감쇠 적용되어 발주사 특성을 최종 추천에 반영.
-  const TYPE_OFF={
-    "지자체":   -0.15,
-    "군시설":    0.0,
-    "교육청":   -0.45,
-    "한전":      0.10,
-    "LH":       -0.10,
-    "조달청":   -0.10,
-    "수자원공사":-0.10
-  };
+  // TYPE_OFF 상수는 constants-tables.js에 분리됨.
   const typeOff=TYPE_OFF[at]??-0.10;
 
   // 발주사별 오프셋 (agency_predictor 기반, n/10 shrinkage)
@@ -489,17 +442,7 @@ export function simDraws(preRates){
 // ─── 가정 사정률 추천 (1위 투찰 패턴 기반) ──────────────────
 // V5.1: ag_assumed_stats 4,456건 가중평균 기반 교정 (2026-04-06)
 // 이전 버전(3,318건 백테스트) 대비 P25 하향 → 실전 낙찰 가능성 2배 향상
-const ASSUMED_ADJ_TABLE={
-  "지자체":  {under300M:{p25:-0.22,p50:0.37,p75:1.07},over300M:{p25:0.00,p50:0.53,p75:1.05}},
-  "교육청":  {under300M:{p25:0.03,p50:0.57,p75:1.19},over300M:{p25:0.21,p50:0.68,p75:1.19}},
-  "군시설":  {under300M:{p25:0.04,p50:0.48,p75:0.92},over300M:{p25:0.59,p50:1.00,p75:1.38}},
-  "한전":    {under300M:{p25:0.26,p50:0.67,p75:1.07},over300M:{p25:0.35,p50:0.83,p75:1.12}},
-  "조달청":  {under300M:{p25:-1.42,p50:-0.21,p75:0.66},over300M:{p25:0.58,p50:1.29,p75:2.47}},
-  "LH":     {under300M:{p25:0.08,p50:0.40,p75:1.01},over300M:{p25:1.09,p50:1.56,p75:2.67}},
-  "수자원공사":{under300M:{p25:-0.27,p50:0.04,p75:0.38},over300M:{p25:0.47,p50:1.01,p75:1.09}}
-};
-// 기관유형별 균형전략 탈락률 참고값
-const FAIL_RATES={"지자체":25.0,"교육청":24.5,"군시설":25.0,"한전":25.0,"조달청":25.0,"LH":25.0,"수자원공사":25.0};
+// ASSUMED_ADJ_TABLE / FAIL_RATES 상수는 constants-tables.js에 분리됨.
 
 export function recommendAssumedAdj({at,agName,ba,ep,av,pc},ts,as,agAss){
   const tbl=ASSUMED_ADJ_TABLE[at]||ASSUMED_ADJ_TABLE["지자체"];
@@ -557,37 +500,10 @@ export function recommendAssumedAdj({at,agName,ba,ep,av,pc},ts,as,agAss){
   }}
 
 
-// ============ Phase 5.3: ROI 통합 점수 시스템 (DB 매트릭스 + 동적) ============
-// 매트릭스는 DB에서 로드 가능하지만 fallback으로 하드코딩 유지
-// 1,128건 검증 데이터 기반 (2026-04-10)
-export let WIN_PROB_MATRIX={
-  "LH":       {S:{p:0.1818,n:11}, M:{p:0.0000,n:3},  L:{p:0.3182,n:22}},
-  "한전":     {S:{p:0.0476,n:42}, M:{p:0.2121,n:33}, L:{p:0.5000,n:2}},
-  "군시설":   {S:{p:0.0135,n:148},M:{p:0.1875,n:16}, L:{p:0.0000,n:1}},
-  "지자체":   {S:{p:0.0445,n:449},M:{p:0.0606,n:99}, L:{p:0.0952,n:21}},
-  "교육청":   {S:{p:0.0217,n:138},M:{p:0.0800,n:25}, L:{p:0.0000,n:12}},
-  "조달청":   {S:{p:0.0000,n:10}, M:{p:0.0833,n:12}, L:{p:0.0500,n:20}},
-  "수자원공사":{S:{p:0.0000,n:18}, M:{p:0.0000,n:0},  L:{p:0.0000,n:2}}
-};
-
-// DB에서 받은 매트릭스로 교체
-export function setWinProbMatrix(newMatrix){
-  if(newMatrix&&typeof newMatrix==='object'&&Object.keys(newMatrix).length>0){
-    WIN_PROB_MATRIX=newMatrix;
-    return true
-  }
-  return false
-}
-
-// Shrinkage 상수: K=5 (Phase 5.2 검증)
-export const SHRINKAGE_K=5;
-export const GLOBAL_MEAN=0.0544;
-
-// 무효 공고 키워드 (공고명에 포함 시 D등급 강제)
-export const INVALID_KEYWORDS=["취소","중지","재공고","정정","연기"];
-
-// 금액대 분류
-export const tierOf=(amt)=>{const a=Number(amt)||0;return a<3e8?"S":a<1e9?"M":"L"};
+// ============ Phase 5.3: ROI 통합 점수 시스템 ============
+// WIN_PROB_MATRIX / SHRINKAGE_K / GLOBAL_MEAN / INVALID_KEYWORDS / tierOf
+// 상수는 constants-tables.js에 분리됨. setWinProbMatrix는 sbFetchRoiMatrix가
+// Phase 12 정리로 no-op화된 뒤 호출처 0이 되어 제거됨.
 
 // Phase 5.1: Shrinkage 적용 베이스 확률
 // - 표본 많을수록 셀 원본값
