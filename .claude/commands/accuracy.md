@@ -52,6 +52,7 @@ WITH base AS (
   WHERE match_status='matched' AND opt_adj IS NOT NULL AND actual_adj_rate IS NOT NULL
     AND open_date >= CURRENT_DATE - 30
     AND COALESCE(actual_winner,'') NOT IN ('유찰','유찰(무)')
+    AND actual_adj_rate > -5 AND actual_adj_rate < 5
     AND ABS(opt_adj - actual_adj_rate) <= 5
 )
 SELECT focus, COUNT(*) AS n, ROUND(AVG(err)::numeric,4) AS bias, ROUND(AVG(ABS(err))::numeric,4) AS mae
@@ -90,6 +91,7 @@ WITH base AS (
   WHERE match_status='matched' AND opt_adj IS NOT NULL AND actual_adj_rate IS NOT NULL
     AND open_date >= CURRENT_DATE - 14
     AND COALESCE(actual_winner,'') NOT IN ('유찰','유찰(무)')
+    AND actual_adj_rate > -5 AND actual_adj_rate < 5
 ),
 stats AS (SELECT AVG(err) AS mu, STDDEV(err) AS sd FROM base)
 SELECT b.id, b.open_date, b.ag, ROUND(b.err::numeric,4) AS err
@@ -100,6 +102,54 @@ LIMIT 10;
 ```
 → 동일 ag가 2건 이상 반복되면 해당 ag를 pred_bias_map 재학습 후보로 제안.
 
+### 체크 7 — 전략별 Top-1 적중률 (최근 30일, MAE–승률 미스매치 감지)
+```sql
+SELECT
+  SUM(n) AS n,
+  SUM(top1_n) AS top1_n,
+  ROUND((SUM(top1_hit_existing * top1_n) / NULLIF(SUM(top1_n),0))::numeric, 2)     AS hit_existing,
+  ROUND((SUM(top1_hit_balanced * top1_n) / NULLIF(SUM(top1_n),0))::numeric, 2)     AS hit_balanced,
+  ROUND((SUM(top1_hit_aggressive * top1_n) / NULLIF(SUM(top1_n),0))::numeric, 2)   AS hit_aggressive,
+  ROUND((SUM(top1_hit_conservative * top1_n) / NULLIF(SUM(top1_n),0))::numeric, 2) AS hit_conservative
+FROM prediction_quality_daily
+WHERE route IS NULL AND at IS NULL
+  AND measured_on >= CURRENT_DATE - 30
+  AND top1_n IS NOT NULL;
+```
+→ **판정 기준**
+- 어떤 전략이든 hit < 5% → 🚨 해당 전략의 낙찰 기여 없음 (보정 구조 점검 필요)
+- `hit_aggressive` < `hit_balanced` 3%p 이상 → ⚠ 공격 전략 과잉 보정 → `WIN_OPT_GAP` 재추정 검토
+- 전체 MAE는 `/accuracy` 체크1에서 양호한데 hit < 20% → MAE–승률 미스매치, 2순위 착수 신호
+
+### 체크 8 — at × 전략별 Top-1 hit 분포 (최근 60일)
+```sql
+SELECT at,
+       SUM(n) AS n, SUM(top1_n) AS top1_n,
+       ROUND((SUM(top1_hit_existing * top1_n) / NULLIF(SUM(top1_n),0))::numeric, 2)     AS hit_existing,
+       ROUND((SUM(top1_hit_balanced * top1_n) / NULLIF(SUM(top1_n),0))::numeric, 2)     AS hit_balanced,
+       ROUND((SUM(top1_hit_aggressive * top1_n) / NULLIF(SUM(top1_n),0))::numeric, 2)   AS hit_aggressive,
+       ROUND((SUM(top1_hit_conservative * top1_n) / NULLIF(SUM(top1_n),0))::numeric, 2) AS hit_conservative
+FROM prediction_quality_daily
+WHERE route IS NULL AND at IS NOT NULL
+  AND measured_on >= CURRENT_DATE - 60
+  AND top1_n IS NOT NULL
+GROUP BY at
+ORDER BY SUM(top1_n) DESC NULLS LAST;
+```
+→ 특정 at의 모든 전략 hit < 10% → 해당 기관 승률 구조 점검 (agency_predictor 재학습 후보)
+→ 한전·군부대 영역이 지자체보다 현저히 낮으면 핵심 영역 경보.
+
+### 체크 9 — 전략별 Pwin 캘리브레이션 (실측 vs 예측 승률)
+```sql
+SELECT strategy_type, sample_n,
+       ROUND(actual_rate::numeric, 4) AS actual_rate,
+       use_fallback, updated_at
+FROM pwin_calibration_by_strategy
+ORDER BY strategy_type;
+```
+→ `use_fallback=true` 전략 → 실측 샘플 부족, recommend_strategies RPC가 기본값 사용 중
+→ `actual_rate` 전략 간 편차 15%p 이상 → 전략 라벨링이 실제 난이도와 괴리 가능성
+
 ## 리포트 포맷 (반드시 이 순서)
 
 ```
@@ -109,6 +159,8 @@ LIMIT 10;
 - 전체 MAE (최근 14일): X.XXXX ({전일대비 ↑↓ 0.XXXX})
 - 드리프트 플래그: N개 / 총 M개
 - 핵심 영역 (한전/고양시/군부대): {모두 안정 | X 영역 경고}
+- Top-1 승률 (최근 30일, 최고 전략): XX.X% ({✅ ≥20% / ⚠ 10-20% / 🚨 <10%})
+- MAE–승률 미스매치: {없음 | at=XX ⚠}
 
 ### 1. MAE 추이 (체크1)
 [표]
@@ -132,10 +184,24 @@ LIMIT 10;
 [표]
 {반복 ag가 있으면 여기서 지적}
 
+### 7. 전략별 Top-1 적중률 (체크7)
+- existing: XX.X% / balanced: XX.X% / aggressive: XX.X% / conservative: XX.X%
+- 최고 전략: {이름} @ XX.X% ({✅/⚠/🚨})
+- 전략 간 편차: Δ = max − min = X.X%p {분포 편중 해석}
+
+### 8. at × 전략 Top-1 분포 (체크8)
+[표 — hit 최고 전략을 at별로 강조, 모든 전략 <10% at는 🚨]
+
+### 9. 전략 캘리브레이션 (체크9)
+[표 — strategy_type / sample_n / actual_rate / use_fallback]
+{use_fallback=true인 전략이 있으면 여기서 지적 — 실측 샘플 부족}
+
 ### 🔧 개선 제안
 {감지된 문제별로 구체 조치 1~3개}
 - 예: "한전 <3억 구간 MAE 0.52 → pred_bias_map의 AG_BA lookup n<15 케이스라 AG grain으로 fallback. 이 영역 데이터 15건 이상 축적 후 AG_BA 그레인 활용 가능."
 - 예: "드리프트 감지된 at=지자체 → refresh_prediction_quality_daily('2026-XX-XX','2026-XX-XX','v6.2') 실행 권장."
+- 예: "군시설 hit_aggressive=0% (체크8) → Phase 17-A WIN_OPT_GAP[군시설]=0.385가 과도. utils.js:20 재추정 or agency_win_stats 기반 동적화 검토 (2순위 B)."
+- 예: "지자체 MAE 0.55 양호하나 Top-1 hit 7.2% (체크7) → MAE–승률 미스매치 → TYPE_OFF 동적화(2순위 C) 착수 시점."
 ```
 
 ## 규칙
