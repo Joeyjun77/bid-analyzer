@@ -1254,6 +1254,14 @@ ${baseInfo}
                   <div style={{fontSize:10,color:C.txd,marginTop:3}}>낙찰하한율 {d.pred_floor_rate||"—"}% 적용{d.av&&Number(d.av)>0?" (A값 "+tc(Number(d.av))+"원)":""}</div>
                 </div>
               </div>
+              {/* Phase 23-5: 화살표 범례 (다른 이용자용 해설) */}
+              <div style={{padding:"6px 16px",background:"rgba(0,0,0,0.1)",borderTop:"1px solid "+C.bdr+"33",fontSize:10,lineHeight:1.7,color:C.txm}}>
+                <b style={{color:C.txt}}>추천 사정률 화살표</b> — 이 기관·금액대에서 <b>과거 실제 1위 사정률</b>이 시스템 추천보다 <b style={{color:"#5dca96"}}>↑ 높은 편</b>이었는지 <b style={{color:"#e24b4a"}}>↓ 낮은 편</b>이었는지 편향 방향을 표시합니다. 투찰 판단의 보조 힌트이며 추천값 자체는 변경되지 않습니다.
+                <span style={{marginLeft:6,color:"#85b7eb",fontWeight:700}}> ▴▾</span><span style={{color:C.txm}}> 작음(정확)</span> ·
+                <span style={{color:"#d4a834",fontWeight:700}}> ▲▼</span><span style={{color:C.txm}}> 보통(약간 조정 여지)</span> ·
+                <span style={{color:"#e24b4a",fontWeight:700}}> ⇈⇊</span><span style={{color:C.txm}}> 주의(큰 편향)</span> ·
+                <span style={{color:C.txd}}> 표시 없음 = 데이터 부족</span>
+              </div>
               {/* 📐 참고 지표 (4대 출력) */}
               <div style={{padding:"10px 16px",background:"rgba(0,0,0,0.12)",borderTop:"1px solid "+C.bdr+"55"}}>
                 <div style={{fontSize:10,color:C.txm,marginBottom:6,fontWeight:600}}>📐 참고 지표 · 투찰 전 확인</div>
@@ -1918,6 +1926,14 @@ ${baseInfo}
             </div>}
           </div>
         })()}
+        {/* Phase 23-5: 화살표 범례 (다른 이용자용 해설) */}
+        <div style={{display:"flex",gap:10,marginBottom:6,padding:"4px 8px",background:C.bg3,borderRadius:6,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:10,color:C.txd}}>화살표:</span>
+          <span style={{fontSize:10}}><span style={{color:"#85b7eb",fontWeight:700}}>▴▾</span> <span style={{color:C.txm}}>작음(정확)</span></span>
+          <span style={{fontSize:10}}><span style={{color:"#d4a834",fontWeight:700}}>▲▼</span> <span style={{color:C.txm}}>보통</span></span>
+          <span style={{fontSize:10}}><span style={{color:"#e24b4a",fontWeight:700}}>⇈⇊</span> <span style={{color:C.txm}}>주의(큰 편향)</span></span>
+          <span style={{fontSize:10,color:C.txd}}>위=실측 1위가 추천보다 높음 · 아래=낮음 · 표시 없음=데이터 부족</span>
+        </div>
         {/* 오차 색상 범례 */}
         <div style={{display:"flex",gap:12,marginBottom:8,padding:"4px 8px",background:C.bg3,borderRadius:6,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:10,color:C.txd}}>오차 범례:</span>
