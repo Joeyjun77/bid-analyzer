@@ -64,9 +64,8 @@ export async function sbMatchPredictions(predictions,records){
     }
     if(!match)continue;
     usedRecIds.add(match.id); // ★ 사용된 record 등록
-    // br1 우선, 없으면 ar1 폴백 (수의계약 등 br1만 누락된 케이스 대응)
-    const rawRate=match.br1!=null?match.br1:(match.ar1!=null?match.ar1:null);
-    const actualAdj=rawRate!=null?Math.round((rawRate-100)*10000)/10000:null;
+    // 실측 사정률은 ar1(예가 사정률, xp/ba*100)만 사용. br1은 별도 정의의 비율 컬럼이라 사용 금지.
+    const actualAdj=match.ar1!=null?Math.round((match.ar1-100)*10000)/10000:null;
     const adjErr=p.pred_adj_rate!=null&&actualAdj!=null?Math.round((p.pred_adj_rate-actualAdj)*10000)/10000:null;
     const bidErr=p.pred_bid_amount!=null&&match.bp!=null?Math.round(p.pred_bid_amount-match.bp):null;
     updates.push({id:p.id,actual_adj_rate:actualAdj,actual_expected_price:match.xp,actual_bid_amount:match.bp,actual_winner:match.co,actual_participant_count:match.pc,adj_rate_error:adjErr,bid_amount_error:bidErr,match_status:"matched",matched_record_id:match.id,matched_at:new Date().toISOString(),
