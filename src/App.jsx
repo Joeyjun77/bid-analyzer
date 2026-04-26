@@ -1156,7 +1156,7 @@ ${baseInfo}
                           finalRec.source==="순수예측"?"순수 통계 예측":"—";
         const fr2=Number(d.pred_floor_rate||0);
         const calcBid=(adj)=>{const xp=ba*(1+adj/100);return av>0?Math.ceil(av+(xp-av)*(fr2/100)):Math.ceil(xp*(fr2/100))};
-        const fmtAdj=(adj)=>adj==null?"—":(100+Number(adj)).toFixed(4)+"%";
+        const fmtAdj=(adj)=>adj==null?"—":(100+Number(adj)).toFixed(3)+"%";
         const ai=aiAnalysisMap[d.id];
         const aiLoading=aiLoadingPredId===d.id;
         // 등급

@@ -24,12 +24,9 @@ const TIER_STYLE = {
 const scoreColor = (s) => s >= 80 ? '#4ade80' : s >= 65 ? '#60a5fa' : s >= 50 ? '#fbbf24' : '#f87171';
 const fmt = (n) => n == null ? '-' : Math.round(n).toLocaleString();
 const fmtPct = (n) => n == null ? '-' : Number(n).toFixed(3) + '%';
-// 사정률 + 100 기준 퍼센트 병행 표기 (예: -0.134% (99.866%))
 const fmtAdj = (n) => {
   if (n == null) return '-';
-  const adj = Number(n);
-  const base100 = 100 + adj;
-  return `${adj.toFixed(3)}% (${base100.toFixed(3)}%)`;
+  return (100 + Number(n)).toFixed(3) + '%';
 };
 
 function BidCard({ label, emoji, adj, bid, highlighted }) {
