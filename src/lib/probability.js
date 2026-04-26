@@ -15,7 +15,7 @@
 // 필터링 후:       90건 → 낙찰 10건 (11.1%)  <- 권장
 // 집중 전략:       23건 → 낙찰 4건 (17.4%)
 
-import { SB_URL, SB_KEY, getHdrs } from "./constants.js";
+import { authedFetch } from "../auth.js";
 
 // ─── 경쟁 강도 계산 (DB 함수 호출) ──────────────────
 export async function calcCompetitiveIntensity(pred) {
@@ -37,10 +37,9 @@ export async function calcCompetitiveIntensity(pred) {
   const myBr = (sysBid / ba) * 100;
   
   // DB 함수 호출
-  const url = `${SB_URL}/rest/v1/rpc/calc_competitive_intensity_v4`;
-  const res = await fetch(url, {
+  const res = await authedFetch("/rest/v1/rpc/calc_competitive_intensity_v4", {
     method: "POST",
-    headers: { ...getHdrs() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       p_at: at,
       p_ba: ba,

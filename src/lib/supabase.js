@@ -1,16 +1,19 @@
-import { SB_URL, getHdrs, getHdrsSel } from "./constants.js";
 import { sanitizeJson } from "./utils.js";
 import { authedFetch } from "../auth.js";
 
+// 모든 Supabase REST 호출은 authedFetch 경유 — 401 시 refresh_token으로 자동 재시도.
+// 공통 헤더 스니펫: body 있는 요청에는 Content-Type만, apikey/Authorization은 authedFetch가 주입.
+const JSON_H = { "Content-Type": "application/json" };
+
 // ─── Supabase CRUD ─────────────────────────────────────────
-export async function sbFetchAll(){const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_records?select=*&order=od.desc&offset="+offset+"&limit="+PAGE,{headers:getHdrsSel()});const rows=await res.json();if(!Array.isArray(rows))break;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}
-export async function sbUpsert(rows){const BATCH=200;for(let i=0;i<rows.length;i+=BATCH){const batch=rows.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}const body=sanitizeJson(JSON.stringify(unique));const res=await fetch(SB_URL+"/rest/v1/bid_records?on_conflict=dedup_key",{method:"POST",headers:{...getHdrs(),"Prefer":"resolution=merge-duplicates,return=minimal"},body});if(!res.ok)throw new Error(`Upsert: ${res.status}`)}}
-export async function sbDeleteIds(ids){const BATCH=50;for(let i=0;i<ids.length;i+=BATCH){await fetch(SB_URL+"/rest/v1/bid_records?id=in.("+ids.slice(i,i+BATCH).join(",")+")",{method:"DELETE",headers:getHdrs()})}}
-export async function sbDeleteAll(){await fetch(SB_URL+"/rest/v1/bid_records?id=gt.0",{method:"DELETE",headers:getHdrs()})}
+export async function sbFetchAll(){const PAGE=1000;let all=[],offset=0;while(true){const res=await authedFetch("/rest/v1/bid_records?select=*&order=od.desc&offset="+offset+"&limit="+PAGE);const rows=await res.json();if(!Array.isArray(rows))break;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}
+export async function sbUpsert(rows){const BATCH=200;for(let i=0;i<rows.length;i+=BATCH){const batch=rows.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}const body=sanitizeJson(JSON.stringify(unique));const res=await authedFetch("/rest/v1/bid_records?on_conflict=dedup_key",{method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body});if(!res.ok)throw new Error(`Upsert: ${res.status}`)}}
+export async function sbDeleteIds(ids){const BATCH=50;for(let i=0;i<ids.length;i+=BATCH){await authedFetch("/rest/v1/bid_records?id=in.("+ids.slice(i,i+BATCH).join(",")+")",{method:"DELETE"})}}
+export async function sbDeleteAll(){await authedFetch("/rest/v1/bid_records?id=gt.0",{method:"DELETE"})}
 
 // 예측 DB
-export async function sbSavePredictions(preds){const BATCH=50;for(let i=0;i<preds.length;i+=BATCH){const batch=preds.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}const body=sanitizeJson(JSON.stringify(unique));await fetch(SB_URL+"/rest/v1/bid_predictions?on_conflict=dedup_key",{method:"POST",headers:{...getHdrs(),"Prefer":"resolution=merge-duplicates,return=minimal"},body})}}
-export async function sbFetchPredictions(){try{const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_predictions?select=*&order=created_at.desc&offset="+offset+"&limit="+PAGE,{headers:getHdrsSel()});if(!res.ok)return[];const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}catch(e){return[]}}
+export async function sbSavePredictions(preds){const BATCH=50;for(let i=0;i<preds.length;i+=BATCH){const batch=preds.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}const body=sanitizeJson(JSON.stringify(unique));await authedFetch("/rest/v1/bid_predictions?on_conflict=dedup_key",{method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body})}}
+export async function sbFetchPredictions(){try{const PAGE=1000;let all=[],offset=0;while(true){const res=await authedFetch("/rest/v1/bid_predictions?select=*&order=created_at.desc&offset="+offset+"&limit="+PAGE);if(!res.ok)return[];const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}catch(e){return[]}}
 
 // 자동 매칭: bid_predictions.pn_no → bid_records.pn_no (날짜 검증 필수)
 // Phase 21: pn_no prefix fallback 매칭 추가 (지자체 접미사 -000/-001/-002 대응)
@@ -79,7 +82,7 @@ export async function sbMatchPredictions(predictions,records){
   }
   for(const u of updates){
     const{id,...data}=u;
-    await fetch(SB_URL+"/rest/v1/bid_predictions?id=eq."+id,{method:"PATCH",headers:{...getHdrs(),"Prefer":"return=minimal"},body:JSON.stringify(data)})
+    await authedFetch("/rest/v1/bid_predictions?id=eq."+id,{method:"PATCH",headers:{...JSON_H,"Prefer":"return=minimal"},body:JSON.stringify(data)})
   }
   // ★ V5.2: 매칭된 기관의 ag_assumed_stats 자동 갱신
   if(updates.length>0){
@@ -106,16 +109,16 @@ async function sbRefreshAgAssumedStats(agNames,records){
       const p75=Math.round(adjs[Math.floor(len*0.75)]*10000)/10000;
       const at=filtered[0].at||"지자체";
       const body=sanitizeJson(JSON.stringify({ag,at,seg,n:len,p25,p50,p75,updated_at:new Date().toISOString()}));
-      await fetch(SB_URL+"/rest/v1/ag_assumed_stats?ag=eq."+encodeURIComponent(ag)+"&seg=eq."+seg,
-        {method:"DELETE",headers:getHdrs()});
-      await fetch(SB_URL+"/rest/v1/ag_assumed_stats",
-        {method:"POST",headers:{...getHdrs(),"Prefer":"return=minimal"},body})
+      await authedFetch("/rest/v1/ag_assumed_stats?ag=eq."+encodeURIComponent(ag)+"&seg=eq."+seg,
+        {method:"DELETE"});
+      await authedFetch("/rest/v1/ag_assumed_stats",
+        {method:"POST",headers:{...JSON_H,"Prefer":"return=minimal"},body})
     }
   }
 }
 
 // ─── bid_predictions 삭제 ──────────────────────────────────
-export async function sbDeletePredictions(ids){const BATCH=50;for(let i=0;i<ids.length;i+=BATCH){await fetch(SB_URL+"/rest/v1/bid_predictions?id=in.("+ids.slice(i,i+BATCH).join(",")+")",{method:"DELETE",headers:getHdrs()})}}
+export async function sbDeletePredictions(ids){const BATCH=50;for(let i=0;i<ids.length;i+=BATCH){await authedFetch("/rest/v1/bid_predictions?id=in.("+ids.slice(i,i+BATCH).join(",")+")",{method:"DELETE"})}}
 
 // ─── v7 Phase a-R2: prediction_snapshot / strategy_log 수집 훅 ──────
 // 예측 저장 직후 각 pred_id에 대해 v7 snapshot 일괄 기록 (UPSERT). 실패는 경고만.
@@ -125,9 +128,9 @@ export async function sbRecordSnapshots(predIds,modelVersion="v7.0"){
   for(let i=0;i<predIds.length;i+=BATCH){
     const chunk=predIds.slice(i,i+BATCH);
     const results=await Promise.allSettled(chunk.map(id=>
-      fetch(SB_URL+"/rest/v1/rpc/record_prediction_snapshot",{
+      authedFetch("/rest/v1/rpc/record_prediction_snapshot",{
         method:"POST",
-        headers:{...getHdrs(),"Content-Type":"application/json"},
+        headers:JSON_H,
         body:JSON.stringify({p_pred_id:id,p_model_version:modelVersion})
       }).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r})
     ));
@@ -138,9 +141,9 @@ export async function sbRecordSnapshots(predIds,modelVersion="v7.0"){
 // 사용자가 전략 카드를 "확정" 했을 때 strategy_log INSERT
 export async function sbLogStrategy(payload){
   const body=sanitizeJson(JSON.stringify(payload));
-  const res=await fetch(SB_URL+"/rest/v1/strategy_log",{
+  const res=await authedFetch("/rest/v1/strategy_log",{
     method:"POST",
-    headers:{...getHdrs(),"Prefer":"return=representation"},
+    headers:{...JSON_H,"Prefer":"return=representation"},
     body
   });
   if(!res.ok)throw new Error("strategy_log insert: HTTP "+res.status);
@@ -150,9 +153,9 @@ export async function sbLogStrategy(payload){
 // 기존 strategy_log에 낙찰 결과(actual_adj/would_have_won/regret) 백필
 export async function sbUpdateStrategyOutcomes(since=null){
   const payload=since?{p_pred_id:null,p_since:since}:{p_pred_id:null,p_since:null};
-  const res=await fetch(SB_URL+"/rest/v1/rpc/update_strategy_log_outcomes",{
+  const res=await authedFetch("/rest/v1/rpc/update_strategy_log_outcomes",{
     method:"POST",
-    headers:{...getHdrs(),"Content-Type":"application/json"},
+    headers:JSON_H,
     body:JSON.stringify(payload)
   });
   if(!res.ok)throw new Error("update_strategy_log_outcomes: HTTP "+res.status);
@@ -162,7 +165,7 @@ export async function sbUpdateStrategyOutcomes(since=null){
 export async function sbFetchStrategyLog(predIds){
   if(!Array.isArray(predIds)||!predIds.length)return[];
   try{
-    const res=await fetch(SB_URL+"/rest/v1/strategy_log?select=id,pred_id,strategy_type,created_at,source&pred_id=in.("+predIds.join(",")+")&source=eq.user",{headers:getHdrsSel()});
+    const res=await authedFetch("/rest/v1/strategy_log?select=id,pred_id,strategy_type,created_at,source&pred_id=in.("+predIds.join(",")+")&source=eq.user");
     if(!res.ok)return[];
     return await res.json();
   }catch(e){return[]}
@@ -170,7 +173,7 @@ export async function sbFetchStrategyLog(predIds){
 // Phase v7-ops-2: 전략별 Pwin 캘리브레이션 현황 (sample_n, actual_rate, fallback 여부)
 export async function sbFetchPwinCalibration(){
   try{
-    const res=await fetch(SB_URL+"/rest/v1/pwin_calibration_by_strategy?select=strategy_type,sample_n,actual_rate,use_fallback,updated_at",{headers:getHdrsSel()});
+    const res=await authedFetch("/rest/v1/pwin_calibration_by_strategy?select=strategy_type,sample_n,actual_rate,use_fallback,updated_at");
     if(!res.ok)return{};
     const rows=await res.json();
     if(!Array.isArray(rows))return{};
@@ -183,21 +186,21 @@ export async function sbFetchPwinCalibration(){
 export async function sbFetchQualityDaily(sinceDays=30){
   try{
     const since=new Date(Date.now()-sinceDays*86400000).toISOString().slice(0,10);
-    const res=await fetch(SB_URL+"/rest/v1/prediction_quality_daily?select=measured_on,model_version,route,at,n,mae,hit_0_5_pct,hit_0_3_pct,floor_safe_pct,direction_pct&measured_on=gte."+since+"&order=measured_on.desc",{headers:getHdrsSel()});
+    const res=await authedFetch("/rest/v1/prediction_quality_daily?select=measured_on,model_version,route,at,n,mae,hit_0_5_pct,hit_0_3_pct,floor_safe_pct,direction_pct&measured_on=gte."+since+"&order=measured_on.desc");
     if(!res.ok)return[];
     return await res.json();
   }catch(e){return[]}
 }
 export async function sbFetchWeeklyQuality(limit=20){
   try{
-    const res=await fetch(SB_URL+"/rest/v1/weekly_quality_report?select=report_week,scope,dimension_value,n_week,mae_week,mae_delta,drift_flag,gate_status&order=report_week.desc&limit="+limit,{headers:getHdrsSel()});
+    const res=await authedFetch("/rest/v1/weekly_quality_report?select=report_week,scope,dimension_value,n_week,mae_week,mae_delta,drift_flag,gate_status&order=report_week.desc&limit="+limit);
     if(!res.ok)return[];
     return await res.json();
   }catch(e){return[]}
 }
 export async function sbFetchBiasHotspots(minN=10,limit=30){
   try{
-    const res=await fetch(SB_URL+"/rest/v1/pred_bias_map?select=grain,key1,key2,n,bias&n=gte."+minN+"&order=bias.desc&limit="+limit,{headers:getHdrsSel()});
+    const res=await authedFetch("/rest/v1/pred_bias_map?select=grain,key1,key2,n,bias&n=gte."+minN+"&order=bias.desc&limit="+limit);
     if(!res.ok)return[];
     const rows=await res.json();
     if(!Array.isArray(rows))return[];
@@ -206,7 +209,7 @@ export async function sbFetchBiasHotspots(minN=10,limit=30){
 }
 export async function sbFetchWatchlist(){
   try{
-    const res=await fetch(SB_URL+"/rest/v1/watchlist_segments?select=*",{headers:getHdrsSel()});
+    const res=await authedFetch("/rest/v1/watchlist_segments?select=*");
     if(!res.ok)return[];
     const rows=await res.json();
     if(!Array.isArray(rows))return[];
@@ -216,7 +219,7 @@ export async function sbFetchWatchlist(){
 export async function sbFetchWatchlistHistory(days=14){
   try{
     const since=new Date(Date.now()-days*86400000).toISOString().slice(0,10);
-    const res=await fetch(SB_URL+"/rest/v1/watchlist_snapshots?select=snapshot_date,at,tier,n_total,mae_total,bias_total,mae_drift,bias_drift,grade&snapshot_date=gte."+since+"&order=snapshot_date.desc,at.asc,tier.asc",{headers:getHdrsSel()});
+    const res=await authedFetch("/rest/v1/watchlist_snapshots?select=snapshot_date,at,tier,n_total,mae_total,bias_total,mae_drift,bias_drift,grade&snapshot_date=gte."+since+"&order=snapshot_date.desc,at.asc,tier.asc");
     if(!res.ok)return[];
     const rows=await res.json();
     if(!Array.isArray(rows))return[];
@@ -227,18 +230,18 @@ export async function sbFetchWatchlistHistory(days=14){
 // ─── bid_details CRUD ────────────────────────────────────
 export async function sbSaveDetail(detail){
   const body=sanitizeJson(JSON.stringify(detail));
-  const res=await fetch(SB_URL+"/rest/v1/bid_details?on_conflict=pn_no",{method:"POST",headers:{...getHdrs(),"Prefer":"resolution=merge-duplicates,return=minimal"},body});
+  const res=await authedFetch("/rest/v1/bid_details?on_conflict=pn_no",{method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body});
   return res.ok}
 export async function sbFetchDetails(){
-  try{const PAGE=1000;let all=[],offset=0;while(true){const res=await fetch(SB_URL+"/rest/v1/bid_details?select=*&order=od.desc&offset="+offset+"&limit="+PAGE,{headers:getHdrsSel()});if(!res.ok)return all;const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}catch(e){return[]}}
+  try{const PAGE=1000;let all=[],offset=0;while(true){const res=await authedFetch("/rest/v1/bid_details?select=*&order=od.desc&offset="+offset+"&limit="+PAGE);if(!res.ok)return all;const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}catch(e){return[]}}
 export async function sbFetchDetailsByAg(ag){
-  try{const res=await fetch(SB_URL+"/rest/v1/bid_details?ag=eq."+encodeURIComponent(ag)+"&select=*&order=od.desc&limit=1000",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}}
+  try{const res=await authedFetch("/rest/v1/bid_details?ag=eq."+encodeURIComponent(ag)+"&select=*&order=od.desc&limit=1000");if(!res.ok)return[];return await res.json()}catch(e){return[]}}
 
 // ─── Phase 4-C: 관리자 페이지 — auth.users 읽기 전용 조회 ──────
 export async function sbAdminListUsers(){
   const res=await authedFetch("/rest/v1/rpc/admin_list_users",{
     method:"POST",
-    headers:{"Content-Type":"application/json"},
+    headers:JSON_H,
     body:"{}"
   });
   if(!res.ok){
@@ -253,7 +256,7 @@ export async function sbAdminListUsers(){
 // floor_margin_benchmark VIEW → {`${at}|${floor_rate}` : {med, n, std}}
 export async function sbFetchFloorBench(){
   try{
-    const res=await fetch(SB_URL+"/rest/v1/floor_margin_benchmark?select=at,floor_rate,n,med_margin,std_margin&limit=500",{headers:getHdrsSel()});
+    const res=await authedFetch("/rest/v1/floor_margin_benchmark?select=at,floor_rate,n,med_margin,std_margin&limit=500");
     if(!res.ok)return{};
     const rows=await res.json();
     const m={};
@@ -269,7 +272,7 @@ export async function sbFetchFloorBench(){
 // pred_bias_map VIEW에서 4단계 grain (AG_BA, AG, AT_BA, AT) 다층 lookup용 map 생성
 export async function sbFetchPredBiasMap(){
   try{
-    const res=await fetch(SB_URL+"/rest/v1/pred_bias_map?select=grain,key1,key2,n,bias&limit=2000",{headers:getHdrsSel()});
+    const res=await authedFetch("/rest/v1/pred_bias_map?select=grain,key1,key2,n,bias&limit=2000");
     if(!res.ok)return{agBa:{},ag:{},atBa:{},at:{}};
     const rows=await res.json();
     const m={agBa:{},ag:{},atBa:{},at:{}};
@@ -288,7 +291,7 @@ export async function sbFetchPredBiasMap(){
 // pred_baseg_finetune VIEW에서 (ag|at|seg) → median lookup, 50:50 블렌드용
 export async function sbFetchBasegFinetune(){
   try{
-    const res=await fetch(SB_URL+"/rest/v1/pred_baseg_finetune?select=canonical_ag,at,ba_seg,n,ba_seg_median&limit=500",{headers:getHdrsSel()});
+    const res=await authedFetch("/rest/v1/pred_baseg_finetune?select=canonical_ag,at,ba_seg,n,ba_seg_median&limit=500");
     if(!res.ok)return{};
     const rows=await res.json();
     const m={};
@@ -302,7 +305,7 @@ export async function sbFetchBasegFinetune(){
 
 // ─── 발주기관별 가정사정률 통계 ─────────────────────────
 export async function sbFetchAgAssumedStats(){
-  try{const res=await fetch(SB_URL+"/rest/v1/ag_assumed_stats?select=ag,at,seg,n,p25,p50,p75&order=n.desc&limit=1000",{headers:getHdrsSel()});if(!res.ok)return{};const rows=await res.json();const map={};for(const r of rows){const k=r.ag+"|"+r.seg;map[k]={at:r.at,n:Number(r.n),p25:Number(r.p25),p50:Number(r.p50),p75:Number(r.p75)}}return map}catch(e){return{}}}
+  try{const res=await authedFetch("/rest/v1/ag_assumed_stats?select=ag,at,seg,n,p25,p50,p75&order=n.desc&limit=1000");if(!res.ok)return{};const rows=await res.json();const map={};for(const r of rows){const k=r.ag+"|"+r.seg;map[k]={at:r.at,n:Number(r.n),p25:Number(r.p25),p50:Number(r.p50),p75:Number(r.p75)}}return map}catch(e){return{}}}
 
 // Phase 6~10 no-op 스텁(sbFetchScoring / sbBatchUpsertScoring / sbFetchRoiMatrix /
 // sbFetchBiasMap / sbFetchTrendMap / sbSaveAiAnalysis / sbFetchAiAnalysis)은
@@ -310,27 +313,27 @@ export async function sbFetchAgAssumedStats(){
 
 // ─── Phase 12: 타깃팅 데이터 로딩 ────────────────────────
 export async function sbFetchTargetMatrix(){
-  try{const res=await fetch(SB_URL+"/rest/v1/target_matrix?select=*&order=priority_tier.asc",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}
+  try{const res=await authedFetch("/rest/v1/target_matrix?select=*&order=priority_tier.asc");if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
 export async function sbFetchSweetSpotAgencies(){
-  try{const res=await fetch(SB_URL+"/rest/v1/sweet_spot_agencies?select=*&order=sweet_spot_count.desc",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}
+  try{const res=await authedFetch("/rest/v1/sweet_spot_agencies?select=*&order=sweet_spot_count.desc");if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
 // ─── Phase 12-C: 발주사별 낙찰 예측 ────────────────────────
 export async function sbFetchAgencyWinStats(){
-  try{const res=await fetch(SB_URL+"/rest/v1/agency_win_stats?select=*&order=theoretical_win_rate.desc",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}
+  try{const res=await authedFetch("/rest/v1/agency_win_stats?select=*&order=theoretical_win_rate.desc");if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
 export async function sbFetchAgencyPredictor(){
-  try{const res=await fetch(SB_URL+"/rest/v1/agency_predictor?select=*",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}
+  try{const res=await authedFetch("/rest/v1/agency_predictor?select=*");if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
 // Phase 14-3: 분산 투찰 시뮬레이터
 export async function sbFetchSimulator(){
-  try{const res=await fetch(SB_URL+"/rest/v1/v_simulator_api?select=*",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}
+  try{const res=await authedFetch("/rest/v1/v_simulator_api?select=*");if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
 // 나라장터 공고 목록 (bid_notices)
 export async function sbFetchNotices(){
-  try{const res=await fetch(SB_URL+"/rest/v1/bid_notices?select=id,pn,pn_no,ag,at,ep,ba,av,od,status,is_target,prediction_id,api_fetched_at&order=od.asc&limit=1000",{headers:getHdrsSel()});if(!res.ok)return[];return await res.json()}catch(e){return[]}
+  try{const res=await authedFetch("/rest/v1/bid_notices?select=id,pn,pn_no,ag,at,ep,ba,av,od,status,is_target,prediction_id,api_fetched_at&order=od.asc&limit=1000");if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
 // 단건 공고 예측 등록 (predict_notice DB 함수 호출)
 export async function sbPredictNotice(noticeId){
-  try{const res=await fetch(SB_URL+"/rest/v1/rpc/predict_notice",{method:"POST",headers:{...getHdrs(),"Prefer":"return=representation"},body:JSON.stringify({p_notice_id:noticeId})});if(!res.ok)return null;const rows=await res.json();return rows[0]||null}catch(e){return null}
+  try{const res=await authedFetch("/rest/v1/rpc/predict_notice",{method:"POST",headers:{...JSON_H,"Prefer":"return=representation"},body:JSON.stringify({p_notice_id:noticeId})});if(!res.ok)return null;const rows=await res.json();return rows[0]||null}catch(e){return null}
 }

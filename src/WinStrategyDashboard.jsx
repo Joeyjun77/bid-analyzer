@@ -12,7 +12,8 @@
 // ===========================================================================
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { C, SB_URL, hdrs } from './lib/constants.js';
+import { C } from './lib/constants.js';
+import { authedFetch } from './auth.js';
 
 const TIER_STYLE = {
   A_high: { bg: '#1a4c2d', txt: '#4ade80', badge: 'A', full: '🎯 A등급 (최우선)' },
@@ -168,16 +169,14 @@ export function WinStrategyDashboard() {
     try {
       setLoading(true);
       // 1차: view 직접 호출 (가장 단순, 빠름)
-      let url = `${SB_URL}/rest/v1/win_strategy_cache?select=*&order=priority_rank.asc`;
-      let res = await fetch(url, { headers: hdrs });
-      
+      let res = await authedFetch('/rest/v1/win_strategy_cache?select=*&order=priority_rank.asc');
+
       // view 실패 시 RPC fallback (캐시 자동 갱신 포함)
       if (!res.ok) {
         console.warn(`View 호출 실패(HTTP ${res.status}), RPC로 재시도`);
-        url = `${SB_URL}/rest/v1/rpc/get_win_strategy`;
-        res = await fetch(url, {
+        res = await authedFetch('/rest/v1/rpc/get_win_strategy', {
           method: 'POST',
-          headers: { ...hdrs, 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({})
         });
       }

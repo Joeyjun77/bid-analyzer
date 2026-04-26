@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
-import { C, PAGE, inpS, SB_URL, hdrs, getHdrs } from "./lib/constants.js";
+import { C, PAGE, inpS } from "./lib/constants.js";
+import { authedFetch } from "./auth.js";
 import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
@@ -520,9 +521,9 @@ ${baseInfo}
     (async()=>{
       setStrategiesLoadingId(pid);
       try{
-        const res=await fetch(`${SB_URL}/rest/v1/rpc/recommend_strategies`,{
+        const res=await authedFetch("/rest/v1/rpc/recommend_strategies",{
           method:"POST",
-          headers:{...getHdrs(),"Content-Type":"application/json"},
+          headers:{"Content-Type":"application/json"},
           body:JSON.stringify({p_pred_id:pid})
         });
         if(!res.ok)throw new Error(`HTTP ${res.status}`);
@@ -1531,7 +1532,7 @@ ${baseInfo}
                       actual:isMatched?Number(d.actual_adj_rate):null,matchedRecord:matchedRec},isMatched?"post":"initial");
                     if(!prompt)throw new Error("데이터 없음");
                     const text=await callAi(prompt);setDetailAi(text);
-                    if(d.id){try{await fetch(`${SB_URL}/rest/v1/bid_predictions?id=eq.${d.id}`,{method:"PATCH",headers:{...getHdrs(),"Prefer":"return=minimal"},body:JSON.stringify({ai_advice:text})});
+                    if(d.id){try{await authedFetch(`/rest/v1/bid_predictions?id=eq.${d.id}`,{method:"PATCH",headers:{"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify({ai_advice:text})});
                       setPredictions(prev=>prev.map(p=>p.id===d.id?{...p,ai_advice:text}:p))}catch(e){}}}
                   catch(e){setDetailAi("⚠ "+e.message)}finally{setDetailAiLoading(false)}
                 }} style={{padding:"4px 12px",fontSize:11,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.3)",borderRadius:5,color:"#a8b4ff",cursor:detailAiLoading?"default":"pointer"}}>

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { C, SB_URL, getHdrs } from '../lib/constants.js';
+import { C } from '../lib/constants.js';
+import { authedFetch } from '../auth.js';
 
 const fmtPct = (v) => v == null ? '—' : Number(v).toFixed(3) + '%';
 const fmtNum = (v) => v == null ? '—' : Number(v).toFixed(4);
@@ -18,10 +19,9 @@ export default function PredictionFeedback({ modelVersion = 'v6.2' }) {
     (async () => {
       setLoading(true); setErr(null);
       try {
-        const H = getHdrs();
         const [w, d] = await Promise.all([
-          fetch(`${SB_URL}/rest/v1/weekly_quality_report?model_version=eq.${modelVersion}&order=report_week.desc,scope.asc,dimension_value.asc&limit=200`, { headers: H }).then(r => r.json()),
-          fetch(`${SB_URL}/rest/v1/prediction_quality_daily?model_version=eq.${modelVersion}&order=measured_on.desc&limit=500`, { headers: H }).then(r => r.json()),
+          authedFetch(`/rest/v1/weekly_quality_report?model_version=eq.${modelVersion}&order=report_week.desc,scope.asc,dimension_value.asc&limit=200`).then(r => r.json()),
+          authedFetch(`/rest/v1/prediction_quality_daily?model_version=eq.${modelVersion}&order=measured_on.desc&limit=500`).then(r => r.json()),
         ]);
         if (cancelled) return;
         setWeekly(Array.isArray(w) ? w : []);
