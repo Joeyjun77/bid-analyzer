@@ -44,7 +44,7 @@
 
 - **`v_agency_direct_stats`**: 시점 가중 blend 적용 (최근 90일 n≥5이면 60% 가중)
 
-### Phase 21 cron 작업 (총 5개)
+### Phase 21 cron 작업 (실제 active 7개, jobid 정정)
 
 | jobid | 이름 | 스케줄 |
 |-------|------|--------|
@@ -52,17 +52,28 @@
 | 2 | collect_results_daily_06kst | `0 21 * * *` |
 | 3 | reset_api_counters_daily_00kst | `5 15 * * *` |
 | 4 | auto-predict-every-30min | `3,33 * * * *` |
-| **5** | **refresh-analysis-assets-daily** | `0 18 * * *` |
+| **7** | **refresh-analysis-assets-daily** | `0 18 * * *` |
+| 8 | prediction-quality-daily | `0 19 * * *` |
+| 9 | weekly-quality-report | `0 20 * * 0` |
 
-refresh-analysis-assets-daily 실행 순서:
+refresh-analysis-assets-daily 실행 chain (13개 함수, 단일 트랜잭션):
 ```
-refresh_agency_predictor()               -- Bayesian shrinkage
+refresh_agency_predictor()               -- Bayesian shrinkage k=15
 refresh_agency_environment_profile()
 refresh_company_strategy_profile()
-refresh_prediction_bias()
-refresh_amount_band_correction()         -- 신규
+refresh_prediction_bias()                -- Phase 23-6: no-op stub (legacy)
+refresh_amount_band_correction()
 refresh_win_strategy_cache()
+re_predict_null_pending()
+refresh_bias_profile()
+refresh_win_rate_calibration()
+expand_strategy_log_backtest(NULL)
+update_strategy_log_outcomes(NULL, CURRENT_DATE-60d)
+refresh_pwin_calibration_by_strategy(30)
+record_watchlist_snapshot()
 ```
+
+> Phase 23-6 (2026-04-26): `refresh_prediction_bias()`가 옛 `prediction_bias` 테이블을 참조해 9일 연속 cron 실패 → no-op 교체로 chain 복구. `at` grain 자동 보정 재설계는 별도 안건.
 
 ### Phase 21 Edge Function 신규
 
@@ -79,8 +90,8 @@ TYPE_OFF = {
   "한전":      0.10, "LH":       -0.10,
   "조달청":   -0.10, "수자원공사":-0.10
 }
-WIN_OPT_GAP = {  // Phase 17-A (1위 목표 보정)
-  "지자체":    0.493, "군시설":    0.385,
+WIN_OPT_GAP = {  // Phase 17-A (1위 목표 보정), 군시설 Phase 23-5 e1b94cd 갱신
+  "지자체":    0.493, "군시설":    0.150,
   "교육청":    0.533, "한전":      0.367,
   "조달청":    0.676, "LH":        0.088,
   "수자원공사": 0.003
@@ -305,12 +316,15 @@ bid_notices(나라장터 공고) → bid_predictions 자동 생성.
 
 | 기관 | 시행일 | 3억 미만 | 3억~10억 | 10억~50억 | 50억+ |
 |---|---|---|---|---|---|
-| 조달청 | 2026-01-30 | 89.745% | 88.745% | 88.745% | 87.495% |
-| 지자체 | 2025-07-01 | 89.745% | 89.745% | 88.745% | 87.495% |
-| 교육청 | 2025-07-01 | 89.745% | 89.745% | 88.745% | 87.495% |
-| 한전 | 2026-01-30 | 89.745% | 89.745% | 88.745% | 87.495% |
-| 군시설 | 2026-01-19 | 89.745% | 88.745% | 88.745% | 87.495% |
+| 조달청 | 2026-01-30 | 90.25% | 89.745% | 88.745% | 87.495% |
+| 지자체 | 2025-07-01 | 90.25% | 89.745% | 88.745% | 87.495% |
+| 교육청 | 2025-07-01 | 90.25% | 89.745% | 88.745% | 87.495% |
+| 한전 | 자체기준 유지 | 88.25% | 87.745% | 86.745% | 85.495% |
+| LH | 2026-02-01 | 90.25% | 89.745% | 88.745% | 87.495% |
+| 군시설 | 2026-01-19 | 90.25% | 89.745% | 88.745% | 87.495% |
+| 수자원공사 | 2026-02-27 | 90.25% | 89.745% | 88.745% | 87.495% |
 
+**한전 자체기준 근거**: 144건 중앙값 87.745% 실측 검증으로 구기준 유지 (`RATE_TABLE.한전.cutoff = 2099-12-31`)
 **여성기업 가산**: 경영상태 10% 가산 → 낙찰하한율 -0.25%p (사용자 선택)
 
 ---

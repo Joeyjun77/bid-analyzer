@@ -286,6 +286,32 @@ INSERT INTO model_release_gate(metric, comparator, tolerance_pct, scope) VALUES
 
 ---
 
+## 7-bis. Phase 22 이후 변경 이력 (4/18 ~ 4/26)
+
+| # | 내용 | commit |
+|---|---|---|
+| #30 | 동적 편향 보정 — AG×금액대 4-grain lookup | 84919f6 |
+| #31 | Phase 23-3 한전·고양시 ba_seg fine-tune 블렌드 | 29b1acf |
+| #32 | Generator/Evaluator 분리 — `/accuracy`, `/evaluate` 슬래시 커맨드 | 172de86 |
+| #33 | LH 종심제 ≥100억 예측 미지원 표시 + 통계 제외 | 0e38f83 |
+| #34 | v7 Phase a-R1 — 승률 기반 3전략 카드 (aggressive/balanced/safe) | dfc2148 |
+| #35 | v7-ops-4A — 전략 탭 캘리브레이션 현황 배지 | 83bcdd2 |
+| #36 | v7-ops-4B — 모델 검증 대시보드 탭 | 65cd597 |
+| #37 | v7-ops-5 — `watchlist_segments` 세그먼트 드리프트 추적 | 13830da |
+| #38 | v7-ops-5c~5g — Quality 탭 드리프트 알림 시리즈 (스냅샷·임계값·튜닝·스파크라인·요약 카드) | 8c14568 / 281dbbd / 08f9ed7 / 63bd4f2 / 74d68aa |
+| #39 | Phase 23-4 — SUCVIEW 기반 1위 투찰 벤치마크 (UI/저장/자동예측 노출) | fd8e3a5 / 5f39c64 |
+| #40 | Top-1 승률 지표 노출 — MAE–승률 미스매치 감지 | 43bd02d |
+| #41 | Phase 23-5 — 추천 사정률 옆 실측 방향 힌트 화살표 + 범례 | 0220e95 / 363c510 / c2d18e2 |
+| #42 | actual_adj_rate 매칭 보정 — `ar1`만 사용, `br1` 폴백 제거 | c0e4e1c |
+| #43 | 도메인 상수 테이블 분리 — `constants-tables.js` (TYPE_OFF·WIN_OPT_GAP·RATE_TABLE) | 6fd0032 |
+| #44 | Phase 23-3 확장 — 5단계 하네스 인프라(설계·구축·검증·운영·예측) | f37d88c |
+| #45 | WIN_OPT_GAP[군시설] 0.385 → 0.150 (1위 승률 회복 시도) | e1b94cd |
+| #46 | Phase 21 핸드오프 + 4/24 설계 검증 요약 문서화 | 38cea6d |
+
+**관찰**: Phase 22 P0~P3 완료 이후 코어 영역 변경은 #30·#31·#44·#45 4건뿐. 나머지는 UI/관측/도구 보강. 코어 변경 4건은 모두 Generator/Evaluator 분리 규칙(Phase 23-3) 절차를 준수.
+
+---
+
 ## 8. 다음 단계 로드맵
 
 ### Phase 22 (우선순위 순)
