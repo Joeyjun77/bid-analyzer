@@ -73,15 +73,18 @@ LIMIT 15;
 ### 체크 5 — Phase 17 실측 검증 통과율
 ```sql
 SELECT
-  COUNT(*) AS n,
-  ROUND(100.0*SUM(CASE WHEN passed_floor THEN 1 ELSE 0 END)/COUNT(*),2) AS floor_pass_pct,
-  ROUND(100.0*SUM(CASE WHEN in_confidence_band THEN 1 ELSE 0 END)/COUNT(*),2) AS confidence_band_pct,
-  ROUND(100.0*SUM(CASE WHEN our_rank=1 THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),2) AS rank1_pct,
-  ROUND(AVG(ABS(predicted_vs_actual))::numeric,4) AS mae_실측
+  COUNT(*) AS n_total,
+  COUNT(actual_adj) AS n_with_actual,
+  ROUND(100.0*COUNT(passed_floor)::numeric/NULLIF(COUNT(*),0),2) AS floor_data_pct,
+  ROUND(100.0*SUM(CASE WHEN passed_floor THEN 1 ELSE 0 END)::numeric/NULLIF(COUNT(passed_floor),0),2) AS floor_pass_pct,
+  ROUND(100.0*SUM(CASE WHEN in_confidence_band THEN 1 ELSE 0 END)::numeric/NULLIF(COUNT(in_confidence_band),0),2) AS confidence_band_pct,
+  ROUND(AVG(ABS(predicted_vs_actual))::numeric,4) AS mae_actual
 FROM phase17_validation
 WHERE actual_adj IS NOT NULL;
 ```
 → floor_pass_pct < 90% 또는 confidence_band_pct < 70% → 신뢰구간 재조정 제안.
+→ floor_data_pct < 50% → passed_floor 수동 입력 누락 (적재 경로 점검).
+→ **참고**: `our_rank`, `our_bid_amount`, `first_adj` 컬럼은 자동 산출 불가 (앱이 정보 제공 도구라 우리 실투찰가 미보유). `passed_floor`/`first_co`는 한전 등 일부 케이스만 수동 입력됨.
 
 ### 체크 6 — 이상치 탐지 (최근 14일, |err| > 2σ)
 ```sql
@@ -176,9 +179,10 @@ ORDER BY strategy_type;
 [drift_flag=true 또는 gate_status!='PASS' 우선 나열]
 
 ### 5. Phase 17 실측 통과율 (체크5)
-- floor_pass_pct: X% ({✅/⚠})
+- n_total / n_with_actual: X / Y (적재율 Z%)
+- floor_pass_pct: X% (수기 입력 row 기준, {✅/⚠})
 - confidence_band_pct: X% ({✅/⚠})
-- rank1_pct: X%
+- mae_actual: X.XXXX
 
 ### 6. 이상치 Top 10 (체크6)
 [표]
