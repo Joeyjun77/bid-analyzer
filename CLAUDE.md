@@ -48,6 +48,48 @@
 5. 핵심 영역(한전·고양시·군부대) MAE +0.02 이상 악화는 즉시 FAIL
 슬래시 커맨드: `.claude/commands/accuracy.md`, `.claude/commands/evaluate.md`
 
+## 5단계 하네스 진입 트리거 (세션 무관 강제)
+어떤 세션에서 작업하더라도 아래 트리거 발동 시 해당 단계 절차를 강제 실행한다.
+
+### 1단계 — 설계 (Design)
+**진입 트리거**: 사용자가 예측 로직 변경/신규 기능을 제안하는 발화 (예: "predict_v6 에 X 보정 추가", "낙찰하한율 함수 바꿔줘", "pred_bias_map grain 조정")
+**필수 절차**:
+- 코드 작성 전에 `predict-architect` 서브에이전트(Agent 툴, subagent_type=`predict-architect`) 호출하여 격리된 컨텍스트로 영향도 사전 검토
+- 검토 결과 Generator 분류 시 → 2단계 진입 가능, Evaluator 분류 시 → 검증 면제
+- 핵심 영역(한전·고양시·군부대) 영향 예측 표 받은 후에만 코드 수정 시작
+
+### 2단계 — 구축 (Build)
+**진입 트리거**: `src/App.jsx` 또는 `src/utils*.js`의 `getFinalRecommendation`, `opt_adj`, `pred_bias_map`, 낙찰하한율 함수 Edit/Write
+**필수 절차**:
+- Edit 직후 PostToolUse hook이 자동 알림 (변경 키워드 감지 시)
+- 변경 즉시 `npx vite build` 통과 확인
+- 빌드 통과 → 3단계 진입
+
+### 3단계 — 검증 (Verify)
+**진입 트리거**: 2단계 완료 직후, 또는 사용자가 "검증해줘"·"테스트"·"백테스트" 발화
+**필수 절차**:
+- `/evaluate` 슬래시 커맨드 실행 (PASS/WARN/FAIL 3값)
+- FAIL 시 git push 금지, 롤백 또는 수정 후 재검증
+- WARN/PASS 시 4단계 진입 가능
+
+### 4단계 — 운영 (Operate)
+**진입 트리거**: 사용자가 "push", "배포", "main에 올려" 발화 또는 git push 실행 직전
+**필수 절차**:
+- `deploy-gate` 서브에이전트(Agent 툴, subagent_type=`deploy-gate`) 호출하여 통합 게이트 실행
+- 빌드 + 핵심 영역 MAE + evaluate_model_release 통합 PASS 시에만 push 허용
+- 배포 후 24시간 내 `/accuracy` 재측정 (WARN 이상 판정인 경우)
+
+### 5단계 — 예측 시스템 (Predict)
+**진입 트리거**: 사용자가 신규 입찰 데이터를 추가하거나 "예측해줘" 발화
+**필수 절차**:
+- DB 함수 `predict_v6(...)` 직접 호출 (코드 변경 없음)
+- 결과는 정보 제공 도구로만 사용 (UI에 "확정/제출" 류 액션 금지)
+- 예측 품질이 의심되면 즉시 `/accuracy` 실행
+
+### 트리거 충돌·우회 방지
+- Plan/메모리는 강제력이 없다. 위 절차는 commands/agents/hooks로만 실행된다.
+- "빠르게 고치고 싶다" 같은 발화로 검증 단계 건너뛰기 금지. 단축 요청 시 사용자에게 "Phase 23-3 규칙 위반 가능 — 그래도 진행할까요?" 명시 후 동의 받을 것.
+
 ## 금기사항
 - Supabase SDK 설치하지 말 것 (기존 REST 패턴 유지)
 - .env.local, .env는 절대 git에 올리지 말 것 (.gitignore로 차단됨)
