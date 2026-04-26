@@ -29,3 +29,7 @@ npm-debug.log*
 reports/
 scripts/
 *.backup
+
+# Claude Code 런타임 (로컬 전용)
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
