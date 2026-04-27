@@ -400,4 +400,106 @@ $function$;
 | 23-3 | 2026-04-23 | Generator/Evaluator 분리 규칙, 5단계 하네스 트리거 |
 | 23-4 | 2026-04 | benchmark_rate (SUCVIEW 1위 투찰 벤치마크) 도입 |
 | 23-6 | 2026-04-25 | refresh_prediction_bias no-op 교체로 cron 9일 실패 복구 |
-| **23-7** | **2026-04-27** | **P1 군시설 ASSUMED 정렬 + P3 predict_notice rec_bid_p25/p75 NULL 수정** |
+| 23-7 | 2026-04-27 | P1 군시설 ASSUMED 정렬 + P3 predict_notice rec_bid_p25/p75 NULL 수정 |
+| **23-8 (DB)** | **2026-04-27** | **agency_predictor 학습 키 raw `ag` → `canonical_ag` 통합 — 156→61 row, 경기도교육청 n=18 학습 회복** |
+
+---
+
+## 13. Phase 23-8 (2026-04-27 DB-only) — agency_predictor 학습 키 통합
+
+### 변경 (코드 무변경, DB ALTER FUNCTION만)
+- `refresh_agency_predictor()` GROUP BY 키: raw `ag` → `canonical_ag`
+- learning_source 라벨: `auto_refresh_v4_bayes_k15` → `auto_refresh_v5_canonical_k15`
+- 적용: 함수 변경 + 기존 156 row DELETE + refresh 1회 (atomic)
+
+### 발견 BUG (predict-architect 검증)
+- `predict_v6_2`: `LEFT JOIN agency_predictor ON ap.ag = p.canonical_ag` (canonical 사용) ✅
+- `refresh_agency_predictor`: `GROUP BY p.ag` (raw 사용) ❌
+- → schema·학습 키 불일치. 같은 발주사가 ag 변형 수만큼 분산 학습됨
+- 예: 경기도교육청 18 sample이 raw 36개로 분산 (학교명 변형) → 모두 n<3 미달 → **학습 자체가 안 됨**, effective_offset=0
+
+### 효과 (변경 직후 측정)
+| 항목 | BEFORE | AFTER |
+|---|---|---|
+| 학습 row 수 | 156 | 61 |
+| 경기도교육청 | 학습 row 없음 (raw 36개 분산) | n=18, eff_offset=-0.2515 |
+| 서울지방조달청 | strategy=stale (옛 ag명 14건 모두 2년 윈도우 밖) | n=8, eff_offset=-0.3048 (boost_negative) |
+| 교육청 영역 학습 ag | 거의 없음 (분산) | 6 ag (max n=18) |
+| 한전 본부 (경기/북부) | -0.0145 / -0.0950 | 동일 |
+| 군부대 (제25보병/제7군단) | +0.1885 / +0.2024 | 동일 |
+| 고양시 | -0.0788 | -0.0765 (Δ +0.002) |
+| 서울교통공사 | -0.1457 | -0.0884 (Δ +0.057, ag 변형 통합 효과) |
+
+### canonical_ag별 ag 변형 수 (학습 분산 사례)
+- 경기도교육청: 36 변형 → 1 통합
+- 경기도고양교육지원청: 4 변형 → 1
+- 경기도성남교육지원청: 3 변형 → 1
+- 서울지방조달청: 2 변형 → 1
+- 그 외 11개 canonical_ag도 다수 변형
+
+### 회귀 검증
+- `evaluate_model_release v6.2 14d`: PASS (mae/floor_safe/hit_05 동일치, opt_adj 무관 변경 입증)
+- 핵심 영역 effective_offset: 한전·군부대·고양시 모두 거의 무변화 (격리 가설 확인)
+- 변경 직후라 신규 매칭 데이터 없음 → 14일 후 재측정 필요
+
+### 14일 후 (2026-05-11) 측정 권고
+- 교육청 60일 bias가 -0.543에서 얼마나 회복되는지
+- 서울지방조달청 추천 정확도 변화
+- 한전/군부대/고양시 회귀 없음 재확인
+
+### 남은 작업 (별도 commit, A2)
+**JS predictV5의 `agencyPred[agName]` 조회는 여전히 raw ag 사용** → `src/lib/utils.js:313` 및 `src/App.jsx:84`(assessPrediction)에서 `normalize_agency_name` JS 포팅 후 변환 필요. file_upload 경로 정상화에 필수.
+
+### 마이그레이션 SQL 롤백용
+새 함수 본문 (적용일: 2026-04-27):
+
+```sql
+CREATE OR REPLACE FUNCTION public.refresh_agency_predictor()
+ RETURNS TABLE(affected_insert integer, affected_update integer, affected_stale integer)
+ LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_insert int := 0; v_update int := 0; v_stale int := 0;
+  k_prior numeric := 15.0;
+BEGIN
+  CREATE TEMP TABLE tmp_new_stats ON COMMIT DROP AS
+  WITH ag_raw AS (
+    SELECT p.canonical_ag AS ag, p.at, COUNT(*)::int AS n,
+      AVG(p.actual_adj_rate)::numeric AS raw_offset
+    FROM bid_predictions p
+    WHERE p.match_status = 'matched'
+      AND p.actual_adj_rate IS NOT NULL
+      AND p.open_date >= CURRENT_DATE - INTERVAL '2 years'
+      AND p.canonical_ag IS NOT NULL AND p.at IS NOT NULL
+      AND COALESCE(p.actual_winner, '') NOT ILIKE '%유찰%'
+      AND ABS(p.actual_adj_rate) <= 2.0
+    GROUP BY p.canonical_ag, p.at  -- ★ Phase 23-8: raw ag → canonical_ag
+    HAVING COUNT(*) >= 3
+  ),
+  at_mean AS (
+    SELECT p.at, AVG(p.actual_adj_rate)::numeric AS mu, COUNT(*)::int AS n_at
+    FROM bid_predictions p
+    WHERE p.match_status='matched' AND p.actual_adj_rate IS NOT NULL
+      AND p.open_date >= CURRENT_DATE - INTERVAL '2 years'
+      AND COALESCE(p.actual_winner, '') NOT ILIKE '%유찰%'
+      AND ABS(p.actual_adj_rate) <= 2.0
+    GROUP BY p.at
+  )
+  SELECT r.ag, r.at, r.n, ROUND(r.raw_offset, 4) AS raw_offset,
+         ROUND(COALESCE(m.mu, 0), 4) AS at_mean_val,
+         ROUND((r.n::numeric * r.raw_offset + k_prior * COALESCE(m.mu, 0)) / (r.n::numeric + k_prior), 4) AS adj_offset_shrunk
+  FROM ag_raw r LEFT JOIN at_mean m ON m.at = r.at;
+
+  -- (이하 INSERT ... ON CONFLICT, stale 처리 — 변경 없음)
+  -- learning_source = 'auto_refresh_v5_canonical_k15'
+END;
+$function$;
+```
+
+**적용 명령** (변경 시 실행):
+```sql
+DELETE FROM agency_predictor;
+SELECT * FROM refresh_agency_predictor();  -- 결과: 61 row insert
+```
+
+**롤백 절차**: git log에서 23-8 이전 시점 함수 본문 복원 후 동일 명령 실행.
