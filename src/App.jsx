@@ -612,7 +612,17 @@ ${baseInfo}
     if(!Object.keys(curAgAss).length){try{curAgAss=await sbFetchAgAssumedStats()||{};setAgAss(curAgAss)}catch(e){curAgAss={}}}
     let totalResults=[];let successCount=0;let failCount=0;const logs=[];
     for(const file of Array.from(fileList)){
-      try{const{rows}=await parseFile(file);const items=parseBidDoc(rows);if(!items.length){logs.push({name:file.name,ok:false,msg:"예측 대상 0건"});failCount++;continue}
+      try{const{rows}=await parseFile(file);
+        // ★ 가드: SUCVIEW 상세·낙찰정보리스트를 예측탭에 잘못 업로드 차단 (입찰서류함만 허용)
+        if(isSucviewFile(rows)){logs.push({name:file.name,ok:false,msg:"SUCVIEW 상세 파일은 데이터탭에 업로드해주세요"});failCount++;continue}
+        const hdr0=(rows[0]||[]).map(v=>String(v).trim());
+        const hdr1=(rows[1]||[]).map(v=>String(v).trim());
+        const allHdr=[...hdr0,...hdr1].join("|");
+        const isBidDoc=allHdr.includes("기초금액")&&allHdr.includes("공고명")&&(allHdr.includes("추정가격")||allHdr.includes("A값"));
+        const isNakList=hdr0.some(v=>v.includes("공고명"))&&(hdr0.some(v=>v.includes("낙찰"))||hdr0.some(v=>v.includes("1순위"))||hdr0.length>=15);
+        if(isNakList&&!isBidDoc){logs.push({name:file.name,ok:false,msg:"낙찰정보리스트는 데이터탭에 업로드해주세요"});failCount++;continue}
+        if(!isBidDoc){logs.push({name:file.name,ok:false,msg:"입찰서류함 형식이 아닙니다 (공고명·기초금액·추정가격/A값 헤더 필요)"});failCount++;continue}
+        const items=parseBidDoc(rows);if(!items.length){logs.push({name:file.name,ok:false,msg:"예측 대상 0건"});failCount++;continue}
         const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails,agencyPred,floorBench);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
         if(!results.length){logs.push({name:file.name,ok:false,msg:"예측 결과 0건"});failCount++;continue}
         totalResults=totalResults.concat(results);
