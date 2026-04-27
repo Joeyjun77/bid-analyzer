@@ -41,6 +41,19 @@ export function isLhJongsim(at,ba,pn){
 export function eraFR(at,ep,od){return getFloorRate(at,ep||0,isNewEra(at,od))}
 // ─── 유틸 ──────────────────────────────────────────────────
 export function clsAg(n){if(!n)return"조달청";const s=n.trim();if(/조달청/.test(s))return"조달청";if(/교육/.test(s))return"교육청";if(/한국전력|한전/.test(s))return"한전";if(/LH|주택공사|토지주택/.test(s))return"LH";if(/군|사단|국방|해군|공군|육군|해병/.test(s))return"군시설";if(/수자원/.test(s))return"수자원공사";return"지자체"}
+// Phase 23-8: agency_predictor 학습 키 정규화 — DB normalize_agency_name 함수와 동일 로직.
+// 경기도교육청 학교명 변형 / 조달청 지방조달청 prefix 등을 canonical_ag 기준으로 통합.
+export function normalizeAgencyName(rawAg){
+  if(rawAg==null)return null;
+  let r=String(rawAg);
+  if(/경기도교육청 .*교육지원청/.test(r)) r=r.replace(/^경기도교육청 /,'');
+  if(/교육지원청 /.test(r)) r=r.replace(/ .+$/,'');
+  if(/^경기도[가-힣]+교육청$/.test(r) && r!=='경기도교육청') r=r.replace(/교육청$/,'교육지원청');
+  if(/^경기도[가-힣]+교육청 /.test(r)) r=r.replace(/^(경기도[가-힣]+)교육청 .+$/,'$1교육지원청');
+  if(/^경기도교육청 /.test(r) && !/교육지원청/.test(r)) r='경기도교육청';
+  if(/^조달청 .+지방조달청/.test(r)) r=r.replace(/^조달청 /,'');
+  return r.trim();
+}
 export function clean(v){if(v==null)return"";return String(v).replace(/[\u0000\u2800-\u2BFF\uE000-\uF8FF]/g,"").replace(/\s+/g," ").trim()}
 export function pnv(v){if(v==null||v==="")return 0;if(typeof v==="number")return v;return parseFloat(String(v).replace(/,/g,"").trim())||0}
 export function sn(v){const n=pnv(v);return n===0?null:n}
@@ -310,7 +323,7 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred,floorBen
 
   // 발주사별 오프셋 (agency_predictor 기반, n/10 shrinkage)
   // 발주사가 등록되어 있으면 적용, 없으면 자연스럽게 0 (typeOff만 유효)
-  const agPred=agencyPred&&agencyPred[agName];
+  const agPred=agencyPred&&agencyPred[normalizeAgencyName(agName)];
   let agencyOff=0;
   if(agPred){
     const rawOffset=Number(agPred.adj_offset||0);
