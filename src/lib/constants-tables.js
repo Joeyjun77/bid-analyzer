@@ -96,5 +96,20 @@ export const GLOBAL_MEAN=0.0544;
 // 무효 공고 키워드 (공고명에 포함 시 D등급 강제)
 export const INVALID_KEYWORDS=["취소","중지","재공고","정정","연기"];
 
+// ─── Phase 23-X: at별 평균 참가자 수 (분산 권고 트리거) ─────
+// 근거: bid_details 479건 자사 투찰 분석 (2025-11~2026-04). 평균 참가자 ≥3,000명
+// at에서 단일 사정률 1위 적중률은 C(15,4) 추첨 특성상 통계적 한계.
+// 이 임계 이상 at에 대해 추천 카드에서 분산 투찰 강력 권고 안내 노출.
+export const AT_AVG_PARTICIPANTS={
+  "지자체":   3059,
+  "교육청":   2462,
+  "군시설":   3458,
+  "한전":     1264,
+  "조달청":   3293,
+  "LH":       3150,
+  "수자원공사":1999
+};
+export const PARTICIPANT_THRESHOLD_HIGH=3000;
+
 // 금액대 3구간 분류 (WIN_PROB_MATRIX·ROI 용)
 export const tierOf=(amt)=>{const a=Number(amt)||0;return a<3e8?"S":a<1e9?"M":"L"};

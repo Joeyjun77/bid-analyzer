@@ -6,7 +6,7 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, baSegOf } from "./lib/utils.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./lib/utils.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2 } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
@@ -1387,6 +1387,20 @@ ${baseInfo}
                 </div>
                 <span style={{fontSize:10,padding:"2px 8px",borderRadius:10,background:confColor+"22",color:confColor,border:"1px solid "+confColor+"44",fontWeight:600,whiteSpace:"nowrap"}}>{confLabel}</span>
               </div>
+              {/* Phase 23-X: 분산 투찰 권고 (평균 참가자 ≥3,000명 발주유형) */}
+              {(()=>{
+                const avgP=AT_AVG_PARTICIPANTS[d.at];
+                if(!avgP||avgP<PARTICIPANT_THRESHOLD_HIGH)return null;
+                return<div style={{padding:"8px 16px",background:"rgba(226,75,74,0.06)",borderTop:"1px solid "+C.bdr+"55",display:"flex",alignItems:"flex-start",gap:8}}>
+                  <span style={{fontSize:13,lineHeight:1.2,marginTop:1}}>🎲</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:11,color:"#e24b4a",fontWeight:600,marginBottom:2}}>분산 투찰 강력 권고 — {d.at} 평균 참가자 약 {avgP.toLocaleString()}명</div>
+                    <div style={{fontSize:10,color:C.txm,lineHeight:1.5}}>
+                      복수예비가 C(15,4) 추첨 특성상 <b style={{color:C.txt}}>단일 사정률 1위 적중 확률은 통계적 한계</b>(자사 478건 0승 분석 결과). 동일 공고에 여러 사정률 후보로 분산 투찰 시 EV 약 1.5~2배 증가. 위 1·2순위 후보를 활용해 분산 투찰을 적극 검토하십시오.
+                    </div>
+                  </div>
+                </div>
+              })()}
               {/* 경고 (격전지, 단골) */}
               {agEnv&&<div style={{padding:"8px 16px",background:agEnv.tier<=2?"rgba(226,75,74,0.08)":agEnv.tier===5?"rgba(100,100,128,0.08)":"rgba(91,157,217,0.08)",borderTop:"1px solid "+C.bdr+"55",display:"flex",alignItems:"center",gap:8}}>
                 <span style={{fontSize:11,color:agEnv.tier<=2?"#e24b4a":agEnv.tier===5?"#666680":"#5b9dd9"}}>
