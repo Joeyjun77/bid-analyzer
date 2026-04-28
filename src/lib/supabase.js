@@ -287,6 +287,25 @@ export async function sbFetchPredBiasMap(){
   }catch(e){return{agBa:{},ag:{},atBa:{},at:{}}}
 }
 
+// ─── Phase 23-9: 1위 사정률 분포 다단 fallback map ──────────
+// win1st_dist_map VIEW (AG_BA → AG → AT_BA → AT) → JS map
+export async function sbFetchWin1stDistMap(){
+  try{
+    const res=await authedFetch("/rest/v1/win1st_dist_map?select=grain,key1,key2,n,mean,std&limit=2000");
+    if(!res.ok)return{agBa:{},ag:{},atBa:{},at:{}};
+    const rows=await res.json();
+    const m={agBa:{},ag:{},atBa:{},at:{}};
+    for(const r of rows){
+      const v={n:Number(r.n),mean:Number(r.mean),std:Number(r.std)};
+      if      (r.grain==='AG_BA') m.agBa[r.key1+'|'+r.key2]=v;
+      else if (r.grain==='AG')    m.ag[r.key1]=v;
+      else if (r.grain==='AT_BA') m.atBa[r.key1+'|'+r.key2]=v;
+      else if (r.grain==='AT')    m.at[r.key1]=v;
+    }
+    return m;
+  }catch(e){return{agBa:{},ag:{},atBa:{},at:{}}}
+}
+
 // ─── Phase 23-3: 한전·고양시 (canonical_ag, at, ba_seg) median fine-tune 맵 ──
 // pred_baseg_finetune VIEW에서 (ag|at|seg) → median lookup, 50:50 블렌드용
 export async function sbFetchBasegFinetune(){
