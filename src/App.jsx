@@ -6,8 +6,8 @@ import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory } from "./lib/supabase.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, baSegOf } from "./lib/utils.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -200,6 +200,7 @@ export default function App(){
   const[agencyStats,setAgencyStats]=useState({}); // ag → {tier, win_rate, confidence, ...}
   const[agencyPred,setAgencyPred]=useState({}); // ag → {offset, strategy}
   const[floorBench,setFloorBench]=useState({}); // Phase 23-4: at|floor_rate → {med, n, std}
+  const[win1stDistMap,setWin1stDistMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Phase 23-9: 1위 사정률 분포 다단 fallback
   const[hideP5,setHideP5]=useState(true); // P5 (회피) 자동 숨김 기본 ON
   const[onlyPrimary,setOnlyPrimary]=useState(false); // 주력 발주사만 보기
   // Phase 14-3: 분산 투찰 시뮬레이터 (prediction_id → {strategy_label, ev_gain_eok, ...})
@@ -234,6 +235,19 @@ export default function App(){
     if(!p)return{adj:null,bid:null,source:null};
     // LH 종심제/순심제 대형 공사 — 예측 모델 구조적 미지원 (고정 -2.941 수렴)
     if(isLhJongsim(p.at,p.ba,p.pn))return{adj:null,bid:null,bid1st:null,source:'jongsim_unsupported',jongsim:true};
+
+    // Phase 23-9: bid1st_v2 우선 — 채워진 행은 신규 추천 사용
+    if(p.bid1st_v2_adj!=null){
+      return{
+        adj:Number(p.bid1st_v2_adj),
+        bid:Number(p.bid1st_v2_bid),
+        bid1st:Number(p.bid1st_v2_bid),
+        winProb:p.bid1st_v2_win_prob!=null?Number(p.bid1st_v2_win_prob):null,
+        floorSafe:p.bid1st_v2_floor_safe===true,
+        source:`v2(${p.bid1st_v2_grain||'기본'}: ${p.bid1st_v2_src||'-'})`
+      };
+    }
+
     const ba=p.ba?Number(p.ba):0;
     const av=p.av?Number(p.av):0;
     const fr=Number(p.pred_floor_rate||0);
@@ -475,6 +489,7 @@ ${baseInfo}
     try{const agStats=await sbFetchAgAssumedStats();setAgAss(agStats||{})}catch(e){setAgAss({})}
     try{const pbm=await sbFetchPredBiasMap();if(pbm)setPredBiasMap(pbm)}catch(e){}
     try{const fb=await sbFetchFloorBench();if(fb)setFloorBench(fb)}catch(e){}
+    try{const wd=await sbFetchWin1stDistMap();if(wd)setWin1stDistMap(wd)}catch(e){}
     try{const bf=await sbFetchBasegFinetune();if(bf)setBasegFinetune(bf)}catch(e){}
     // Phase 12-C: 발주사별 낙찰 예측 데이터 로드
     try{
@@ -623,14 +638,25 @@ ${baseInfo}
         if(isNakList&&!isBidDoc){logs.push({name:file.name,ok:false,msg:"낙찰정보리스트는 데이터탭에 업로드해주세요"});failCount++;continue}
         if(!isBidDoc){logs.push({name:file.name,ok:false,msg:"입찰서류함 형식이 아닙니다 (공고명·기초금액·추정가격/A값 헤더 필요)"});failCount++;continue}
         const items=parseBidDoc(rows);if(!items.length){logs.push({name:file.name,ok:false,msg:"예측 대상 0건"});failCount++;continue}
-        const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails,agencyPred,floorBench);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
+        const results=items.map(item=>{
+          const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails,agencyPred,floorBench);
+          const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,curAgAss);
+          // Phase 23-9: 신규 추천 (1위 확률 최대 위치)
+          const fr=p?p.fr:eraFR(item.at,item.ep||item.ba,new Date().toISOString().slice(0,10));
+          const v2=recommendBid1st(
+            {at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,fr},
+            {distMap:win1stDistMap},
+            {enableMonteCarlo:false}
+          );
+          return{...item,pred:p,rec,v2};
+        }).filter(r=>r.pred);
         if(!results.length){logs.push({name:file.name,ok:false,msg:"예측 결과 0건"});failCount++;continue}
         totalResults=totalResults.concat(results);
         logs.push({name:file.name,ok:true,msg:`${results.length}건 예측`});successCount++;
       }catch(e){logs.push({name:file.name,ok:false,msg:e.message});failCount++}}
     if(totalResults.length>0){
       setPredResults(prev=>{const dkSet=new Set(totalResults.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...totalResults]});
-      const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,source:"file_upload",match_status:"pending"}));
+      const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,bid1st_v2_adj:r.v2?.auto?.adj??null,bid1st_v2_bid:r.v2?.auto?.bid??null,bid1st_v2_win_prob:r.v2?.auto?.winProb??null,bid1st_v2_floor_safe:r.v2?.auto?.floorSafe??null,bid1st_v2_grain:r.v2?.distribution?.grain??null,bid1st_v2_src:r.v2?.distribution?.src??null,source:"file_upload",match_status:"pending"}));
       await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds);
       const existingIds=new Set(Object.keys(scoringMap).map(Number));
       const newPreds=preds.filter(p=>!existingIds.has(p.id));
@@ -641,7 +667,7 @@ ${baseInfo}
     }
     const summary=fileList.length===1?logs[0]?.ok?`${totalResults.length}건 예측 완료 · DB 저장`:logs[0]?.msg
       :`${fileList.length}개 파일 처리: 성공 ${successCount} · 실패 ${failCount} · 총 ${totalResults.length}건 예측`;
-    setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails,agencyPred,floorBench,agAss]);
+    setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap]);
 
   // ★ 마크다운 → HTML 변환 (공통)
   const md2html=(text)=>{if(!text)return"";
@@ -674,13 +700,23 @@ ${baseInfo}
 
   // 수동 예측 (DB 저장 안 함 — 시뮬레이션 전용)
   const[manualRec,setManualRec]=useState(null);
+  const[manualV2,setManualV2]=useState(null); // Phase 23-9: 수동 시뮬레이션 v2 추천
   const doManualPred=useCallback(()=>{
     if(!Object.keys(allS.ts||{}).length){setMsg({type:"err",text:"낙찰 데이터가 없습니다. 먼저 데이터를 업로드해주세요."});return}
-    const p=predictV5({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,bidDetails,agencyPred,floorBench);
+    const at=clsAg(inp.agency);
+    const agName=inp.agency.trim();
+    const ba=tn(inp.baseAmount);
+    const ep=tn(inp.estimatedPrice);
+    const av=tn(inp.aValue);
+    const p=predictV5({at,agName,ba,ep,av},allS.ts,allS.as,bidDetails,agencyPred,floorBench);
     if(!p){setMsg({type:"err",text:"예측 실패: 기관 또는 금액 정보를 확인해주세요."});return}
     setPred(p);if(p)setSimSlider(Math.round(p.adj*100));
-    const rec=recommendAssumedAdj({at:clsAg(inp.agency),agName:inp.agency.trim(),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue)},allS.ts,allS.as,agAss);
-    setManualRec(rec)},[inp,allS,bidDetails,agencyPred,floorBench,agAss]);
+    const rec=recommendAssumedAdj({at,agName,ba,ep,av},allS.ts,allS.as,agAss);
+    setManualRec(rec);
+    // Phase 23-9: v2 추천
+    const v2=recommendBid1st({at,agName,ba,ep,av,fr:p.fr},{distMap:win1stDistMap},{enableMonteCarlo:false});
+    setManualV2(v2);
+  },[inp,allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap]);
 
   // 삭제
   const selCount=Object.keys(sel).filter(k=>sel[k]).length;
