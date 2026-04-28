@@ -1700,6 +1700,31 @@ ${baseInfo}
             <div><div style={{fontSize:11,color:C.txm,marginBottom:3}}>A값</div><NI value={inp.aValue} onChange={v=>setInp(p=>({...p,aValue:v}))}/></div>
           </div>
           <button onClick={doManualPred} style={{width:"100%",padding:"8px",background:C.gold,border:"none",borderRadius:6,color:"#000",fontWeight:700,fontSize:12,cursor:"pointer"}}>시뮬레이션</button>
+          {/* Phase 23-9: v2 자동 추천 (1위 확률 최대 위치) */}
+          {manualV2&&<div style={{marginTop:10,padding:"10px",background:C.bg3,borderRadius:6,border:"1px solid "+C.gold+"33"}}>
+            <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:6}}>★ 자동 추천 (1위 확률 최대)</div>
+            <div style={{fontSize:10,color:C.txm,marginBottom:6}}>
+              분포: {manualV2.distribution.src} (grain: {manualV2.distribution.grain||'-'}) · 평균 {(100+manualV2.distribution.mean).toFixed(4)}% · σ {manualV2.distribution.std.toFixed(4)}%
+            </div>
+            <div style={{padding:"8px 10px",background:C.bg,borderRadius:4,marginBottom:8,textAlign:"center"}}>
+              <div style={{fontSize:18,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{(100+manualV2.auto.adj).toFixed(4)}%</div>
+              <div style={{fontSize:14,fontWeight:700,fontFamily:"monospace",color:C.txt}}>{tc(manualV2.auto.bid)}원</div>
+              <div style={{fontSize:11,marginTop:4}}>
+                <span style={{color:manualV2.auto.floorSafe?"#5dca96":"#e24b4a",fontWeight:600}}>{manualV2.auto.floorSafe?"[자격OK]":"[자격미달]"}</span>
+                <span style={{color:C.txm,marginLeft:8}}>1위확률 {Math.round(manualV2.auto.winProb*100)}%</span>
+              </div>
+            </div>
+            <div style={{fontSize:11,color:C.txm,marginBottom:4}}>3구간 옵션</div>
+            {[['적극(P25)','aggressive'],['균형(P50)','balanced'],['보수(P75)','conservative']].map(([label,key])=>{
+              const o=manualV2.scenarios[key];
+              return<div key={key} style={{display:"grid",gridTemplateColumns:"60px 1fr 1fr 90px",gap:6,fontSize:11,padding:"3px 0"}}>
+                <span style={{color:C.txd}}>{label}</span>
+                <span style={{fontFamily:"monospace"}}>{(100+o.adj).toFixed(4)}%</span>
+                <span style={{fontFamily:"monospace",color:C.txm,textAlign:"right"}}>{tc(o.bid)}원</span>
+                <span style={{color:o.floorSafe?"#5dca96":"#e24b4a",fontSize:10,textAlign:"right"}}>{o.label}</span>
+              </div>;
+            })}
+          </div>}
           {/* 시뮬레이션 결과 (통합) */}
           {pred&&<div style={{marginTop:10,padding:"10px",background:C.bg3,borderRadius:6}}>
             {/* 예측 분석 */}
