@@ -1745,9 +1745,9 @@ ${baseInfo}
             <div><div style={{fontSize:11,color:C.txm,marginBottom:3}}>A값</div><NI value={inp.aValue} onChange={v=>setInp(p=>({...p,aValue:v}))}/></div>
           </div>
           <button onClick={doManualPred} style={{width:"100%",padding:"8px",background:C.gold,border:"none",borderRadius:6,color:"#000",fontWeight:700,fontSize:12,cursor:"pointer"}}>시뮬레이션</button>
-          {/* Phase 23-9: v2 자동 추천 (1위 확률 최대 위치) */}
+          {/* Phase 23-9: v2 자동 추천 (1위 분포 중심 위치) */}
           {manualV2&&<div style={{marginTop:10,padding:"10px",background:C.bg3,borderRadius:6,border:"1px solid "+C.gold+"33"}}>
-            <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:6}}>★ 자동 추천 (1위 확률 최대)</div>
+            <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:6}}>★ 자동 추천 (1위 분포 중심)</div>
             <div style={{fontSize:10,color:C.txm,marginBottom:6}}>
               분포: {manualV2.distribution.src} (grain: {manualV2.distribution.grain||'-'}) · 평균 {(100+manualV2.distribution.mean).toFixed(4)}% · σ {manualV2.distribution.std.toFixed(4)}%
             </div>
@@ -1756,7 +1756,7 @@ ${baseInfo}
               <div style={{fontSize:14,fontWeight:700,fontFamily:"monospace",color:C.txt}}>{tc(manualV2.auto.bid)}원</div>
               <div style={{fontSize:11,marginTop:4}}>
                 <span style={{color:manualV2.auto.floorSafe?"#5dca96":"#e24b4a",fontWeight:600}}>{manualV2.auto.floorSafe?"[자격OK]":"[자격미달]"}</span>
-                <span style={{color:C.txm,marginLeft:8}}>1위확률 {Math.round(manualV2.auto.winProb*100)}%</span>
+                <span style={{color:C.txm,marginLeft:8}} title="자사 위치가 1위 사정률 분포의 중심에 얼마나 가까운지 (mean에서 100%, 끝으로 갈수록 감소)">분포적합도 {Math.round(manualV2.auto.winProb*100)}%</span>
               </div>
             </div>
             <div style={{fontSize:11,color:C.txm,marginBottom:4}}>3구간 옵션</div>

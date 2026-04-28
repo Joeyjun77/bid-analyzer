@@ -860,7 +860,7 @@ export function recommendBid1st(bid,context,options){
       adj:r4(adj),bid:bidC(adj),
       winProb:Math.round(wp*100)/100,
       floorSafe:fs,
-      label:fs?`자격OK·1위${Math.round(wp*100)}%`:'자격미달'
+      label:fs?`자격OK·적합${Math.round(wp*100)}%`:'자격미달'
     };
   };
 
