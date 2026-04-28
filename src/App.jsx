@@ -1359,6 +1359,25 @@ ${baseInfo}
                     <div style={{fontSize:9,color:C.txd,marginTop:2}}>WIN_OPT_GAP 보정</div>
                   </div>
                 </div>
+                {/* Phase 23-X: 2순위 후보 (P75 보수) — 1위 빗나감 대비 차선 정보 */}
+                {(d.rec_adj_p75!=null||d.rec_bid_p75!=null)&&(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginTop:10,paddingTop:10,borderTop:"1px dashed "+C.bdr+"55"}}>
+                    <div>
+                      <div style={{fontSize:10,color:C.txd,marginBottom:2}}>2순위 사정률 (보수)</div>
+                      <div style={{fontSize:13,fontWeight:600,color:"#5dca96",fontFamily:"monospace"}}>{d.rec_adj_p75!=null?(100+Number(d.rec_adj_p75)).toFixed(4)+"%":"—"}</div>
+                      <div style={{fontSize:9,color:C.txd,marginTop:2}}>p75 안전 시나리오</div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:C.txd,marginBottom:2}}>2순위 투찰금</div>
+                      <div style={{fontSize:13,fontWeight:600,color:"#5dca96",fontFamily:"monospace"}}>{d.rec_bid_p75?tc(Number(d.rec_bid_p75))+"원":"—"}</div>
+                      <div style={{fontSize:9,color:C.txd,marginTop:2}}>1위 미달 시 차선</div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:C.txd,marginBottom:2}}>의미</div>
+                      <div style={{fontSize:10,color:C.txm,marginTop:2,lineHeight:1.4}}>예측 1위가 빗나갔을 때 보조 후보. 시장 분위기 보고 판단.</div>
+                    </div>
+                  </div>
+                )}
               </div>
               {/* 신뢰도 + 근거 */}
               <div style={{padding:"10px 16px",background:"rgba(0,0,0,0.1)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
