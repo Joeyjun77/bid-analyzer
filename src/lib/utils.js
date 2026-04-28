@@ -728,3 +728,152 @@ ${JSON.stringify(context.추세,null,2)}
     throw new Error("Claude 응답 파싱 실패: "+text.slice(0,200))
   }
 }
+
+// ─── Phase 23-9: 자사 1위 낙찰 추천 (recommendBid1st) ──────────
+// Abramowitz & Stegun 7.1.26 erf 근사 (max error 1.5e-7)
+function _erf(x){
+  const sign=x<0?-1:1;
+  x=Math.abs(x);
+  const a1=0.254829592,a2=-0.284496736,a3=1.421413741,
+        a4=-1.453152027,a5=1.061405429,p=0.3275911;
+  const t=1/(1+p*x);
+  const y=1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);
+  return sign*y;
+}
+
+// 표준정규 CDF Φ(z)
+function _phi(z){return 0.5*(1+_erf(z/Math.SQRT2));}
+
+// 1위 확률: 자사 위치가 분포 평균보다 위에 있을수록 ↑, 적격성 미달 시 0
+export function calcWinProb(adj,mean,effStd,floorSafe){
+  if(!floorSafe)return 0;
+  if(!effStd||effStd<=0)return 0.5;
+  const z=(adj-mean)/effStd;
+  return _phi(z);
+}
+
+// ba_seg 분할 (predictV5와 동일)
+export function baSegOf(ba){
+  const n=Number(ba)||0;
+  if(n<1e8)return 'S1';
+  if(n<3e8)return 'S2';
+  if(n<1e9)return 'S3';
+  if(n<3e9)return 'S4';
+  return 'S5';
+}
+
+// 다단 fallback lookup: AG_BA → AG → AT_BA → AT
+// distMap: {agBa, ag, atBa, at} 각 객체는 sbFetchWin1stDistMap 결과
+// baSeg: 'S1'~'S5' (predictV5와 동일 분할)
+// 반환: {n, mean, std, grain, src} 또는 null
+export function lookupWin1stDist(at,agName,baSeg,distMap){
+  if(!distMap)return null;
+  const ag_ba_key=`${agName}|${baSeg}`;
+  if(distMap.agBa&&distMap.agBa[ag_ba_key]){
+    const v=distMap.agBa[ag_ba_key];
+    return{...v,grain:'AG_BA',src:`${agName} ${baSeg}(${v.n}건)`};
+  }
+  if(distMap.ag&&distMap.ag[agName]){
+    const v=distMap.ag[agName];
+    return{...v,grain:'AG',src:`${agName}(${v.n}건)`};
+  }
+  const at_ba_key=`${at}|${baSeg}`;
+  if(distMap.atBa&&distMap.atBa[at_ba_key]){
+    const v=distMap.atBa[at_ba_key];
+    return{...v,grain:'AT_BA',src:`${at} ${baSeg}(${v.n}건)`};
+  }
+  if(distMap.at&&distMap.at[at]){
+    const v=distMap.at[at];
+    return{...v,grain:'AT',src:`${at}(${v.n}건)`};
+  }
+  return null;
+}
+
+// ─── Phase 23-9 메인: recommendBid1st ───────────────────────────
+// bid: {at, agName, ba, ep, av, fr}
+// context: {distMap}  // 1단계는 distMap만 사용. bidDetails는 2단계.
+// options: {gridStep, gridRange, minSamples, noiseFloor, enableMonteCarlo}
+// 반환: {auto, scenarios, distribution} 또는 null
+export function recommendBid1st(bid,context,options){
+  const opt=Object.assign({
+    gridStep:0.0001,gridRange:1.5,minSamples:5,
+    noiseFloor:0.642,enableMonteCarlo:false
+  },options||{});
+  const{at,agName,ba,ep,av,fr}=bid||{};
+  if(!at||!ba||!fr)return null;
+
+  // Step 1: 분포 lookup (다단 fallback)
+  const baSeg=baSegOf(ba);
+  let dist=lookupWin1stDist(at,agName,baSeg,context?.distMap);
+  let distSrc=dist?dist.src:'시스템 기본(표본 부족)';
+  let distGrain=dist?dist.grain:null;
+  let distN=dist?dist.n:0;
+  let mean=dist?Number(dist.mean):0;
+  let std=dist?Number(dist.std):0.642;
+  if(!dist||dist.n<opt.minSamples){
+    distGrain=null;mean=0;std=0.642;distN=0;
+    distSrc='시스템 기본(표본 부족)';
+  }
+
+  // Step 2: 노이즈 floor 적용
+  const effStd=Math.max(std,opt.noiseFloor);
+
+  // Step 3: Monte Carlo는 2단계 (1단계 noop)
+
+  // Step 4: Grid search 0.0001% 정밀도
+  const xpC=(adj)=>ba*(1+adj/100);
+  const bidC=(adj)=>{
+    const xp=xpC(adj);
+    return(av&&av>0)
+      ?Math.ceil(av+(xp-av)*(fr/100))
+      :Math.ceil(xp*(fr/100));
+  };
+  // 적격성: bidC(adj) ≥ legal_min(adj). 두 식이 동일하므로
+  // 자연스럽게 floorSafe = (xp ≥ av), 즉 ba(1+adj/100) ≥ av.
+  // av=0이거나 av≪ba면 항상 true. 자격 미달은 av가 큰 LH 같은 case에서 발생.
+  const floorSafeC=(adj)=>{
+    const xp=xpC(adj);
+    return(!av||av<=0)?true:xp>=av;
+  };
+
+  const startAdj=mean-opt.gridRange;
+  const endAdj=mean+opt.gridRange;
+  let bestAdj=mean,bestProb=-1;
+  for(let adj=startAdj;adj<=endAdj;adj+=opt.gridStep){
+    const fs=floorSafeC(adj);
+    const wp=calcWinProb(adj,mean,effStd,fs);
+    // tie-break: mean에 가까운 쪽 우선
+    if(wp>bestProb||(wp===bestProb&&Math.abs(adj-mean)<Math.abs(bestAdj-mean))){
+      bestProb=wp;bestAdj=adj;
+    }
+  }
+
+  const r4=(v)=>Math.round(v*10000)/10000;
+  const buildOption=(adj)=>{
+    const fs=floorSafeC(adj);
+    const wp=calcWinProb(adj,mean,effStd,fs);
+    return{
+      adj:r4(adj),bid:bidC(adj),
+      winProb:Math.round(wp*100)/100,
+      floorSafe:fs,
+      label:fs?`자격OK·1위${Math.round(wp*100)}%`:'자격미달'
+    };
+  };
+
+  // Step 5: 출력
+  // P25/P75: 정규분포 분위수 ±0.6745 × effStd
+  return{
+    auto:buildOption(bestAdj),
+    scenarios:{
+      aggressive:buildOption(mean-0.6745*effStd),
+      balanced:buildOption(mean),
+      conservative:buildOption(mean+0.6745*effStd)
+    },
+    distribution:{
+      grain:distGrain,n:distN,
+      mean:r4(mean),std:r4(std),
+      src:distSrc,
+      monteCarloUsed:false
+    }
+  };
+}
