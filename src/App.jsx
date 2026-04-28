@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS } from "./lib/constants.js";
 import { authedFetch } from "./auth.js";
@@ -7,7 +7,7 @@ import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, baSegOf } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2 } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -783,6 +783,51 @@ ${baseInfo}
       return a&&a.tier!=null&&a.tier<=2;
     })}
     return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,predSort,hideYuchal,hideSuui,gradeFilter,scoringMap,hideP5,onlyPrimary,agencyStats,agencyPred]);
+
+  // Phase 23-9: pending 건 v2 backfill (분포 map 로드 후 NULL 행에 1회 적용)
+  const v2BackfillDone=useRef(false);
+  useEffect(()=>{
+    if(v2BackfillDone.current)return;
+    if(!Object.keys(win1stDistMap?.agBa||{}).length&&!Object.keys(win1stDistMap?.at||{}).length)return;
+    if(!predictions||!predictions.length)return;
+    const targets=predictions.filter(p=>
+      p.match_status==='pending'
+      &&p.source==='file_upload'
+      &&p.bid1st_v2_adj==null
+      &&p.ba!=null
+      &&p.pred_floor_rate!=null
+    );
+    if(!targets.length){v2BackfillDone.current=true;return;}
+    v2BackfillDone.current=true; // 동시 진입 방지
+    (async()=>{
+      const updates=[];
+      for(const p of targets){
+        const v2=recommendBid1st(
+          {at:p.at,agName:p.ag,ba:Number(p.ba),ep:Number(p.ep)||Number(p.ba),av:Number(p.av)||0,fr:Number(p.pred_floor_rate)},
+          {distMap:win1stDistMap},
+          {enableMonteCarlo:false}
+        );
+        if(!v2)continue;
+        updates.push({
+          id:p.id,
+          bid1st_v2_adj:v2.auto.adj,
+          bid1st_v2_bid:v2.auto.bid,
+          bid1st_v2_win_prob:v2.auto.winProb,
+          bid1st_v2_floor_safe:v2.auto.floorSafe,
+          bid1st_v2_grain:v2.distribution.grain,
+          bid1st_v2_src:v2.distribution.src
+        });
+      }
+      if(!updates.length)return;
+      try{
+        const ok=await sbUpdatePredictionsV2(updates);
+        if(ok>0){
+          const refreshed=await sbFetchPredictions();
+          setPredictions(refreshed);
+        }
+      }catch(e){console.warn("v2 backfill 실패:",e?.message);}
+    })();
+  },[predictions,win1stDistMap]);
 
   // focusedPredId 변경 시: 리스트 확장 + 해당 행으로 스크롤 (공고→예측 이동 시 자동 포커스)
   useEffect(()=>{

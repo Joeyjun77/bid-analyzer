@@ -744,12 +744,16 @@ function _erf(x){
 // 표준정규 CDF Φ(z)
 function _phi(z){return 0.5*(1+_erf(z/Math.SQRT2));}
 
-// 1위 확률: 자사 위치가 분포 평균보다 위에 있을수록 ↑, 적격성 미달 시 0
+// 1위 확률 (Phase 23-9 v2 보정): 종형 분포로 정의
+// = 4 × Φ(z) × (1 − Φ(z)) — z=0(mean)에서 1.0 max, 양 극단 0
+// 도메인 정합: 1위 사정률 분포의 평균이 곧 자사가 1위 될 가장 빈도 높은 위치
+// 적격성 미달이면 0
 export function calcWinProb(adj,mean,effStd,floorSafe){
   if(!floorSafe)return 0;
-  if(!effStd||effStd<=0)return 0.5;
+  if(!effStd||effStd<=0)return 0;
   const z=(adj-mean)/effStd;
-  return _phi(z);
+  const cdf=_phi(z);
+  return 4*cdf*(1-cdf);
 }
 
 // ba_seg 분할 (predictV5와 동일)

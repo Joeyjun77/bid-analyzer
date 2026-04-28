@@ -287,6 +287,28 @@ export async function sbFetchPredBiasMap(){
   }catch(e){return{agBa:{},ag:{},atBa:{},at:{}}}
 }
 
+// ─── Phase 23-9: pending 건 v2 backfill 전용 PATCH ─────────────
+// 기존 행의 bid1st_v2_* 6개 컬럼만 업데이트 (다른 컬럼 보존)
+// updates: [{id, bid1st_v2_adj, bid1st_v2_bid, bid1st_v2_win_prob,
+//            bid1st_v2_floor_safe, bid1st_v2_grain, bid1st_v2_src}]
+export async function sbUpdatePredictionsV2(updates){
+  if(!updates||!updates.length)return 0;
+  let ok=0;
+  for(const u of updates){
+    const{id,...fields}=u;
+    if(!id)continue;
+    try{
+      const res=await authedFetch(`/rest/v1/bid_predictions?id=eq.${id}`,{
+        method:"PATCH",
+        headers:{...JSON_H,"Prefer":"return=minimal"},
+        body:JSON.stringify(fields)
+      });
+      if(res.ok)ok++;
+    }catch(e){}
+  }
+  return ok;
+}
+
 // ─── Phase 23-9: 1위 사정률 분포 다단 fallback map ──────────
 // win1st_dist_map VIEW (AG_BA → AG → AT_BA → AT) → JS map
 export async function sbFetchWin1stDistMap(){
