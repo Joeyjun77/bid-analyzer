@@ -201,7 +201,7 @@ export default function App(){
   const[agencyPred,setAgencyPred]=useState({}); // ag → {offset, strategy}
   const[floorBench,setFloorBench]=useState({}); // Phase 23-4: at|floor_rate → {med, n, std}
   const[win1stDistMap,setWin1stDistMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Phase 23-9: 1위 사정률 분포 다단 fallback
-  const[hideP5,setHideP5]=useState(true); // P5 (회피) 자동 숨김 기본 ON
+  const[hideP5,setHideP5]=useState(false); // P5 (회피) 숨김 기본 OFF — 정보 제공 도구 원칙(사용자 자체 판단권 보장)
   const[onlyPrimary,setOnlyPrimary]=useState(false); // 주력 발주사만 보기
   // Phase 14-3: 분산 투찰 시뮬레이터 (prediction_id → {strategy_label, ev_gain_eok, ...})
   const[simulatorMap,setSimulatorMap]=useState({});
