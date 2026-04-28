@@ -2100,10 +2100,11 @@ ${baseInfo}
                 </td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:finalRec.jongsim?"#e24b4a":C.gold,fontWeight:500}} title={finalRec.jongsim?"LH 종심제·순심제 (예측 미지원)":(finalRec.source?"근거: "+finalRec.source:"")}>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:finalRec.jongsim?"#e24b4a":(finalRec.floorSafe===false?"#e24b4a":C.gold),fontWeight:500}} title={finalRec.jongsim?"LH 종심제·순심제 (예측 미지원)":(finalRec.floorSafe===false?"⚠ 자격 미달 — 그대로 투찰 시 자동 탈락 (av가 큰 입찰)":(finalRec.source?"근거: "+finalRec.source:""))}>
                   {finalRec.jongsim?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.12)"}}>⚠ 종심제</span>:(finalAdj!=null?(
                     <span style={{display:"inline-flex",alignItems:"center",gap:4,justifyContent:"flex-end"}}>
                       <span>{(100+Number(finalAdj)).toFixed(4)+"%"}</span>
+                      {finalRec.floorSafe===false&&<span style={{fontSize:10,color:"#e24b4a",fontWeight:700}} title="자격 미달">⚠</span>}
                       {biasArrow&&<span
                         style={{color:biasArrow.color,fontSize:biasArrow.size==='large'?13:biasArrow.size==='medium'?12:11,lineHeight:1,fontWeight:700}}
                         title={`실측 방향 힌트: ${biasArrow.label} (${biasArrow.sign>=0?'↑ 상향':'↓ 하향'} ${Math.abs(biasArrow.actualDir).toFixed(3)}%p · 근거 ${biasArrow.source})`}
