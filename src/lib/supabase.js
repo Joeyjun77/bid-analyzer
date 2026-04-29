@@ -47,8 +47,9 @@ export async function sbMatchPredictions(predictions,records){
     let match=null;
     if(p.open_date){
       // 예측 개찰일과 가장 가까운 낙찰 건 선택 (이미 사용된 record 제외)
+      // 인포21c는 같은 공고에 정상(ar1 채워짐)·간이(br1만) 두 종류 record를 발행 → ar1 있는 후보 우선
       const pOd=p.open_date;
-      let bestDist=Infinity;
+      let bestDist=Infinity, bestHasAr1=false;
       for(const c of candidates){
         if(!c.od)continue;
         if(usedRecIds.has(c.id))continue; // ★ 중복 방지
@@ -58,7 +59,10 @@ export async function sbMatchPredictions(predictions,records){
           if(p4&&c4&&!p.ag.includes(c4)&&!c.ag.includes(p4))continue;
         }
         const dist=Math.abs(new Date(pOd)-new Date(c.od));
-        if(dist<bestDist){bestDist=dist;match=c}
+        const hasAr1=c.ar1!=null;
+        // ar1 있는 후보가 있으면 무조건 우선; 같은 등급 내에서는 od 가까운 것 우선
+        if(hasAr1&&!bestHasAr1){bestHasAr1=true;bestDist=dist;match=c}
+        else if(hasAr1===bestHasAr1&&dist<bestDist){bestDist=dist;match=c}
       }
       // 30일 초과 차이면 오매칭 → 스킵
       if(bestDist>30*24*60*60*1000)match=null;
