@@ -270,22 +270,29 @@ export default function App(){
       const xp=ba*(1+adj/100);
       return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100));
     };
+    // Phase 23-3 A0: 낙찰하한 +0.001%p 방어 가드 (활성화 0% 예측, 미래 안전장치)
+    const frFloorAdj=fr>0?(fr-100+0.001):null;
+    const clampToFloor=(adj)=>(frFloorAdj!=null&&adj<frFloorAdj)?frFloorAdj:adj;
     // 1순위: opt_adj + 동적 보정 (+ ba_seg 블렌드)
     if(p.opt_adj!=null){
       let base=Number(p.opt_adj);
       let ftSrc='';
       if(ftHit){base=(base+ftHit.median)/2;ftSrc=` +FT(${ftHit.median.toFixed(2)},n${ftHit.n})`}
-      const adjNum=base+biasFix;
+      const rawAdj=base+biasFix;
+      const adjNum=clampToFloor(rawAdj);
+      const clampSrc=(adjNum!==rawAdj)?' +CLAMP':'';
       const bid=calcBid(adjNum);
       const bid1st=calcWin1stBid(bid,fr,p.at);
-      return{adj:adjNum,bid,bid1st,source:`추천(보정:${biasSrc} ${fixStr}${ftSrc})`};
+      return{adj:adjNum,bid,bid1st,source:`추천(보정:${biasSrc} ${fixStr}${ftSrc}${clampSrc})`};
     }
     // 2순위 fallback: pred_adj_rate + 동적 보정
     if(p.pred_adj_rate!=null){
-      const adjNum=Number(p.pred_adj_rate)+biasFix;
+      const rawAdj=Number(p.pred_adj_rate)+biasFix;
+      const adjNum=clampToFloor(rawAdj);
+      const clampSrc=(adjNum!==rawAdj)?' +CLAMP':'';
       const bid=calcBid(adjNum);
       const bid1st=calcWin1stBid(bid,fr,p.at);
-      return{adj:adjNum,bid,bid1st,source:`순수예측(보정:${biasSrc} ${fixStr})`};
+      return{adj:adjNum,bid,bid1st,source:`순수예측(보정:${biasSrc} ${fixStr}${clampSrc})`};
     }
     return{adj:null,bid:null,bid1st:null,source:null};
   },[predBiasMap,basegFinetune]);
