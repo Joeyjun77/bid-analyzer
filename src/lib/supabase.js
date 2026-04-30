@@ -36,10 +36,10 @@ export async function sbMatchPredictions(predictions,records){
     if(!p.pn_no)continue;
     // 1순위: 정확 pn_no 매칭
     let candidates=recMap[p.pn_no];
-    // 2순위: prefix 매칭 (bid_predictions에만 접미사 있는 경우)
+    // 2순위: prefix 매칭 (양방향 — prediction·record 어느 쪽이 접미사를 가져도 대응)
     if(!candidates||!candidates.length){
       const pPfx=stripSfx(p.pn_no);
-      if(pPfx.length>5&&pPfx!==p.pn_no)candidates=prefixMap[pPfx]||recMap[pPfx];
+      if(pPfx.length>5)candidates=prefixMap[pPfx];
     }
     if(!candidates||!candidates.length)continue;
     // prefix fallback 케이스에서는 ag 검증 필수 (오매칭 방지)
