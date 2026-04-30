@@ -42,6 +42,10 @@ export default async function handler(req, res) {
     let system = systemBase || "";
     if (dbContext) {
       system += `\n\n■ 실시간 DB 조회 결과 (사용자 질문 기반 자동 조회)\n${dbContext}\n\n위 데이터를 답변에 적극 활용하세요. 수치를 인용할 때는 구체적으로 제시하세요.`;
+      system += `\n\n■ v6 / v7 모델 사용 가이드 (2026-04-30 Phase A 검토 결과)
+- 화면의 "추천 사정률·투찰금액"은 **v6 (opt_adj + 동적 편향 보정)**가 메인. v7은 백테스트상 핵심 영역(한전·고양시·군부대)에서 MAE +0.10~+0.44 회귀가 확인되어 메인 승격 보류 상태.
+- v7 값(v7_target_rate, v7_p1_entry_pct, v7_confidence, v7_source)은 "1순위 후보권 진입률" 분석시 참고용으로만 인용. 사정률 정확도 자체는 v6를 신뢰.
+- 사용자가 "v7로 추천해달라" 또는 "v7이 정확한가" 물으면: v7은 진입률(후보권 진입)에서는 v6 대비 약 1.6배 우수하지만, 사정률 MAE는 v6 대비 회귀 중이라는 트레이드오프를 반드시 명시.`;
     }
 
     // ─── Claude 호출 ───
@@ -157,7 +161,7 @@ async function queryDB(msg, sbKey) {
   // 패턴 3: 예측/MAE/정확도 관련
   if (/예측|MAE|정확도|오차|매칭|성능/.test(msg)) {
     const preds = await sbQuery(
-      `bid_predictions?match_status=eq.matched&select=ag,at,pred_adj_rate,actual_adj_rate,adj_rate_error,open_date,pn&order=open_date.desc&limit=50`,
+      `bid_predictions?match_status=eq.matched&select=ag,at,pred_adj_rate,actual_adj_rate,adj_rate_error,open_date,pn,v7_target_rate,v7_q1_error,v7_p1_entry_pct,v7_source,v7_confidence&order=open_date.desc&limit=50`,
       sbKey
     );
     if (preds.length > 0) {
@@ -167,7 +171,7 @@ async function queryDB(msg, sbKey) {
       const bias = biasVals.reduce((a, b) => a + b, 0) / biasVals.length;
       const within05 = errors.filter(e => e <= 0.5).length;
 
-      parts.push(`\n예측 성능 (${preds.length}건 매칭):`);
+      parts.push(`\n예측 성능 (${preds.length}건 매칭) — v6 (메인 추천):`);
       parts.push(`  MAE: ${mae.toFixed(4)}%, Bias: ${bias.toFixed(4)}%, ±0.5% 적중: ${within05}/${errors.length} (${Math.round(within05 / errors.length * 100)}%)`);
 
       // 기관유형별 MAE
@@ -177,16 +181,29 @@ async function queryDB(msg, sbKey) {
         if (!byType[p.at]) byType[p.at] = [];
         byType[p.at].push(Math.abs(Number(p.adj_rate_error)));
       });
-      parts.push(`  기관유형별 MAE:`);
+      parts.push(`  기관유형별 MAE (v6):`);
       for (const [t, errs] of Object.entries(byType).sort((a, b) => b[1].length - a[1].length)) {
         const m = errs.reduce((a, b) => a + b, 0) / errs.length;
         parts.push(`    ${t}: ${errs.length}건, MAE ${m.toFixed(4)}%`);
       }
 
+      // v7 비교 (실험 — 백테스트상 v6 대비 회귀 중)
+      const v7Errs = preds.filter(p => p.v7_q1_error != null).map(p => Math.abs(Number(p.v7_q1_error)));
+      if (v7Errs.length > 0) {
+        const v7BiasVals = preds.filter(p => p.v7_q1_error != null).map(p => Number(p.v7_q1_error));
+        const v7Mae = v7Errs.reduce((a, b) => a + b, 0) / v7Errs.length;
+        const v7Bias = v7BiasVals.reduce((a, b) => a + b, 0) / v7BiasVals.length;
+        parts.push(`\nv7 (실험 — 메인 채택 보류):`);
+        parts.push(`  v7 MAE ${v7Mae.toFixed(4)}%, Bias ${v7Bias.toFixed(4)}% (n=${v7Errs.length}). 핵심 영역(한전·고양시·군부대) MAE +0.10~+0.44 회귀 확인되어 v6를 메인으로 유지 중. v7 값은 진입확률·후보권 진입 분석시에만 참고.`);
+      }
+
       // 최근 매칭 건 상세
       parts.push(`  최근 매칭 건:`);
       preds.slice(0, 5).forEach(p => {
-        parts.push(`    · ${p.open_date} | ${(p.pn || "").slice(0, 25)} | 예측 ${Number(p.pred_adj_rate).toFixed(4)}% → 실제 ${Number(p.actual_adj_rate).toFixed(4)}% (오차 ${Number(p.adj_rate_error).toFixed(4)}%)`);
+        const v7Note = p.v7_target_rate != null
+          ? ` [v7 ${Number(p.v7_target_rate).toFixed(4)}%${p.v7_p1_entry_pct != null ? `, 진입 ${(Number(p.v7_p1_entry_pct)*100).toFixed(0)}%` : ""}${p.v7_confidence ? `, ${p.v7_confidence}` : ""}]`
+          : "";
+        parts.push(`    · ${p.open_date} | ${(p.pn || "").slice(0, 25)} | 예측 ${Number(p.pred_adj_rate).toFixed(4)}% → 실제 ${Number(p.actual_adj_rate).toFixed(4)}% (오차 ${Number(p.adj_rate_error).toFixed(4)}%)${v7Note}`);
       });
     }
   }

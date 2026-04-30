@@ -16,6 +16,21 @@ function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onC
 // 취소 공고 식별 — pn 텍스트에 (취소) 또는 [취소] 포함. 매칭 불가 + UI에서 "취소" 라벨로 분리 표시.
 const isCancelledPred=(p)=>!!(p&&p.pn&&/[\(\[]\s*취소\s*[\)\]]/.test(p.pn));
 
+// ★ Phase A v7 검토 (2026-04-30): v7 참고 패널 표시 토글.
+// v6는 메인 추천 그대로, v7은 read-only 비교 정보로만 노출. 핵심 영역 회귀 확인되어 메인 채택은 보류.
+// 환경변수 미설정 시 기본 true (참고 표시). 패널 자체가 부담되면 .env.local에 VITE_USE_V7=false 설정.
+const USE_V7_PANEL=(()=>{const v=import.meta.env?.VITE_USE_V7;return v==null||v===""||v==="true"||v===true})();
+// v7 신뢰도 → 4단계 tier_label 매핑 (DB v_simulator_api_v7와 동일 규칙).
+// high/medium/low + 진입확률(0~1) 임계로 결정. 진입 ≥0.6 & high → ✅, ≥0.4 → 🛡️, ≥0.25 → ⚠️, 그 외 → ⛔.
+const v7TierLabel=(conf,p1)=>{
+  const pct=p1!=null?Number(p1):null;
+  if(pct==null)return null;
+  if(conf==="high"&&pct>=0.6)return{glyph:"✅",label:"강추천",color:"#5dca96",bg:"rgba(93,202,165,0.12)"};
+  if(pct>=0.4)return{glyph:"🛡️",label:"안정권",color:"#a8b4ff",bg:"rgba(168,180,255,0.12)"};
+  if(pct>=0.25)return{glyph:"⚠️",label:"경계",color:"#d4a834",bg:"rgba(212,168,52,0.12)"};
+  return{glyph:"⛔",label:"진입난",color:"#e24b4a",bg:"rgba(226,75,74,0.12)"};
+};
+
 // 계정 배지 (헤더 우측: 이메일 + 로그아웃) — useAuth() 로 Context 에서 받음
 function UserBadge(){
   const {user,signOut}=useAuth();
@@ -1401,6 +1416,49 @@ ${baseInfo}
                 </div>
                 <span style={{fontSize:10,padding:"2px 8px",borderRadius:10,background:confColor+"22",color:confColor,border:"1px solid "+confColor+"44",fontWeight:600,whiteSpace:"nowrap"}}>{confLabel}</span>
               </div>
+              {/* ★ Phase A v7 참고 (실험 — 메인 채택 보류). USE_V7_PANEL 토글로 숨김 가능. v6는 위 메인값 그대로. */}
+              {USE_V7_PANEL&&d.v7_target_rate!=null&&(()=>{
+                const v7Adj=Number(d.v7_target_rate);
+                const v7Bid=d.v7_bid_amount!=null?Number(d.v7_bid_amount):null;
+                const v7P1=d.v7_p1_entry_pct!=null?Number(d.v7_p1_entry_pct):null;
+                const v7Conf=d.v7_confidence||null;
+                const v7Src=d.v7_source||null;
+                const tier=v7TierLabel(v7Conf,v7P1);
+                const dlt=finalAdj!=null?(v7Adj-Number(finalAdj)):null;
+                const confC=v7Conf==="high"?"#5dca96":v7Conf==="medium"?"#d4a834":"#a8b4ff";
+                const srcLabelV7=v7Src==="ag_ba_ot"?"발주사×금액×유형 (1단계)":v7Src==="ot_ba"?"유형×금액 (2단계)":v7Src==="ba"?"금액대 (3단계)":v7Src==="default"?"전체 평균 (4단계)":(v7Src||"—");
+                return<div style={{padding:"10px 16px",background:"rgba(168,180,255,0.05)",borderTop:"1px solid "+C.bdr+"55"}}>
+                  <details>
+                    <summary style={{cursor:"pointer",fontSize:11,fontWeight:600,color:"#a8b4ff",listStyle:"none",display:"flex",alignItems:"center",gap:8,userSelect:"none"}}>
+                      <span style={{fontSize:10,padding:"1px 6px",borderRadius:3,background:"rgba(168,180,255,0.12)",border:"1px solid rgba(168,180,255,0.3)",color:"#a8b4ff"}}>v7 실험</span>
+                      <span>참고용 v7 추천 (메인 채택 보류 · 핵심 영역 회귀 검증 중)</span>
+                      {tier&&<span style={{fontSize:11,padding:"1px 6px",borderRadius:3,background:tier.bg,color:tier.color,fontWeight:600}}>{tier.glyph} {tier.label}</span>}
+                      <span style={{marginLeft:"auto",fontSize:10,color:C.txd}}>▾</span>
+                    </summary>
+                    <div style={{marginTop:8,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                      <div>
+                        <div style={{fontSize:10,color:C.txd,marginBottom:2}}>v7 사정률(100%)</div>
+                        <div style={{fontSize:13,fontWeight:600,color:C.txt,fontFamily:"monospace"}}>{(100+v7Adj).toFixed(4)}%</div>
+                        {dlt!=null&&<div style={{fontSize:9,color:dlt>=0?"#5dca96":"#e24b4a",marginTop:2,fontFamily:"monospace"}}>v6 대비 {dlt>=0?"+":""}{dlt.toFixed(4)}%p</div>}
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,color:C.txd,marginBottom:2}}>v7 투찰금액</div>
+                        <div style={{fontSize:13,fontWeight:600,color:C.txt,fontFamily:"monospace"}}>{v7Bid?tc(v7Bid)+"원":"—"}</div>
+                        <div style={{fontSize:9,color:C.txd,marginTop:2}}>참고만, 메인 투찰값 아님</div>
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,color:C.txd,marginBottom:2}}>1순위 후보권 진입확률</div>
+                        <div style={{fontSize:13,fontWeight:600,color:"#a8b4ff",fontFamily:"monospace"}}>{v7P1!=null?(v7P1*100).toFixed(1)+"%":"—"}</div>
+                        {v7Conf&&<div style={{fontSize:9,marginTop:2}}><span style={{padding:"1px 5px",borderRadius:3,background:confC+"22",color:confC,fontWeight:600}}>신뢰도 {v7Conf}</span></div>}
+                      </div>
+                    </div>
+                    <div style={{marginTop:8,fontSize:10,color:C.txm,lineHeight:1.5,padding:"6px 8px",background:"rgba(0,0,0,0.18)",borderRadius:4}}>
+                      <b style={{color:C.txt}}>소스</b>: {srcLabelV7}
+                      <span style={{marginLeft:8,color:C.txd}}>· v7은 진입률(후보권 진입) 지표에서 v6 대비 약 1.6배 우수하나 사정률 MAE는 한전·고양시·군부대에서 회귀 중. <b style={{color:"#d4a834"}}>실제 투찰값은 위 메인 추천(v6) 사용</b>.</span>
+                    </div>
+                  </details>
+                </div>;
+              })()}
               {/* Phase 23-X: 분산 투찰 권고 (평균 참가자 ≥3,000명 발주유형) */}
               {(()=>{
                 const avgP=AT_AVG_PARTICIPANTS[d.at];
