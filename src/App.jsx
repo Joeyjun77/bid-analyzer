@@ -13,6 +13,9 @@ import { useAuth, getSession } from "./auth.js";
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
 
+// 취소 공고 식별 — pn 텍스트에 (취소) 또는 [취소] 포함. 매칭 불가 + UI에서 "취소" 라벨로 분리 표시.
+const isCancelledPred=(p)=>!!(p&&p.pn&&/[\(\[]\s*취소\s*[\)\]]/.test(p.pn));
+
 // 계정 배지 (헤더 우측: 이메일 + 로그아웃) — useAuth() 로 Context 에서 받음
 function UserBadge(){
   const {user,signOut}=useAuth();
@@ -758,7 +761,10 @@ ${baseInfo}
   const allSel=pagedRecs.length>0&&pagedRecs.every(r=>sel[r.id]);
 
   const compStats=useMemo(()=>{
-    const preds=predictions||[];const matched=preds.filter(p=>p.match_status==="matched");const pending=preds.filter(p=>p.match_status==="pending");
+    const preds=predictions||[];const matched=preds.filter(p=>p.match_status==="matched");
+    // 취소 공고는 "pending"이지만 매칭 불가 → 별도 카운트로 분리, pending에서 제외
+    const cancelled=preds.filter(p=>p.match_status!=="matched"&&p.match_status!=="expired"&&isCancelledPred(p));
+    const pending=preds.filter(p=>p.match_status==="pending"&&!isCancelledPred(p));
     const expired=preds.filter(p=>p.match_status==="expired");
     const errors=matched.filter(p=>p.adj_rate_error!=null).map(p=>Number(p.adj_rate_error));
     const absErrors=errors.map(e=>Math.abs(e));
@@ -767,13 +773,14 @@ ${baseInfo}
     const within05=absErrors.filter(e=>e<=0.5).length;
     const byType={};matched.forEach(p=>{const t=p.at||"기타";if(!byType[t])byType[t]={n:0,errSum:0};byType[t].n++;if(p.adj_rate_error!=null)byType[t].errSum+=Math.abs(p.adj_rate_error)});
     Object.values(byType).forEach(v=>{v.avgErr=v.n?Math.round(v.errSum/v.n*10000)/10000:0});
-    return{total:preds.length,matched:matched.length,pending:pending.length,expired:expired.length,avgErr,bias,within05,byType}},[predictions]);
+    return{total:preds.length,matched:matched.length,pending:pending.length,cancelled:cancelled.length,expired:expired.length,avgErr,bias,within05,byType}},[predictions]);
   const compList=useMemo(()=>{const p=predictions||[];let list;
     // 기본: expired 자동 제외 (명시적 expired 필터 선택 시에만 표시)
     if(compFilter==="matched")list=p.filter(x=>x.match_status==="matched");
-    else if(compFilter==="pending")list=p.filter(x=>x.match_status==="pending");
+    else if(compFilter==="pending")list=p.filter(x=>x.match_status==="pending"&&!isCancelledPred(x));
+    else if(compFilter==="cancelled")list=p.filter(x=>x.match_status!=="matched"&&x.match_status!=="expired"&&isCancelledPred(x));
     else if(compFilter==="expired")list=p.filter(x=>x.match_status==="expired");
-    else list=p.filter(x=>x.match_status!=="expired"); // 전체에서 expired 제외
+    else list=p.filter(x=>x.match_status!=="expired"); // 전체에서 expired 제외 (cancelled는 포함 — 취소 라벨로 표시)
     if(hideYuchal)list=list.filter(x=>!(x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)")));
     if(hideSuui)list=list.filter(x=>!(x.is_negotiation===true&&x.actual_adj_rate==null));
     // Phase 5: 등급 필터
@@ -1275,7 +1282,7 @@ ${baseInfo}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:15,fontWeight:600,color:C.txt,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={d.pn}>{d.pn}</div>
-              <div style={{fontSize:12,color:C.txm,marginTop:3}}>{d.ag} ({d.at}) · {d.open_date||"개찰일 미정"} · <span style={{padding:"2px 6px",borderRadius:4,fontSize:10,background:d.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:d.match_status==="matched"?"#5dca96":"#e24b4a"}}>{d.match_status==="matched"?"매칭":"대기"}</span></div>
+              <div style={{fontSize:12,color:C.txm,marginTop:3}}>{d.ag} ({d.at}) · {d.open_date||"개찰일 미정"} · {(()=>{const isCancD=d.match_status!=="matched"&&d.match_status!=="expired"&&isCancelledPred(d);if(isCancD)return<span style={{padding:"2px 6px",borderRadius:4,fontSize:10,background:"rgba(192,128,64,0.15)",color:"#c08040"}}>취소</span>;return<span style={{padding:"2px 6px",borderRadius:4,fontSize:10,background:d.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:d.match_status==="matched"?"#5dca96":"#e24b4a"}}>{d.match_status==="matched"?"매칭":"대기"}</span>})()}</div>
             </div>
             <div style={{fontSize:20,color:C.txd,cursor:"pointer",lineHeight:1,padding:"0 4px",flexShrink:0}} onClick={()=>{setDetailModal(null);setDetailAi("");setDetailTab("detail")}}>×</div>
           </div>
@@ -1956,6 +1963,7 @@ ${baseInfo}
           <button onClick={()=>{setCompFilter("all");setPredListShow(50)}} style={btnS(compFilter==="all",C.gold)}>전체 ({compStats.total - compStats.expired})</button>
           <button onClick={()=>{setCompFilter("matched");setPredListShow(50)}} style={btnS(compFilter==="matched","#5dca96")}>매칭 ({compStats.matched})</button>
           <button onClick={()=>{setCompFilter("pending");setPredListShow(50)}} style={btnS(compFilter==="pending","#e24b4a")}>대기 ({compStats.pending})</button>
+          {compStats.cancelled>0&&<button onClick={()=>{setCompFilter("cancelled");setPredListShow(50)}} style={btnS(compFilter==="cancelled","#c08040")}>취소 ({compStats.cancelled})</button>}
           {compStats.expired>0&&<button onClick={()=>{setCompFilter("expired");setPredListShow(50)}} style={btnS(compFilter==="expired","#666680")}>만료 ({compStats.expired})</button>}
           <label style={{display:"flex",alignItems:"center",gap:4,marginLeft:8,cursor:"pointer",fontSize:10,color:hideYuchal?C.txd:"#e24b4a"}}>
             <input type="checkbox" checked={hideYuchal} onChange={e=>{setHideYuchal(e.target.checked);setPredListShow(50)}} style={{accentColor:"#e24b4a",width:12,height:12}}/>
@@ -2121,6 +2129,8 @@ ${baseInfo}
               const isSuui=!isYuchal&&p.is_negotiation===true&&p.actual_adj_rate==null;
               // 데이터대기: 경쟁입찰인데 bid_records에 사정률 미입력된 불완전 레코드
               const isDataWait=!isYuchal&&!isSuui&&p.match_status==="matched"&&p.actual_adj_rate==null&&p.actual_winner!=null&&p.actual_winner!=="";
+              // 취소 공고: pn 텍스트 (취소)/[취소] 매치 + 매칭 전 (matched·expired 아님)
+              const isCanc=p.match_status!=="matched"&&p.match_status!=="expired"&&isCancelledPred(p);
               // AI 권장은 이제 최종 추천에 영향 없음 (참고용 탭에서만 확인)
               // Phase 12-C: 발주사별 낙찰 예측
               const agAsmt=assessPrediction(p,agencyStats,agencyPred);
@@ -2159,7 +2169,7 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"right",fontSize:11,whiteSpace:"nowrap"}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":isDataWait?"#8a93a8":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:isDataWait?<span style={{fontSize:10}}>데이터대기</span>:p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui||isDataWait?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
-                <td style={{padding:"6px",textAlign:"center"}}>{isYuchal?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.1)",color:"#e24b4a"}}>유찰</span>:isSuui?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(212,168,52,0.15)",color:"#d4a834"}}>수의</span>:isDataWait?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(138,147,168,0.15)",color:"#8a93a8"}}>데이터대기</span>:<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span>}</td>
+                <td style={{padding:"6px",textAlign:"center"}}>{isYuchal?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.1)",color:"#e24b4a"}}>유찰</span>:isSuui?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(212,168,52,0.15)",color:"#d4a834"}}>수의</span>:isDataWait?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(138,147,168,0.15)",color:"#8a93a8"}}>데이터대기</span>:isCanc?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(192,128,64,0.15)",color:"#c08040"}}>취소</span>:<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span>}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"&&!isYuchal&&!isSuui&&!isDataWait?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>{setDetailModal(p);setDetailTab("detail");setDetailAi(p.ai_advice||"");setDetailAiLoading(false);
                 }} style={{padding:"2px 8px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.25)",borderRadius:4,color:"#a8b4ff",cursor:"pointer"}}>상세</button></td>
