@@ -399,7 +399,7 @@ ${baseInfo}
   // ★ AI 챗봇 시스템 프롬프트 (현재 데이터 통계 동적 포함)
   const buildChatSystem=()=>{
     const ts=allS.ts||{};const typeStats=Object.entries(ts).map(([k,v])=>`${k}: 평균(100%)${(100+Number(v.avg||0)).toFixed(3)}%, std${v.std?.toFixed(3)||0}%, ${v.n||0}건`).join(" / ");
-    const matched=predictions.filter(p=>p.match_status==="matched");
+    const matched=predictions.filter(p=>p.match_status==="matched"&&p.source==='file_upload');
     const mae=matched.length?Math.round(matched.filter(p=>p.adj_rate_error!=null).map(p=>Math.abs(p.adj_rate_error)).reduce((a,b)=>a+b,0)/matched.length*10000)/10000:0;
     return`당신은 한국 공공조달 입찰(전기/통신/소방) 전문 AI 어드바이저입니다.
 
@@ -776,7 +776,7 @@ ${baseInfo}
   const allSel=pagedRecs.length>0&&pagedRecs.every(r=>sel[r.id]);
 
   const compStats=useMemo(()=>{
-    const preds=predictions||[];const matched=preds.filter(p=>p.match_status==="matched");
+    const preds=(predictions||[]).filter(p=>p.source==='file_upload');const matched=preds.filter(p=>p.match_status==="matched");
     // 취소 공고는 "pending"이지만 매칭 불가 → 별도 카운트로 분리, pending에서 제외
     const cancelled=preds.filter(p=>p.match_status!=="matched"&&p.match_status!=="expired"&&isCancelledPred(p));
     const pending=preds.filter(p=>p.match_status==="pending"&&!isCancelledPred(p));
@@ -789,7 +789,7 @@ ${baseInfo}
     const byType={};matched.forEach(p=>{const t=p.at||"기타";if(!byType[t])byType[t]={n:0,errSum:0};byType[t].n++;if(p.adj_rate_error!=null)byType[t].errSum+=Math.abs(p.adj_rate_error)});
     Object.values(byType).forEach(v=>{v.avgErr=v.n?Math.round(v.errSum/v.n*10000)/10000:0});
     return{total:preds.length,matched:matched.length,pending:pending.length,cancelled:cancelled.length,expired:expired.length,avgErr,bias,within05,byType}},[predictions]);
-  const compList=useMemo(()=>{const p=predictions||[];let list;
+  const compList=useMemo(()=>{const p=(predictions||[]).filter(x=>x.source==='file_upload');let list;
     // 기본: expired 자동 제외 (명시적 expired 필터 선택 시에만 표시)
     if(compFilter==="matched")list=p.filter(x=>x.match_status==="matched");
     else if(compFilter==="pending")list=p.filter(x=>x.match_status==="pending"&&!isCancelledPred(x));
