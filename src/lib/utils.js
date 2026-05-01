@@ -289,7 +289,7 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred,floorBen
   const std=ref.std||0.7;
   const noiseFloor=0.642; // 같은 기관 연속건 사정률 차이 중앙값 (51K건 측정)
   const effStd=Math.max(std,noiseFloor); // 최소한 노이즈 바닥 이상
-  const ci70={low:rnd4(ref.med-effStd*0.52),high:rnd4(ref.med+effStd*0.52)};
+  const ci70={low:rnd4(ref.med-effStd*0.95),high:rnd4(ref.med+effStd*0.95)};
   const ci90={low:rnd4(ref.med-effStd*1.28),high:rnd4(ref.med+effStd*1.28)};
 
   // ★ Phase 12-F (2026-04-12 발주사별 예측 강화)
