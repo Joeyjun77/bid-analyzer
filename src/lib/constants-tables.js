@@ -109,7 +109,7 @@ export const AT_AVG_PARTICIPANTS={
   "LH":       3150,
   "수자원공사":1999
 };
-export const PARTICIPANT_THRESHOLD_HIGH=3000;
+export const PARTICIPANT_THRESHOLD_HIGH=2000;
 
 // 금액대 3구간 분류 (WIN_PROB_MATRIX·ROI 용)
 export const tierOf=(amt)=>{const a=Number(amt)||0;return a<3e8?"S":a<1e9?"M":"L"};

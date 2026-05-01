@@ -1463,12 +1463,14 @@ ${baseInfo}
               {(()=>{
                 const avgP=AT_AVG_PARTICIPANTS[d.at];
                 if(!avgP||avgP<PARTICIPANT_THRESHOLD_HIGH)return null;
-                return<div style={{padding:"8px 16px",background:"rgba(226,75,74,0.06)",borderTop:"1px solid "+C.bdr+"55",display:"flex",alignItems:"flex-start",gap:8}}>
-                  <span style={{fontSize:13,lineHeight:1.2,marginTop:1}}>🎲</span>
+                const hit1st={"지자체":"8.5%","군시설":"4.5%","교육청":"14.3%","조달청":"44.4%","LH":"20.0%","수자원공사":"0%"};
+                const hitStr=hit1st[d.at]?` (최근 60일 1위 적중률 ${hit1st[d.at]})`:"";
+                return<div style={{padding:"8px 16px",background:"rgba(226,75,74,0.09)",borderTop:"2px solid #e24b4a55",display:"flex",alignItems:"flex-start",gap:8}}>
+                  <span style={{fontSize:14,lineHeight:1.2,marginTop:1}}>🎲</span>
                   <div style={{flex:1}}>
-                    <div style={{fontSize:11,color:"#e24b4a",fontWeight:600,marginBottom:2}}>분산 투찰 강력 권고 — {d.at} 평균 참가자 약 {avgP.toLocaleString()}명</div>
+                    <div style={{fontSize:11,color:"#e24b4a",fontWeight:700,marginBottom:3}}>분산 투찰 강력 권고 — {d.at} 평균 참가자 약 {avgP.toLocaleString()}명{hitStr}</div>
                     <div style={{fontSize:10,color:C.txm,lineHeight:1.5}}>
-                      복수예비가 C(15,4) 추첨 특성상 <b style={{color:C.txt}}>단일 사정률 1위 적중 확률은 통계적 한계</b>(자사 478건 0승 분석 결과). 동일 공고에 여러 사정률 후보로 분산 투찰 시 EV 약 1.5~2배 증가. 위 1·2순위 후보를 활용해 분산 투찰을 적극 검토하십시오.
+                      복수예비가 C(15,4) 추첨 특성상 <b style={{color:C.txt}}>단일 사정률 단독 투찰 시 1위 적중은 통계적 한계</b>. 동일 공고에 여러 사정률 후보로 분산 투찰 시 EV 약 1.5~2배 증가. 위 1·2순위 후보를 활용해 분산 투찰을 적극 검토하십시오.
                     </div>
                   </div>
                 </div>
