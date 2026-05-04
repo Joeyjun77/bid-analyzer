@@ -374,6 +374,37 @@ export async function sbFetchAgencyPredictor(){
 export async function sbFetchSimulator(){
   try{const res=await authedFetch("/rest/v1/v_simulator_api?select=*");if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
+// ─── v7.2 이번 주 타깃 뷰 ─────────────────────────────────
+// v_this_week_targets_v72: match_status IS NULL & 최근 7일 공고에 predict_v7_2() 적용한 뷰
+// pred_id → v7.2 3종 추천 매핑용. 로드 실패는 빈 map 반환 (graceful degradation).
+export async function sbFetchV72Targets(){
+  try{
+    const res=await authedFetch("/rest/v1/v_this_week_targets_v72?select=pred_id,사정률_공격,사정률_균형,사정률_안전,투찰금액_공격,투찰금액_균형,투찰금액_안전,확률_공격,확률_균형,확률_안전,금액대,공사성격_적용,신뢰도,표본수,소스,발주사_오프셋,변동성_조정,tier,tier_label");
+    if(!res.ok)return{};
+    const rows=await res.json();
+    if(!Array.isArray(rows))return{};
+    const map={};
+    for(const r of rows){
+      if(r.pred_id==null)continue;
+      map[r.pred_id]={
+        aggressive:{rate:r["사정률_공격"],amount:r["투찰금액_공격"],probability:r["확률_공격"]??85},
+        balanced:{rate:r["사정률_균형"],amount:r["투찰금액_균형"],probability:r["확률_균형"]??60},
+        safe:{rate:r["사정률_안전"],amount:r["투찰금액_안전"],probability:r["확률_안전"]??35},
+        bucket:r["금액대"],
+        appliedWorkCat:r["공사성격_적용"],
+        confidence:r["신뢰도"],
+        sampleSize:r["표본수"],
+        source:r["소스"],
+        agencyOffset:r["발주사_오프셋"]??0,
+        volatilityAdj:r["변동성_조정"]??0,
+        tier:r["tier"],
+        tierLabel:r["tier_label"],
+      };
+    }
+    return map;
+  }catch(e){return{}}
+}
+
 // 나라장터 공고 목록 (bid_notices)
 export async function sbFetchNotices(){
   try{const res=await authedFetch("/rest/v1/bid_notices?select=id,pn,pn_no,ag,at,ep,ba,av,od,status,is_target,prediction_id,api_fetched_at&order=od.asc&limit=1000");if(!res.ok)return[];return await res.json()}catch(e){return[]}

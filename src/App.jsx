@@ -7,7 +7,7 @@ import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2 } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -223,6 +223,10 @@ export default function App(){
   const[onlyPrimary,setOnlyPrimary]=useState(false); // 주력 발주사만 보기
   // Phase 14-3: 분산 투찰 시뮬레이터 (prediction_id → {strategy_label, ev_gain_eok, ...})
   const[simulatorMap,setSimulatorMap]=useState({});
+  // ★ v7.2: 이번 주 타깃 뷰 (pred_id → {aggressive, balanced, safe, tier, ...})
+  const[v72Map,setV72Map]=useState({});
+  // ★ v7.2: 사용자 전략 선택 (pred_id → 'aggressive'|'balanced'|'safe')
+  const[v72Selection,setV72Selection]=useState({});
   // ★ AI 챗봇 (localStorage 세션 관리)
   const[chatSessions,setChatSessions]=useState(()=>{try{return JSON.parse(localStorage.getItem("bid_chat_sessions")||"[]")}catch(e){return[]}});
   const[chatSid,setChatSid]=useState(()=>localStorage.getItem("bid_chat_active")||"");
@@ -529,6 +533,8 @@ ${baseInfo}
     }catch(e){setSimulatorMap({})}
     // 나라장터 공고 로드
     try{const nots=await sbFetchNotices();setNotices(nots||[])}catch(e){setNotices([])}
+    // ★ v7.2: 이번 주 타깃 뷰 로드 (pred_id → 3종 추천 맵)
+    try{const v72=await sbFetchV72Targets();setV72Map(v72||{})}catch(e){setV72Map({})}
     setDbLoading(false)
   })()},[refreshStats]);
 
@@ -1416,8 +1422,70 @@ ${baseInfo}
                 </div>
                 <span style={{fontSize:10,padding:"2px 8px",borderRadius:10,background:confColor+"22",color:confColor,border:"1px solid "+confColor+"44",fontWeight:600,whiteSpace:"nowrap"}}>{confLabel}</span>
               </div>
-              {/* ★ Phase A v7 참고 (실험 — 메인 채택 보류). USE_V7_PANEL 토글로 숨김 가능. v6는 위 메인값 그대로. */}
-              {USE_V7_PANEL&&d.v7_target_rate!=null&&(()=>{
+              {/* ★ v7.2: 3종 전략 추천 (공격/균형/안전) — 데이터 없으면 v7 참고 패널로 fallback */}
+              {(()=>{
+                const v72=v72Map[d.id];
+                if(v72){
+                  // ── v7.2 메인 패널 ──
+                  const selKey=v72Selection[d.id]||"balanced";
+                  const s=v72[selKey];
+                  const confC=v72.confidence==="high"?"#5dca96":v72.confidence==="medium"?"#d4a834":"#a8b4ff";
+                  const srcV72=v72.source==="v72_3d_match"?"3D 매칭 (발주유형×금액×공사성격)":v72.source==="v72_2d_v71_based"?"2D fallback (v7.1 기반)":v72.source==="v72_at_fallback"?"발주유형 평균":"전체 fallback";
+                  const stabs=[{key:"aggressive",label:"공격",emoji:"🔥"},{key:"balanced",label:"균형",emoji:"⚖️"},{key:"safe",label:"안전",emoji:"🛡️"}];
+                  return<div style={{padding:"10px 16px",background:"rgba(59,130,246,0.05)",borderTop:"1px solid rgba(59,130,246,0.2)"}}>
+                    {/* 헤더 */}
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                      <span style={{fontSize:10,padding:"1px 6px",borderRadius:3,background:"rgba(59,130,246,0.18)",border:"1px solid rgba(59,130,246,0.4)",color:"#93c5fd",fontWeight:700}}>v7.2</span>
+                      <span style={{fontSize:11,fontWeight:600,color:"#93c5fd"}}>1순위 후보권 타깃 — 3종 전략 추천</span>
+                      {v72.tierLabel&&<span style={{marginLeft:"auto",fontSize:11,padding:"2px 8px",borderRadius:10,background:"rgba(59,130,246,0.12)",color:"#93c5fd",fontWeight:600}}>{v72.tierLabel}</span>}
+                    </div>
+                    {/* 전략 탭 */}
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
+                      {stabs.map(st=>{
+                        const isActive=selKey===st.key;
+                        const prob=Number((v72[st.key]||{}).probability||0);
+                        return<button key={st.key}
+                          onClick={()=>setV72Selection(p=>({...p,[d.id]:st.key}))}
+                          style={{position:"relative",background:isActive?"rgba(59,130,246,0.18)":"rgba(0,0,0,0.2)",border:"2px solid "+(isActive?"#3b82f6":"rgba(59,130,246,0.15)"),borderRadius:8,padding:"8px 4px",cursor:"pointer",textAlign:"center"}}>
+                          {st.key==="balanced"&&<span style={{position:"absolute",top:-7,right:4,fontSize:9,background:"#10b981",color:"#fff",padding:"1px 5px",borderRadius:5,fontWeight:700}}>추천</span>}
+                          <div style={{fontSize:18,marginBottom:2}}>{st.emoji}</div>
+                          <div style={{fontSize:11,color:isActive?"#e0f2fe":C.txm,fontWeight:isActive?600:400}}>{st.label}</div>
+                          <div style={{fontSize:14,fontWeight:700,color:isActive?"#93c5fd":C.txm}}>{prob.toFixed(0)}%</div>
+                        </button>;
+                      })}
+                    </div>
+                    {/* 선택 전략 3값 */}
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                      <div style={{background:"rgba(59,130,246,0.10)",borderRadius:6,padding:"8px 10px",borderLeft:"3px solid #3b82f6"}}>
+                        <div style={{fontSize:10,color:C.txd,marginBottom:2}}>추천 사정률(100%)</div>
+                        <div style={{fontSize:14,fontWeight:700,color:"#93c5fd",fontFamily:"monospace"}}>{s&&s.rate!=null?(100+Number(s.rate)).toFixed(4)+"%":"—"}</div>
+                      </div>
+                      <div style={{background:"rgba(59,130,246,0.10)",borderRadius:6,padding:"8px 10px",borderLeft:"3px solid #3b82f6"}}>
+                        <div style={{fontSize:10,color:C.txd,marginBottom:2}}>추천 투찰금액</div>
+                        <div style={{fontSize:14,fontWeight:700,color:"#93c5fd",fontFamily:"monospace"}}>{s&&s.amount!=null?tc(Number(s.amount))+"원":"—"}</div>
+                      </div>
+                      <div style={{background:Number((s||{}).probability||0)>=60?"rgba(16,185,129,0.10)":"rgba(168,180,255,0.08)",borderRadius:6,padding:"8px 10px",borderLeft:"3px solid "+(Number((s||{}).probability||0)>=60?"#10b981":"#a8b4ff")}}>
+                        <div style={{fontSize:10,color:C.txd,marginBottom:2}}>진입 확률</div>
+                        <div style={{fontSize:14,fontWeight:700,color:Number((s||{}).probability||0)>=60?"#34d399":"#a8b4ff",fontFamily:"monospace"}}>{Number((s||{}).probability||0).toFixed(0)}%</div>
+                        <div style={{fontSize:9,color:C.txd,marginTop:1}}>1순위 후보권 진입 추정</div>
+                      </div>
+                    </div>
+                    {/* 진단 (collapsible) */}
+                    <details>
+                      <summary style={{cursor:"pointer",fontSize:10,color:C.txd,userSelect:"none",padding:"4px 0"}}>예측 근거 · {srcV72}</summary>
+                      <div style={{marginTop:6,display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:10,color:C.txm,background:"rgba(0,0,0,0.15)",borderRadius:4,padding:"6px 8px"}}>
+                        <div><span style={{color:C.txd}}>셀: </span>{d.at} × {v72.bucket}{v72.appliedWorkCat&&v72.appliedWorkCat!=="미분류"?` × ${v72.appliedWorkCat}`:""}</div>
+                        <div><span style={{color:C.txd}}>표본: </span>{v72.sampleSize}건</div>
+                        <div><span style={{color:C.txd}}>신뢰도: </span><span style={{color:confC,fontWeight:600}}>{v72.confidence}</span></div>
+                        {v72.agencyOffset!==0&&<div><span style={{color:C.txd}}>발주사 오프셋: </span><span style={{fontFamily:"monospace"}}>{Number(v72.agencyOffset)>=0?"+":""}{Number(v72.agencyOffset).toFixed(4)}%</span></div>}
+                        {v72.volatilityAdj!==0&&<div><span style={{color:C.txd}}>변동성 조정: </span><span style={{fontFamily:"monospace"}}>{Number(v72.volatilityAdj).toFixed(4)}%</span></div>}
+                      </div>
+                    </details>
+                    <div style={{marginTop:6,fontSize:9,color:C.txd,lineHeight:1.5}}>백테스트 113건: 균형 69% / 공격 84.1% 진입 · MAE 0.610% (노이즈 플로어 도달)</div>
+                  </div>;
+                }
+                // ── v7 fallback 패널 (v7.2 범위 밖 — 매칭완료 or 7일 이상 경과) ──
+                if(!USE_V7_PANEL||d.v7_target_rate==null)return null;
                 const v7Adj=Number(d.v7_target_rate);
                 const v7Bid=d.v7_bid_amount!=null?Number(d.v7_bid_amount):null;
                 const v7P1=d.v7_p1_entry_pct!=null?Number(d.v7_p1_entry_pct):null;
@@ -1430,8 +1498,8 @@ ${baseInfo}
                 return<div style={{padding:"10px 16px",background:"rgba(168,180,255,0.05)",borderTop:"1px solid "+C.bdr+"55"}}>
                   <details>
                     <summary style={{cursor:"pointer",fontSize:11,fontWeight:600,color:"#a8b4ff",listStyle:"none",display:"flex",alignItems:"center",gap:8,userSelect:"none"}}>
-                      <span style={{fontSize:10,padding:"1px 6px",borderRadius:3,background:"rgba(168,180,255,0.12)",border:"1px solid rgba(168,180,255,0.3)",color:"#a8b4ff"}}>v7 실험</span>
-                      <span>참고용 v7 추천 (메인 채택 보류 · 핵심 영역 회귀 검증 중)</span>
+                      <span style={{fontSize:10,padding:"1px 6px",borderRadius:3,background:"rgba(168,180,255,0.12)",border:"1px solid rgba(168,180,255,0.3)",color:"#a8b4ff"}}>v7 참고</span>
+                      <span>v7 추천 (v7.2 범위 밖 공고 — 매칭 완료 또는 7일 경과)</span>
                       {tier&&<span style={{fontSize:11,padding:"1px 6px",borderRadius:3,background:tier.bg,color:tier.color,fontWeight:600}}>{tier.glyph} {tier.label}</span>}
                       <span style={{marginLeft:"auto",fontSize:10,color:C.txd}}>▾</span>
                     </summary>
@@ -1444,7 +1512,6 @@ ${baseInfo}
                       <div>
                         <div style={{fontSize:10,color:C.txd,marginBottom:2}}>v7 투찰금액</div>
                         <div style={{fontSize:13,fontWeight:600,color:C.txt,fontFamily:"monospace"}}>{v7Bid?tc(v7Bid)+"원":"—"}</div>
-                        <div style={{fontSize:9,color:C.txd,marginTop:2}}>참고만, 메인 투찰값 아님</div>
                       </div>
                       <div>
                         <div style={{fontSize:10,color:C.txd,marginBottom:2}}>1순위 후보권 진입확률</div>
@@ -1454,7 +1521,6 @@ ${baseInfo}
                     </div>
                     <div style={{marginTop:8,fontSize:10,color:C.txm,lineHeight:1.5,padding:"6px 8px",background:"rgba(0,0,0,0.18)",borderRadius:4}}>
                       <b style={{color:C.txt}}>소스</b>: {srcLabelV7}
-                      <span style={{marginLeft:8,color:C.txd}}>· v7은 진입률(후보권 진입) 지표에서 v6 대비 약 1.6배 우수하나 사정률 MAE는 한전·고양시·군부대에서 회귀 중. <b style={{color:"#d4a834"}}>실제 투찰값은 위 메인 추천(v6) 사용</b>.</span>
                     </div>
                   </details>
                 </div>;
