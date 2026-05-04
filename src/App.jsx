@@ -7,7 +7,7 @@ import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -227,6 +227,8 @@ export default function App(){
   const[v72Map,setV72Map]=useState({});
   // ★ v7.2: 사용자 전략 선택 (pred_id → 'aggressive'|'balanced'|'safe')
   const[v72Selection,setV72Selection]=useState({});
+  // ★ 발주사 이력: canonical_ag → {nRaw, nFiltered, p10~p75, mean, std, latestOd, layer}
+  const[agencyHistMap,setAgencyHistMap]=useState({});
   // ★ AI 챗봇 (localStorage 세션 관리)
   const[chatSessions,setChatSessions]=useState(()=>{try{return JSON.parse(localStorage.getItem("bid_chat_sessions")||"[]")}catch(e){return[]}});
   const[chatSid,setChatSid]=useState(()=>localStorage.getItem("bid_chat_active")||"");
@@ -540,6 +542,12 @@ ${baseInfo}
 
   // 예측 탭 진입 시 자동 새로고침
   useEffect(()=>{if(tab==="predict"&&!dbLoading){refreshPredictions()}},[tab,dbLoading]);
+  // ★ 발주사 이력: predictions 변경 시 canonical_ag 배치 통계 로드
+  useEffect(()=>{(async()=>{
+    const ags=[...new Set(predictions.map(p=>p.canonical_ag).filter(Boolean))];
+    if(!ags.length)return;
+    try{const hist=await sbFetchAgencyHistMap(ags);setAgencyHistMap(hist||{})}catch(e){setAgencyHistMap({})}
+  })()},[predictions]);
 
   // ★ v7-ops-4B: 모델 검증 탭 진입 시 1회 로드
   useEffect(()=>{
@@ -1547,6 +1555,48 @@ ${baseInfo}
                       <b style={{color:C.txt}}>소스</b>: {srcLabelV7}
                     </div>
                   </details>
+                </div>;
+              })()}
+              {/* ★ 발주사 이력 분석 패널 */}
+              {(()=>{
+                const hist=d.canonical_ag?agencyHistMap[d.canonical_ag]:null;
+                if(!hist||hist.layer==='insufficient')return null;
+                const hP10=hist.p10-100,hP25=hist.p25-100,hP50=hist.p50-100,hP75=hist.p75-100;
+                const v6InRange=finalAdj!=null&&finalAdj>=hP10&&finalAdj<=hP75;
+                const v6VsP50=finalAdj!=null?finalAdj-hP50:null;
+                const rangeSpan=hP75-hP10||0.01;
+                const toX=(v)=>Math.max(0,Math.min(100,((v-hP10)/rangeSpan)*100));
+                return<div style={{padding:"10px 16px",background:"rgba(234,179,8,0.05)",borderTop:"1px solid rgba(234,179,8,0.15)"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                    <span style={{fontSize:10,padding:"1px 6px",borderRadius:3,background:"rgba(234,179,8,0.15)",border:"1px solid rgba(234,179,8,0.35)",color:"#fbbf24",fontWeight:700}}>발주사 이력</span>
+                    <span style={{fontSize:11,fontWeight:600,color:"#fbbf24"}}>최근 {hist.nFiltered}건 낙찰 분포</span>
+                    {hist.layer==='ref'&&<span style={{fontSize:10,color:"#f97316"}}>⚠ 참고용</span>}
+                    <span style={{marginLeft:"auto",fontSize:10,color:C.txd}}>{hist.latestOd} 기준</span>
+                  </div>
+                  {/* P10~P75 수치 */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:5,marginBottom:8}}>
+                    {[["P10",hP10,"#f97316"],["P25",hP25,"#fbbf24"],["P50",hP50,"#34d399"],["P75",hP75,"#a8b4ff"]].map(([lbl,v,c])=>(
+                      <div key={lbl} style={{background:"rgba(0,0,0,0.2)",borderRadius:4,padding:"5px 6px",borderLeft:"2px solid "+c}}>
+                        <div style={{fontSize:9,color:C.txd}}>{lbl}</div>
+                        <div style={{fontSize:12,fontWeight:700,color:c,fontFamily:"monospace"}}>{(100+v).toFixed(3)}%</div>
+                        <div style={{fontSize:9,color:C.txd}}>{v>=0?"+":""}{v.toFixed(4)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* 범위 바 시각화 */}
+                  <div style={{position:"relative",height:18,marginBottom:5,background:"rgba(0,0,0,0.12)",borderRadius:3,overflow:"hidden"}}>
+                    <div style={{position:"absolute",top:"50%",left:"0%",width:"100%",height:6,marginTop:-3,background:"rgba(251,191,36,0.12)",borderRadius:3}}/>
+                    <div style={{position:"absolute",top:"50%",left:toX(hP25)+"%",width:Math.max(1,toX(hP50)-toX(hP25))+"%",height:6,marginTop:-3,background:"rgba(251,191,36,0.4)",borderRadius:2}}/>
+                    <div style={{position:"absolute",top:"50%",left:toX(hP50)-0.5+"%",width:2,height:12,marginTop:-6,background:"#fbbf24",borderRadius:1}}/>
+                    {finalAdj!=null&&<div style={{position:"absolute",top:"50%",left:toX(finalAdj)-1+"%",width:3,height:14,marginTop:-7,background:v6InRange?"#5dca96":"#e24b4a",borderRadius:1,zIndex:1}}/>}
+                  </div>
+                  <div style={{fontSize:9,color:C.txd,display:"flex",gap:10,flexWrap:"wrap",marginBottom:4}}>
+                    <span><span style={{color:"#fbbf24"}}>━</span> 이력 P25~P50</span>
+                    {finalAdj!=null&&<span><span style={{color:v6InRange?"#5dca96":"#e24b4a"}}>▐</span> v6 {v6InRange?"✓ 이력 범위 내":v6VsP50!=null&&v6VsP50<0?"▼ 이력 대비 낮음":"▲ 이력 대비 높음"}</span>}
+                  </div>
+                  {v6VsP50!=null&&<div style={{fontSize:10,color:C.txm}}>
+                    v6 {finalAdj>=0?"+":""}{finalAdj.toFixed(4)}% vs 이력중앙 P50 {hP50>=0?"+":""}{hP50.toFixed(4)}% → 편차 {v6VsP50>=0?"+":""}{v6VsP50.toFixed(4)}%p · std {hist.std.toFixed(4)}
+                  </div>}
                 </div>;
               })()}
               {/* Phase 23-X: 분산 투찰 권고 (평균 참가자 ≥3,000명 발주유형) */}

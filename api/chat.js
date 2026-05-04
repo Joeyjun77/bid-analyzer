@@ -122,12 +122,20 @@ async function queryDB(msg, sbKey) {
         });
         
         for (const [ag, records] of Object.entries(agGroups)) {
-          const adjs = records.map(r => Math.round((r.br1 - 100) * 10000) / 10000);
-          const avg = adjs.reduce((a, b) => a + b, 0) / adjs.length;
-          const std = Math.sqrt(adjs.reduce((a, b) => a + (b - avg) ** 2, 0) / adjs.length);
+          const adjs = records.map(r => Math.round((r.br1 - 100) * 10000) / 10000).sort((a,b)=>a-b);
+          const n = adjs.length;
+          const avg = adjs.reduce((a, b) => a + b, 0) / n;
+          const std = Math.sqrt(adjs.reduce((a, b) => a + (b - avg) ** 2, 0) / n);
+          const p10 = adjs[Math.floor(n * 0.10)] ?? adjs[0];
+          const p25 = adjs[Math.floor(n * 0.25)] ?? adjs[0];
+          const p50 = adjs[Math.floor(n * 0.50)] ?? adjs[0];
+          const p75 = adjs[Math.floor(n * 0.75)] ?? adjs[n-1];
 
-          parts.push(`\n[${ag}] 최근 ${records.length}건 분석: 평균 사정률 ${avg.toFixed(4)}%, 표준편차 ${std.toFixed(4)}%`);
-          
+          parts.push(`\n[${ag}] 최근 ${n}건 낙찰 이력 분석:`);
+          parts.push(`  분위수: P10=${p10>=0?"+":""}${p10.toFixed(4)}% | P25=${p25>=0?"+":""}${p25.toFixed(4)}% | P50=${p50>=0?"+":""}${p50.toFixed(4)}% | P75=${p75>=0?"+":""}${p75.toFixed(4)}%`);
+          parts.push(`  평균 ${avg.toFixed(4)}%, 표준편차 ${std.toFixed(4)}%`);
+          parts.push(`  [이력 기반 전략] 공격(P10): ${(100+p10).toFixed(4)}% / 균형(P25): ${(100+p25).toFixed(4)}% / 안전(P50): ${(100+p50).toFixed(4)}%`);
+
           const recent5 = records.slice(0, 5);
           parts.push(`\n최근 낙찰 건:`);
           parts.push(`| 개찰일 | 공고명 | 사정률 | 참여 | 1순위 |`);

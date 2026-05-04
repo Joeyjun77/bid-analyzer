@@ -405,6 +405,33 @@ export async function sbFetchV72Targets(){
   }catch(e){return{}}
 }
 
+// ─── 발주사별 최근 15건 낙찰 이력 통계 (배치 RPC) ─────────────────
+// canonical_ag[] → map: canonical_ag → {nRaw, nFiltered, p10~p75, mean, std, latestOd, layer}
+// layer: 'active'(n_filtered≥8) / 'ref'(n_filtered≥4) / 'insufficient'
+export async function sbFetchAgencyHistMap(canonicalAgs){
+  if(!canonicalAgs||!canonicalAgs.length)return{};
+  try{
+    const unique=[...new Set(canonicalAgs.filter(Boolean))];
+    const res=await authedFetch("/rest/v1/rpc/get_agency_hist_stats_batch",{
+      method:"POST",headers:JSON_H,body:JSON.stringify({p_ags:unique})
+    });
+    if(!res.ok)return{};
+    const rows=await res.json();
+    if(!Array.isArray(rows))return{};
+    const map={};
+    for(const r of rows){
+      if(!r.canonical_ag)continue;
+      map[r.canonical_ag]={
+        nRaw:Number(r.n_raw),nFiltered:Number(r.n_filtered),
+        p10:Number(r.p10),p25:Number(r.p25),p50:Number(r.p50),p75:Number(r.p75),
+        mean:Number(r.mean_br1),std:Number(r.std_br1),
+        latestOd:r.latest_od,layer:r.layer,
+      };
+    }
+    return map;
+  }catch(e){return{}}
+}
+
 // 나라장터 공고 목록 (bid_notices)
 export async function sbFetchNotices(){
   try{const res=await authedFetch("/rest/v1/bid_notices?select=id,pn,pn_no,ag,at,ep,ba,av,od,status,is_target,prediction_id,api_fetched_at&order=od.asc&limit=1000");if(!res.ok)return[];return await res.json()}catch(e){return[]}
