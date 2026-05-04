@@ -983,6 +983,18 @@ ${baseInfo}
 
     {/* ═══ 대시보드 탭 ═══ */}
     {tab==="dash"&&<div>
+      {/* 시스템 버전 배너 */}
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",marginBottom:12,background:"rgba(0,0,0,0.18)",border:"1px solid "+C.bdr,borderRadius:8,fontSize:11,flexWrap:"wrap"}}>
+        <span style={{fontWeight:700,color:C.gold,letterSpacing:0.5}}>bid-analyzer</span>
+        <span style={{color:C.bdr}}>|</span>
+        <span style={{color:C.txd}}>투찰 결정 가이드</span>
+        <span style={{padding:"1px 7px",borderRadius:4,background:"rgba(93,202,165,0.15)",color:"#5dca96",fontWeight:700,fontFamily:"monospace"}}>v6</span>
+        <span style={{color:C.txd,fontSize:10}}>opt_adj + 동적 편향 보정 · 메인</span>
+        <span style={{color:C.bdr}}>|</span>
+        <span style={{color:C.txd}}>1순위 후보권 타깃팅</span>
+        <span style={{padding:"1px 7px",borderRadius:4,background:"rgba(59,130,246,0.18)",color:"#93c5fd",fontWeight:700,fontFamily:"monospace"}}>v7.2</span>
+        <span style={{color:C.txd,fontSize:10}}>3D 캘리브레이션 + 확률 분포 3종 · 진입률 69%/84.1%</span>
+      </div>
       {/* 드롭존 */}
       <div style={{border:`2px dashed ${drag?C.gold:C.bdr}`,borderRadius:10,padding:"20px",textAlign:"center",cursor:busy?"default":"pointer",background:drag?"rgba(212,168,52,0.04)":"transparent",marginBottom:16}}
         onDrop={e=>{e.preventDefault();setDrag(false);if(!busy)loadFiles(e.dataTransfer.files)}} onDragOver={e=>{e.preventDefault();if(!busy)setDrag(true)}} onDragLeave={()=>setDrag(false)}
@@ -1255,6 +1267,18 @@ ${baseInfo}
 
     {/* ═══ 예측 탭 (개편: 시뮬레이션 분리 + 통합 리스트 + 상세 모달) ═══ */}
     {tab==="predict"&&<div>
+      {/* 시스템 버전 배너 */}
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",marginBottom:12,background:"rgba(0,0,0,0.18)",border:"1px solid "+C.bdr,borderRadius:8,fontSize:11,flexWrap:"wrap"}}>
+        <span style={{fontWeight:700,color:C.gold,letterSpacing:0.5}}>bid-analyzer</span>
+        <span style={{color:C.bdr}}>|</span>
+        <span style={{color:C.txd}}>투찰 결정 가이드</span>
+        <span style={{padding:"1px 7px",borderRadius:4,background:"rgba(93,202,165,0.15)",color:"#5dca96",fontWeight:700,fontFamily:"monospace"}}>v6</span>
+        <span style={{color:C.txd,fontSize:10}}>opt_adj + 동적 편향 보정 · 메인</span>
+        <span style={{color:C.bdr}}>|</span>
+        <span style={{color:C.txd}}>1순위 후보권 타깃팅</span>
+        <span style={{padding:"1px 7px",borderRadius:4,background:"rgba(59,130,246,0.18)",color:"#93c5fd",fontWeight:700,fontFamily:"monospace"}}>v7.2</span>
+        <span style={{color:C.txd,fontSize:10}}>3D 캘리브레이션 + 확률 분포 3종 · 진입률 69%/84.1%</span>
+      </div>
 
       {/* ★ 상세 모달 — Phase 5.6 탭 기반 재설계 */}
       {detailModal&&(()=>{
