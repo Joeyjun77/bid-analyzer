@@ -7,7 +7,7 @@ import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./lib/utils.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -227,6 +227,8 @@ export default function App(){
   const[v72Map,setV72Map]=useState({});
   // ★ v7.2: 사용자 전략 선택 (pred_id → 'aggressive'|'balanced'|'safe')
   const[v72Selection,setV72Selection]=useState({});
+  // ★ v8: pred_id → {rate, p25, p50, p75, confidence, sampleSize, scope, source}
+  const[v8Map,setV8Map]=useState({});
   // ★ 발주사 이력: canonical_ag → {nRaw, nFiltered, p10~p75, mean, std, latestOd, layer}
   const[agencyHistMap,setAgencyHistMap]=useState({});
   // ★ AI 챗봇 (localStorage 세션 관리)
@@ -537,6 +539,8 @@ ${baseInfo}
     try{const nots=await sbFetchNotices();setNotices(nots||[])}catch(e){setNotices([])}
     // ★ v7.2: 이번 주 타깃 뷰 로드 (pred_id → 3종 추천 맵)
     try{const v72=await sbFetchV72Targets();setV72Map(v72||{})}catch(e){setV72Map({})}
+    // ★ v8: 전체 예측 v8 사정률 맵 로드
+    try{const v8=await sbFetchV8Predictions();setV8Map(v8||{})}catch(e){setV8Map({})}
     setDbLoading(false)
   })()},[refreshStats]);
 
@@ -2294,11 +2298,12 @@ ${baseInfo}
         </div>
         {compList.length>0?<div style={{overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"5%"}}/><col style={{width:"11%"}}/><col style={{width:"9%"}}/><col style={{width:"8%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"6%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
+            <colgroup><col style={{width:"4%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
             <thead>
               <tr><th colSpan={1} style={{padding:"4px 6px",fontSize:10,color:"#e24b4a",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"center",letterSpacing:1}}>P12</th>
                 <th colSpan={6} style={{padding:"4px 6px",fontSize:10,color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>투찰 전 추천</th>
                 <th colSpan={3} style={{padding:"4px 6px",fontSize:10,color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>입찰 후 결과</th>
+                <th colSpan={2} style={{padding:"4px 6px",fontSize:10,color:"#5dca96",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>v8</th>
                 <th colSpan={2} style={{padding:"4px 6px",fontSize:10,borderBottom:"1px solid "+C.bdr+"44"}}></th></tr>
               <tr style={{background:C.bg3}}>
               <th style={{padding:"7px 4px",textAlign:"center",color:"#e24b4a",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}} title="발주사별 낙찰 예측 (P1~P5)">타깃</th>
@@ -2310,6 +2315,8 @@ ${baseInfo}
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
               <th style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제 1위 사정률(100%)</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>오차</th>
+              <th style={{padding:"7px 4px",textAlign:"right",color:"#5dca96",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}} title="v8 예측 사정률 (발주사→발주유형→전체 fallback)">v8 사정률(100%)</th>
+              <th style={{padding:"7px 4px",textAlign:"right",color:"#5dca96",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}} title="v8 사정률 - 실제 1위 사정률">v8 오차</th>
               <SortTh label="상태" sortKey="match_status" current={predSort} setCurrent={setPredSort} align="center"/>
               <th style={{padding:"7px 4px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>낙찰</th>
               <th style={{padding:"7px 4px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}></th>
@@ -2318,6 +2325,11 @@ ${baseInfo}
               // Phase 5.6: 통합 최종 추천 (모달과 동일 로직: AI > Enhanced > opt_adj > pred)
               const finalRec=getFinalRecommendation(p);
               const finalAdj=finalRec.adj;const finalBid=finalRec.bid;const finalBid1st=finalRec.bid1st;
+              // v8 사정률
+              const v8Info=v8Map[p.id]||null;
+              const v8Rate=v8Info?.rate??null;
+              const v8Err=(v8Rate!=null&&p.actual_adj_rate!=null)?v8Rate-Number(p.actual_adj_rate):null;
+              const v8ErrColor=v8Err==null?C.txd:(Math.abs(v8Err)<0.3?"#5dca96":Math.abs(v8Err)<1?"#d4a834":"#e24b4a");
               // Phase 23-5: 실측 방향 힌트 (리스트용, 셀 폭 고려해 글리프 축소)
               const biasArrow=getBiasArrow(predBiasMap,{at:p.at,ag:p.ag,ba:p.ba});
               const optErr=(finalAdj!=null&&p.actual_adj_rate!=null)?Number(finalAdj)-Number(p.actual_adj_rate):null;
@@ -2369,6 +2381,10 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"right",fontSize:11,whiteSpace:"nowrap"}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":isDataWait?"#8a93a8":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:isDataWait?<span style={{fontSize:10}}>데이터대기</span>:p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui||isDataWait?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:"#5dca96"}} title={v8Info?`소스: ${v8Info.source} · 범위: ${v8Info.scope} · 표본: ${v8Info.sampleSize}건 · 신뢰도: ${v8Info.confidence}`:""}>
+                  {v8Rate!=null?(100+v8Rate).toFixed(4)+"%":<span style={{color:C.txd,fontSize:10}}>—</span>}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:v8ErrColor,fontWeight:600}}>
+                  {isYuchal||isSuui||isDataWait?"—":v8Err!=null?v8Err.toFixed(4):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{isYuchal?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.1)",color:"#e24b4a"}}>유찰</span>:isSuui?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(212,168,52,0.15)",color:"#d4a834"}}>수의</span>:isDataWait?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(138,147,168,0.15)",color:"#8a93a8"}}>데이터대기</span>:isCanc?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(192,128,64,0.15)",color:"#c08040"}}>취소</span>:<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span>}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"&&!isYuchal&&!isSuui&&!isDataWait?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>{setDetailModal(p);setDetailTab("detail");setDetailAi(p.ai_advice||"");setDetailAiLoading(false);

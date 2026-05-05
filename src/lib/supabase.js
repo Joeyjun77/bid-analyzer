@@ -432,6 +432,32 @@ export async function sbFetchAgencyHistMap(canonicalAgs){
   }catch(e){return{}}
 }
 
+// ─── v8 예측 뷰 (v_v8_predictions) ──────────────────────────────────
+// pred_id → {rate, p25, p50, p75, confidence, sampleSize, scope, source}
+export async function sbFetchV8Predictions(){
+  try{
+    const res=await authedFetch("/rest/v1/v_v8_predictions?select=pred_id,v8_rate,v8_p25,v8_p50,v8_p75,v8_confidence,v8_sample_size,v8_scope,v8_source");
+    if(!res.ok)return{};
+    const rows=await res.json();
+    if(!Array.isArray(rows))return{};
+    const map={};
+    for(const r of rows){
+      if(r.pred_id==null)continue;
+      map[r.pred_id]={
+        rate:r.v8_rate!=null?Number(r.v8_rate):null,
+        p25:r.v8_p25!=null?Number(r.v8_p25):null,
+        p50:r.v8_p50!=null?Number(r.v8_p50):null,
+        p75:r.v8_p75!=null?Number(r.v8_p75):null,
+        confidence:r.v8_confidence,
+        sampleSize:r.v8_sample_size,
+        scope:r.v8_scope,
+        source:r.v8_source,
+      };
+    }
+    return map;
+  }catch(e){return{}}
+}
+
 // 나라장터 공고 목록 (bid_notices)
 export async function sbFetchNotices(){
   try{const res=await authedFetch("/rest/v1/bid_notices?select=id,pn,pn_no,ag,at,ep,ba,av,od,status,is_target,prediction_id,api_fetched_at&order=od.asc&limit=1000");if(!res.ok)return[];return await res.json()}catch(e){return[]}
