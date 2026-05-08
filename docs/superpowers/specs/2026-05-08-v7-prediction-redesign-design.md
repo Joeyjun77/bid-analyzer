@@ -178,12 +178,14 @@ BEGIN
     WHERE canonical_ag = p_canonical_ag
     LIMIT 1;
 
+    -- Outlier 필터: |ar0| ≤ 30 (한전 ar1=1472% 단일 이상치 등 차단)
+    -- predict-architect 검토 결과: ar1 max=1472.18 단일 이상치가 std=17.39 폭주 원인
     SELECT count(*) INTO v_n_self
     FROM bid_records
     WHERE canonical_ag = p_canonical_ag
       AND cat LIKE p_cat || '%'
       AND is_joint_contract = false
-      AND ar1 IS NOT NULL
+      AND ar1 IS NOT NULL AND abs(ar1 - 100) <= 30
       AND COALESCE(is_excluded,false) = false;
 
     IF v_n_self >= 10 THEN
@@ -199,7 +201,7 @@ BEGIN
         WHERE canonical_ag = p_canonical_ag
           AND cat LIKE p_cat || '%'
           AND is_joint_contract = false
-          AND ar1 IS NOT NULL
+          AND ar1 IS NOT NULL AND abs(ar1 - 100) <= 30
           AND COALESCE(is_excluded,false) = false;
 
     ELSIF v_n_self >= 5 THEN
@@ -224,14 +226,105 @@ BEGIN
         WHERE at = v_at
           AND cat LIKE p_cat || '%'
           AND is_joint_contract = false
-          AND ar1 IS NOT NULL
+          AND ar1 IS NOT NULL AND abs(ar1 - 100) <= 30
           AND COALESCE(is_excluded,false) = false;
     END IF;
 END;
 $$;
 ```
 
-### 5.2 투찰금액 (모델 외부, 결정적 산식)
+### 5.2 잔차 재보정 층 (predict-architect 검토 통합)
+
+**근거**: predict-architect 시뮬레이션상 분포 median이 핸드 튜닝을 자연 흡수하지 **못하는 영역**(군부대 v7 MAE +0.086 악화)이 데이터로 입증됨. 분포 단순화에도 불구하고 명시적 잔차 보정 층이 필요.
+
+**설계 원칙**:
+- **단일 보정 원천** — 기존 v6.2의 `pred_bias_map` + `OPT_OFFSET` + `basegFinetune` 다층 누적 회피
+- (at, ba_seg) 그레인의 **체계적 평균 잔차**만 보정 — 분포 폭(p25/p75/std)은 손대지 않음
+- 핵심 영역 3건이 모두 PASS할 때까지 잔차 테이블은 **활성**, 21-E 단계에서 분포 흡수 입증되면 deprecate 검토
+
+#### 신규 테이블 `agency_residual_offset`
+
+```sql
+CREATE TABLE agency_residual_offset (
+    at                  text NOT NULL,        -- 발주기관 종류 (군시설/지자체/한전/...)
+    ba_seg              text NOT NULL,        -- S1(<1억)/S2(<3억)/S3(<10억)/S4(<30억)/S5
+    cat                 text NOT NULL,        -- 전기/통신/소방
+    residual_median     numeric(8,5) NOT NULL,    -- v7 median - 실측 ar1 의 median
+    residual_n          int NOT NULL,
+    residual_n_required int NOT NULL DEFAULT 30,  -- 적용 최소 표본
+    last_recalc_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (at, ba_seg, cat)
+);
+ALTER TABLE agency_residual_offset ENABLE ROW LEVEL SECURITY;
+CREATE POLICY anon_read_agency_residual_offset
+    ON agency_residual_offset FOR SELECT TO anon USING (true);
+```
+
+#### 결합 산식 (v7 최종 사정률)
+
+```sql
+CREATE OR REPLACE FUNCTION predict_v7_combined(
+    p_canonical_ag text,
+    p_cat          text DEFAULT '전기',
+    p_ba           numeric DEFAULT NULL
+) RETURNS TABLE (
+    final_adj    numeric,    -- 100% 기준 (median - residual)
+    median_adj   numeric,
+    p25_adj      numeric,
+    p75_adj      numeric,
+    std_adj      numeric,
+    confidence   text,
+    tier         text,
+    sample_size  int,
+    residual_applied numeric,
+    residual_src text
+) LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_seg text := CASE
+        WHEN p_ba IS NULL THEN 'S0'
+        WHEN p_ba < 1e8 THEN 'S1'
+        WHEN p_ba < 3e8 THEN 'S2'
+        WHEN p_ba < 1e9 THEN 'S3'
+        WHEN p_ba < 3e9 THEN 'S4'
+        ELSE 'S5'
+    END;
+    v_at text;
+    v_residual numeric := 0;
+    v_residual_src text := '없음';
+BEGIN
+    SELECT at INTO v_at FROM bid_records WHERE canonical_ag = p_canonical_ag LIMIT 1;
+    -- 잔차 적용: residual_n >= residual_n_required 일 때만
+    SELECT residual_median, format('%s×%s', at, ba_seg)
+      INTO v_residual, v_residual_src
+    FROM agency_residual_offset
+    WHERE at = v_at AND ba_seg = v_seg AND cat LIKE p_cat || '%'
+      AND residual_n >= residual_n_required
+    LIMIT 1;
+    IF v_residual IS NULL THEN
+        v_residual := 0;
+        v_residual_src := '표본부족';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        (v.median_adj - v_residual)::numeric,
+        v.median_adj, v.p25_adj, v.p75_adj, v.std_adj,
+        v.confidence, v.tier, v.sample_size,
+        v_residual, v_residual_src
+    FROM predict_v7(p_canonical_ag, p_cat) v;
+END;
+$$;
+```
+
+> **주의**: 잔차 부호는 (v7_median − 실측 ar1)의 median. UI는 `final_adj`만 노출하고, `median/p25/p75`는 분포 시각화용. residual은 분포 박스 밖 보정으로만 사용.
+
+#### 잔차 층 deprecate 게이트 (predict-architect 2차 검토 통합)
+
+2차 시뮬레이션 결과 잔차 층의 한계 이득이 −0.0009 ~ +0.0016 범위(사실상 0). 군부대 S1/S2 그레인은 잔차=0(분포 median이 이미 실측과 일치) → 21-E 단계에서 잔차 층 제거 검토.
+
+**Deprecate 임계**: 21-C Shadow 1주 후 모든 핵심 영역에서 `|MAE_combined − MAE_simple| ≤ 0.005` 이면 잔차 층은 회귀 안전망 역할만 하고 효과 없음으로 판정. Phase 21-E에서 `agency_residual_offset` DROP + `predict_v7_combined` 폐기, 호출부는 `predict_v7` 직접 사용으로 단순화.
+
+### 5.3 투찰금액 (모델 외부, 결정적 산식)
 
 ```sql
 CREATE OR REPLACE FUNCTION calc_bid_amount_v7(
@@ -254,15 +347,17 @@ $$;
 ### Phase 21-A — 스키마 (apply_migration)
 1. `agency_rate_distribution` 생성 + RLS + anon read
 2. `lower_bound_rate_lookup` 생성 + RLS + anon read
-3. `bid_records.is_joint_contract`, `joint_contract_type` 컬럼 추가
-4. `lower_bound_rate_lookup` 시드 INSERT (별도 execute_sql)
+3. `agency_residual_offset` 생성 + RLS + anon read (잔차 재보정 층)
+4. `bid_records.is_joint_contract`, `joint_contract_type` 컬럼 추가
+5. `lower_bound_rate_lookup` 시드 INSERT (별도 execute_sql)
 
 **검증**: `npx vite build` 통과 (UI 미변경, 빌드 영향 없어야 함). `deploy-gate` 통과.
 
 ### Phase 21-B — 추정 함수 + 백필
-1. `predict_v7()` RPC 작성 (위 5.1 완성)
-2. `calc_bid_amount_v7()` 작성
-3. `agency_rate_distribution` 초기 백필:
+1. `predict_v7()` RPC 작성 (위 5.1 완성, **outlier 필터 `abs(ar1-100) ≤ 30` 포함**)
+2. `predict_v7_combined()` RPC 작성 (5.2 잔차 결합 산식)
+3. `calc_bid_amount_v7()` 작성
+4. `agency_rate_distribution` 초기 백필 (outlier 필터 적용):
    ```sql
    INSERT INTO agency_rate_distribution
    SELECT canonical_ag, cat,
@@ -279,12 +374,34 @@ $$;
                ELSE 'low' END,
           now()
    FROM bid_records
-   WHERE COALESCE(is_excluded,false)=false AND ar1 IS NOT NULL
+   WHERE COALESCE(is_excluded,false)=false
+     AND ar1 IS NOT NULL AND abs(ar1 - 100) <= 30
      AND canonical_ag IS NOT NULL AND cat IS NOT NULL
    GROUP BY canonical_ag, cat
    HAVING count(*) >= 1;
    ```
-4. 야간 재계산: GitHub Actions 기존 keep-alive workflow에 SQL 트리거 추가 (메모리상 운영 중).
+5. `agency_residual_offset` 초기 백필 (v7 median과 실측의 (at, ba_seg) 그레인 평균 잔차):
+   ```sql
+   INSERT INTO agency_residual_offset
+   SELECT br.at,
+          CASE WHEN br.ba<1e8 THEN 'S1' WHEN br.ba<3e8 THEN 'S2'
+               WHEN br.ba<1e9 THEN 'S3' WHEN br.ba<3e9 THEN 'S4'
+               ELSE 'S5' END AS ba_seg,
+          br.cat,
+          percentile_cont(0.50) WITHIN GROUP (ORDER BY ard.median_adj_ratio - br.ar1),
+          count(*),
+          30,
+          now()
+   FROM bid_records br
+   JOIN agency_rate_distribution ard
+     ON ard.canonical_ag = br.canonical_ag AND ard.cat = br.cat
+   WHERE COALESCE(br.is_excluded,false)=false
+     AND br.ar1 IS NOT NULL AND abs(br.ar1 - 100) <= 30
+     AND br.at IS NOT NULL
+   GROUP BY br.at, ba_seg, br.cat
+   HAVING count(*) >= 30;
+   ```
+6. 야간 재계산: GitHub Actions 기존 keep-alive workflow에 두 테이블 SQL 트리거 추가 (메모리상 운영 중).
 
 **검증**: `predict_v7()` 호출 결과가 `bid_records` 직접 집계와 일치하는지 표본 5건 확인. `deploy-gate` 통과.
 
@@ -293,14 +410,36 @@ $$;
 2. A-grade 입찰부터 v7 출력 노출 (median + p25-p75 band)
 3. 같은 입찰건에 대해 v6.2 vs v7 결과를 `bid_predictions`에 별도 컬럼(`v7_median_adj`, `v7_p25_adj`, `v7_p75_adj`, `v7_tier`)으로 기록
 
-**합격 기준** (1주 / 신규 20건 누적 후):
-- v7 MAE ≤ 0.642% (노이즈 플로어)
-- v7 ±0.5% hit rate ≥ v6.2 동등 이상
-- p25-p75 band 적중률 ≥ 50%
-- **핵심 영역(한전·고양시·군부대) MAE 악화 ≤ +0.02** (CLAUDE.md 강제 룰)
-- `evaluate_model_release(v7, v6.2, 7)` PASS
+**합격 기준** (1주 / 신규 20건 누적 후, **모든 항목 동시 PASS 필요**):
 
-**FAIL 시**: 즉시 토글 OFF, 원인 분석. WARN 시 24시간 내 `/accuracy` 재측정.
+| # | 지표 | 기준 |
+|---|---|---|
+| 1 | v7_combined MAE (전체) | ≤ 0.642% (노이즈 플로어) |
+| 2 | v7_combined ±0.5% hit rate | ≥ v6.2 동등 이상 |
+| 3 | p25-p75 band 적중률 | ≥ 50% |
+| 4 | **한전 MAE 악화** | ≤ +0.02 (현 baseline 0.4516) |
+| 5 | **고양시 MAE 악화** | ≤ +0.02 (현 baseline 0.6518, n=7로 신뢰 낮음 → 신규 5건 누적까지 보류 가능) |
+| 6 | **군부대 MAE 악화** | ≤ +0.02 (현 baseline 0.5012) — **잔차 재보정 적용 후 측정** |
+| 7 | `evaluate_model_release(v7, v6.2, 7)` | PASS |
+
+**FAIL 시**: 즉시 토글 OFF, 원인 분석. predict-architect 시뮬레이션상 군부대 단순 median은 +0.086 악화 → **잔차 재보정 층 통과가 21-C 핵심 합격 조건**. WARN 시 24시간 내 `/accuracy` 재측정. 잔차 재보정에도 군부대 +0.02 초과 시 21-D 보류 + spec 재설계 (grain 세분화 또는 군부대 영역 v6.2 유지 옵션).
+
+**가속 페이스 자동 연장 조건** (predict-architect 2차 검토 통합):
+- 군부대 표본 변동성이 60일 윈도에서 108→58까지 출렁여 MAE ±0.09 스윙 — 가드 +0.02가 노이즈에 갇힐 위험
+- **자동 연장 룰**: 1주/20건 도달했어도 핵심 영역 매칭 누적이 다음 임계 미만이면 가드 판정 보류 + Shadow 연장
+  - 한전: 신규 매칭 ≥ 10건
+  - **군부대: 신규 매칭 ≥ 30건** (변동성 흡수 위해 임계 강화)
+  - 고양시: 신규 매칭 ≥ 5건 (누적 12건+ 도달까지)
+
+### Phase 21-D 진입 게이트 (predict-architect 2차 검토 통합)
+
+21-C Shadow 합격 기준 7개 동시 PASS + 다음 진입 게이트도 모두 PASS여야 default 전환 가능:
+
+| 게이트 | 조건 | 미달 시 |
+|---|---|---|
+| 군부대 표본 안정성 | 60일 매칭 ≥ 30건, 7일 윈도 MAE 표준편차 ≤ 0.03 | Shadow 연장 |
+| 고양시 누적 신뢰 | 신규+기존 매칭 누적 ≥ 12건 | 21-D 진입 보류, 누적 도달까지 21-C 유지 |
+| 잔차 층 효용성 | `|MAE_combined − MAE_simple|` 측정값을 §5.2 deprecate 게이트에 기록 | 효용 없음 시 21-E에서 제거 예약 |
 
 ### Phase 21-D — default 전환
 1. 토글 default ON
@@ -367,6 +506,10 @@ $$;
 | 공동도급 보류로 분포에 컨소시엄 데이터 혼입 | 중 (현재 마킹 신호 없음) | 영향도 측정용 사후 모니터링 — `co` 패턴 외 다른 신호 발견 시 Phase 22 재격리 |
 | `cat` 단일성으로 인한 industry 차원 무용 | 낮음 | PK 유지 (스키마 비용 미미), 통신·소방 데이터 누적 시 자연 활용 |
 | 가속 페이스(1주/20건)로 표본 부족 | 중 | `evaluate_model_release` 통합 + 핵심 영역 MAE 게이트로 보완. **WARN 시 Shadow 기간 자동 연장 (1주/20건 → 핸드오프 원안 2~3주/50건)**, FAIL 시 즉시 토글 OFF |
+| **군부대 단순 median이 핸드 튜닝 −0.04 과보정** | 高 (predict-architect 시뮬상 +0.086 악화 확정) | §5.2 잔차 재보정 층(`agency_residual_offset` at×ba_seg×cat 그레인, n≥30 필요) 도입. 21-C에서 군부대 합격 기준 별도 게이트 |
+| 한전 ar1=1472.18% 단일 이상치 | 中 (std/p75 왜곡) | 분포 백필 + RPC 모두 `abs(ar1-100) ≤ 30` 필터. 정상 시장 사정률 분포가 −30~+30%p 안에 들어가는 도메인 사실에 부합 |
+| 고양시 n=5로 통계 신뢰 낮음 | 中 | 21-C 합격 기준에서 고양시는 신규 5건 누적까지 측정 보류 가능. 21-D 진입 전 누적 12건 도달 후 재평가 |
+| `cat LIKE '전기%'` 매칭 누락 (군부대 32/140건) | 低 | 백필 시 fallback `cat IS NULL OR cat = ''` 분리 처리. UI는 cat 미입력 시 '전기' 기본값 |
 | `v7_agency_offset` 기존 9건이 v7 신규와 혼동 | 낮음 | Phase 21-E에서 명시적 DROP, 21-A 단계에서 deprecate 주석 추가 |
 | 시드 하한율 규정 변경 (89.745 vs 87.745) | 중 | 시드 적용 전 `docs/skills/`의 최신 규정 문서 + 메모리 재확인 단계 명시 |
 
@@ -381,7 +524,72 @@ $$;
 
 ---
 
-## 11. 다음 작업자에게
+## 11. predict-architect 검토 결과 통합 (2026-05-08, 1차)
+
+본 spec은 코드 변경 전 `predict-architect` 서브에이전트(격리 컨텍스트, 데이터 기반 판정)를 거쳐 다음 결과를 받았다.
+
+### 11.1 영역별 시뮬레이션 (canonical_ag×cat=전기, 60일 매칭)
+
+| 영역 | n | baseline MAE (opt_adj) | v7 단순 median MAE | Δ MAE | 판정 |
+|---|---|---|---|---|---|
+| 한전 | 22 | 0.4338 | 0.3148 | **−0.1190** | ✅ 개선 — 핸드 튜닝 −0.03이 분포에 자연 흡수 |
+| 고양시 | 5 | 0.5504 | 0.4382 | **−0.1122** | ✅ 개선 (n=5로 통계 신뢰 낮음) |
+| 군부대 | 108 | 0.4841 | **0.5704** | **+0.0863** | ❌ CLAUDE.md +0.02 가드 위반 |
+
+### 11.2 Phase별 판정
+
+| Phase | predict-architect 판정 | 본 spec 대응 |
+|---|---|---|
+| 21-A 스키마 | PASS (Evaluator/Neutral) | `agency_residual_offset` 추가로 §6 갱신 |
+| 21-B RPC+백필 | CONDITIONAL | outlier 필터 `abs(ar1-100)≤30` + 잔차 백필 추가 |
+| 21-C Shadow | CONDITIONAL | 핵심 영역 3건 각 PASS 필수로 §6 합격 기준 강화 |
+| 21-D default | **BLOCK (단순 median)** | 잔차 재보정 통과 후 재검토. 미통과 시 spec 재설계 |
+| 21-E 제거 | 21-D PASS 후 | 미변동 |
+
+### 11.3 BLOCK 신호 처리 (사용자 결정)
+
+군부대 MAE +0.086 회귀는 단순 median으로 흡수 불가. 사용자 결정: **잔차 재보정 층 추가** (옵션 1). §5.2의 `agency_residual_offset` 테이블 + `predict_v7_combined()` RPC가 이 결정의 구현체. 21-C Shadow에서 `final_adj = median - residual` 측정값으로 군부대 합격 여부 재평가.
+
+### 11.4 2차 재검토 결과 (2026-05-08, CONDITIONAL → writing-plans 진입)
+
+보완 4건 적용 후 predict-architect 2차 호출.
+
+#### 핵심 영역 final_adj 시뮬 (outlier 필터 ON, 잔차 결합)
+
+| 영역 | n | baseline | v7_simple | v7_combined | Δ_combined | 가드 |
+|---|---|---|---|---|---|---|
+| 한전 | 49 | 0.4516 | 0.3796 | **0.3811** | −0.0705 | ✅ PASS |
+| 고양시 | 7 | 0.6518 | 0.6296 | **0.6296** | −0.0223 | ✅ PASS (n=7로 신뢰 낮음) |
+| 군부대 | 58 | 0.5016 | 0.4980 | **0.4989** | −0.0027 | ✅ PASS |
+
+**1차→2차 변화 원인**: 군부대 60일 윈도 표본이 108→58건으로 변동, MAE 스윙 ±0.09. 단순 median이 흡수에 충분한 상태로 회복했으나 표본 변동성 자체가 위험.
+
+#### outlier 필터 효과 (한전, 6,079건)
+
+| 지표 | before | after |
+|---|---|---|
+| max | 1472.18 | 101.92 |
+| std | **17.68** | **1.62** (−91%) |
+| median | 99.77 | 99.77 (무영향) |
+
+→ 분포 통계 안정화 명확 입증.
+
+#### (at, ba_seg) 잔차 학습 표본 충분성
+
+전체 26개 그레인 중 23개 OK, 3개 INSUFFICIENT (LH-S1 n=28, 교육청-S5 n=25, 한전-S5 n=4). **군부대 4/4 모두 OK** (S1=4288, S2=1209, S3=580, S4=31).
+
+**그러나** 잔차 한계 효과 −0.0009 ~ +0.0016 (사실상 0). 군부대 S1/S2 잔차=0 (분포 median이 이미 실측과 일치) → 잔차 층은 회귀 안전망 역할로만 작동, 21-E에서 deprecate 검토.
+
+#### 21-D 판정: CONDITIONAL → writing-plans 진입 가능
+
+3개 CONDITIONAL 조건 spec에 게이트로 반영 완료:
+1. §5.2 끝부분: 잔차 층 deprecate 임계 (`|MAE_combined − MAE_simple| ≤ 0.005` 시 21-E에서 제거)
+2. §6 Phase 21-C: 가속 페이스 자동 연장 룰 (군부대 30건 / 고양시 12건+ 임계)
+3. §6 Phase 21-D 진입 게이트: 군부대 표본 안정성 + 고양시 누적 신뢰 + 잔차 층 효용성
+
+---
+
+## 12. 다음 작업자에게
 
 ```bash
 # 1. predict-architect 서브에이전트 호출 (영향도 검토)
