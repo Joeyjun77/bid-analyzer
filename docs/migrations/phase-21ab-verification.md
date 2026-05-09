@@ -50,3 +50,12 @@
 - `v7_calibration` 등 기존 테이블·뷰
 
 신규 분포 모델은 `predict_dist` 계열로 별도 명명하여 충돌 회피.
+
+## Task 2: 시드 데이터
+
+- lower_bound_rate_lookup INSERT: 7 rows
+- avg_rate: 87.45929%, range 86.74500~87.74500%
+- anon SELECT 권한 확인: PASS (count=7)
+- 시드 출처: docs/superpowers/specs/2026-05-08-v7-prediction-redesign-design.md §4.2 표
+- numeric(7,5) 정밀도 보존 확인: 87.74500, 86.74500 정확 저장
+
