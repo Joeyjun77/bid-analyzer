@@ -59,3 +59,31 @@
 - 시드 출처: docs/superpowers/specs/2026-05-08-v7-prediction-redesign-design.md §4.2 표
 - numeric(7,5) 정밀도 보존 확인: 87.74500, 86.74500 정확 저장
 
+## Task 3: 추정 RPC 함수 3개
+
+- 마이그레이션명: `phase_21b_dist_rpc_functions`
+- Supabase 응답: `{"success": true}`
+- 함수 존재 확인 (pg_proc): 3행
+  - calc_bid_amount_dist (pronargs=3)
+  - predict_dist (pronargs=2)
+  - predict_dist_combined (pronargs=3)
+- 기존 predict_v7(3), predict_v7_2(4) 보존 확인 PASS
+
+### predict_dist 표본 검증 (Tier1)
+
+- 선택된 canonical_ag: `한국전력공사 경기본부`
+- rpc_median = 99.78245, direct_median = 99.78245 → 정확 일치 PASS
+- tier = tier1, sample_size = 3020, direct_n = 3020
+
+### predict_dist_combined
+
+- 함수 정의 적용됨 (호출 검증은 Task 5: agency_residual_offset 백필 후 수행)
+- 잔차 미존재 시 v_residual=0, residual_src='없음'/'표본부족'으로 안전 fallback
+
+### calc_bid_amount_dist 산식 검증
+
+- 입력: ba=1억, adj_ratio_pct=99.87600%, lower_bound_pct=87.74500%
+- computed = 87,636,197
+- expected = ceil(100000000 × 0.998760 × 0.877450) = 87,636,197
+- 정확 일치 PASS
+
