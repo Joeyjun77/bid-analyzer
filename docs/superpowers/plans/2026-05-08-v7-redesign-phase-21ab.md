@@ -4,7 +4,7 @@
 
 **Goal:** v7 분포 모델 인프라 구축 — 신규 테이블 3개 + RPC 함수 3개 + 백필 데이터. UI 노출/코드 변경 없음 (Phase 21-C부터 시작).
 
-**Architecture:** PostgreSQL 17 (Supabase) 측에서만 작업. `agency_rate_distribution` (canonical_ag×cat 분포 통계), `lower_bound_rate_lookup` (낙찰하한율 시드), `agency_residual_offset` (at×ba_seg×cat 잔차) 3 테이블 + `bid_records.is_joint_contract` 컬럼 추가. RPC `predict_v7()`, `predict_v7_combined()`, `calc_bid_amount_v7()`. 백필은 outlier 필터 `abs(ar1-100)≤30` 적용.
+**Architecture:** PostgreSQL 17 (Supabase) 측에서만 작업. `agency_rate_distribution` (canonical_ag×cat 분포 통계), `lower_bound_rate_lookup` (낙찰하한율 시드), `agency_residual_offset` (at×ba_seg×cat 잔차) 3 테이블 + `bid_records.is_joint_contract` 컬럼 추가. RPC `predict_dist()`, `predict_dist_combined()`, `calc_bid_amount_dist()`. 백필은 outlier 필터 `abs(ar1-100)≤30` 적용.
 
 **Tech Stack:** Supabase PostgreSQL 17, MCP 도구 (`apply_migration` for DDL, `execute_sql` for DML). React/Vite 빌드 영향 없음 (UI 미변경).
 
@@ -22,9 +22,9 @@
 
 | 산출물 | 종류 | 명 |
 |---|---|---|
-| 마이그레이션 1 | DDL | `phase_21a_v7_distribution_schema` (3 테이블 + 1 컬럼) |
+| 마이그레이션 1 | DDL | `phase_21a_dist_schema` (3 테이블 + 1 컬럼) |
 | 시드 INSERT | DML | `lower_bound_rate_lookup` 7행 |
-| 마이그레이션 2 | DDL | `phase_21b_v7_rpc_functions` (3 RPC 함수) |
+| 마이그레이션 2 | DDL | `phase_21b_dist_rpc_functions` (3 RPC 함수) |
 | 백필 INSERT 1 | DML | `agency_rate_distribution` ~500행 예상 |
 | 백필 INSERT 2 | DML | `agency_residual_offset` ~25행 예상 |
 | 검증 기록 | docs | `docs/migrations/phase-21ab-verification.md` (신규, git 추적) |
@@ -34,7 +34,7 @@
 ## Task 1: Phase 21-A 스키마 마이그레이션 (3 테이블 + 1 컬럼)
 
 **Files:**
-- Apply migration: `phase_21a_v7_distribution_schema` (Supabase MCP)
+- Apply migration: `phase_21a_dist_schema` (Supabase MCP)
 - Verify: SQL `\d` queries via execute_sql
 
 - [ ] **Step 1: 사전 검증 — 신규 객체 미존재 확인**
@@ -53,7 +53,7 @@ Expected: **둘 다 0행** (신규 객체 미존재). 1행 이상이면 마이�
 
 - [ ] **Step 2: apply_migration 으로 3 테이블 + 1 컬럼 추가**
 
-`mcp__claude_ai_Supabase__apply_migration` 호출, name=`phase_21a_v7_distribution_schema`, query=:
+`mcp__claude_ai_Supabase__apply_migration` 호출, name=`phase_21a_dist_schema`, query=:
 
 ```sql
 -- 1) agency_rate_distribution: 발주사×업종 분포 통계
@@ -170,7 +170,7 @@ Expected: PASS. UI/코드 미변경이라 영향 없어야 함.
 
 ## Task 1: Phase 21-A 스키마
 
-- 마이그레이션명: `phase_21a_v7_distribution_schema`
+- 마이그레이션명: `phase_21a_dist_schema`
 - 신규 테이블: agency_rate_distribution, lower_bound_rate_lookup, agency_residual_offset
 - 신규 컬럼: bid_records.is_joint_contract (NOT NULL DEFAULT false), bid_records.joint_contract_type
 - RLS: 3 테이블 모두 활성, anon_read 정책 적용
@@ -251,15 +251,15 @@ git commit -m "docs(phase-21a): lower_bound_rate_lookup 시드 7행 적용 기�
 ## Task 3: Phase 21-B 추정 RPC 함수 3개
 
 **Files:**
-- Apply migration: `phase_21b_v7_rpc_functions`
+- Apply migration: `phase_21b_dist_rpc_functions`
 
-- [ ] **Step 1: predict_v7, predict_v7_combined, calc_bid_amount_v7 함수 한번에 적용**
+- [ ] **Step 1: predict_dist, predict_dist_combined, calc_bid_amount_dist 함수 한번에 적용**
 
-`apply_migration`, name=`phase_21b_v7_rpc_functions`, query=:
+`apply_migration`, name=`phase_21b_dist_rpc_functions`, query=:
 
 ```sql
--- 1) predict_v7: 단순 분포 통계 + 3-tier shrinkage
-CREATE OR REPLACE FUNCTION predict_v7(
+-- 1) predict_dist: 단순 분포 통계 + 3-tier shrinkage
+CREATE OR REPLACE FUNCTION predict_dist(
     p_canonical_ag text,
     p_cat          text DEFAULT '전기'
 ) RETURNS TABLE (
@@ -352,8 +352,8 @@ BEGIN
 END;
 $$;
 
--- 2) predict_v7_combined: 잔차 재보정 결합
-CREATE OR REPLACE FUNCTION predict_v7_combined(
+-- 2) predict_dist_combined: 잔차 재보정 결합
+CREATE OR REPLACE FUNCTION predict_dist_combined(
     p_canonical_ag text,
     p_cat          text DEFAULT '전기',
     p_ba           numeric DEFAULT NULL
@@ -402,12 +402,12 @@ BEGIN
         v.median_adj, v.p25_adj, v.p75_adj, v.std_adj,
         v.confidence, v.tier, v.sample_size,
         v_residual, v_residual_src
-    FROM predict_v7(p_canonical_ag, p_cat) v;
+    FROM predict_dist(p_canonical_ag, p_cat) v;
 END;
 $$;
 
--- 3) calc_bid_amount_v7: 결정적 투찰금액 산식 (LH 외 공통)
-CREATE OR REPLACE FUNCTION calc_bid_amount_v7(
+-- 3) calc_bid_amount_dist: 결정적 투찰금액 산식 (LH 외 공통)
+CREATE OR REPLACE FUNCTION calc_bid_amount_dist(
     p_ba              numeric,
     p_adj_ratio_pct   numeric,
     p_lower_bound_pct numeric
@@ -424,13 +424,13 @@ Expected: 마이그레이션 적용 성공.
 ```sql
 SELECT proname, pronargs FROM pg_proc
 WHERE pronamespace = 'public'::regnamespace
-  AND proname IN ('predict_v7', 'predict_v7_combined', 'calc_bid_amount_v7')
+  AND proname IN ('predict_dist', 'predict_dist_combined', 'calc_bid_amount_dist')
 ORDER BY proname;
 ```
 
-Expected: 3행 (predict_v7=2, predict_v7_combined=3, calc_bid_amount_v7=3).
+Expected: 3행 (predict_dist=2, predict_dist_combined=3, calc_bid_amount_dist=3).
 
-- [ ] **Step 3: predict_v7 동작 검증 (Tier 1 표본)**
+- [ ] **Step 3: predict_dist 동작 검증 (Tier 1 표본)**
 
 `execute_sql`:
 ```sql
@@ -448,7 +448,7 @@ SELECT
   pv.tier, pv.sample_size,
   d.direct_median, d.direct_n
 FROM t1
-CROSS JOIN LATERAL predict_v7(t1.canonical_ag, '전기') pv,
+CROSS JOIN LATERAL predict_dist(t1.canonical_ag, '전기') pv,
 LATERAL (
   SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY ar1)::numeric AS direct_median,
          count(*) AS direct_n
@@ -461,12 +461,12 @@ LATERAL (
 
 Expected: rpc_median = direct_median (소수 5자리 정확 일치), tier='tier1', rpc.sample_size = direct_n.
 
-- [ ] **Step 4: calc_bid_amount_v7 산식 검증**
+- [ ] **Step 4: calc_bid_amount_dist 산식 검증**
 
 `execute_sql`:
 ```sql
 -- 1억 × 99.876% × 87.745% = 87,628,797.5 → ceil = 87,628,798
-SELECT calc_bid_amount_v7(100000000, 99.87600, 87.74500) AS computed;
+SELECT calc_bid_amount_dist(100000000, 99.87600, 87.74500) AS computed;
 SELECT ceil(100000000 * 0.998760 * 0.877450) AS expected;
 ```
 
@@ -478,15 +478,15 @@ Expected: computed = expected (정수, ceil 적용).
 ```markdown
 ## Task 3: 추정 RPC 함수 3개
 
-- 마이그레이션명: `phase_21b_v7_rpc_functions`
-- predict_v7 (Tier1/2/3 분기 + outlier 필터): 표본 검증 PASS
-- predict_v7_combined (잔차 결합): 표본 검증 PASS
-- calc_bid_amount_v7 (결정적 산식): 1억 × 99.876% × 87.745% = 87,628,798 정상
+- 마이그레이션명: `phase_21b_dist_rpc_functions`
+- predict_dist (Tier1/2/3 분기 + outlier 필터): 표본 검증 PASS
+- predict_dist_combined (잔차 결합): 표본 검증 PASS
+- calc_bid_amount_dist (결정적 산식): 1억 × 99.876% × 87.745% = 87,628,798 정상
 ```
 
 ```bash
 git add docs/migrations/phase-21ab-verification.md
-git commit -m "docs(phase-21b): predict_v7/predict_v7_combined/calc_bid_amount_v7 RPC 적용 기록"
+git commit -m "docs(phase-21b): predict_dist/predict_dist_combined/calc_bid_amount_dist RPC 적용 기록"
 ```
 
 ---
@@ -671,7 +671,7 @@ Expected (predict-architect 2차):
 - S3: residual ≈ −0.05, n ≈ 580, will_apply = true
 - S4: residual ≈ 0.11, n ≈ 31, will_apply = true (경계)
 
-- [ ] **Step 4: predict_v7_combined RPC 동작 검증 (잔차 적용 케이스)**
+- [ ] **Step 4: predict_dist_combined RPC 동작 검증 (잔차 적용 케이스)**
 
 `execute_sql`:
 ```sql
@@ -686,7 +686,7 @@ WITH t AS (
 SELECT t.canonical_ag, t.ba,
        pvc.final_adj, pvc.median_adj, pvc.residual_applied, pvc.residual_src,
        (pvc.final_adj - pvc.median_adj) AS diff
-FROM t, predict_v7_combined(t.canonical_ag, '전기', t.ba) pvc;
+FROM t, predict_dist_combined(t.canonical_ag, '전기', t.ba) pvc;
 ```
 
 Expected: residual_src = '군시설×S3', residual_applied ≠ 0, diff = -residual_applied. residual_src='없음'/'표본부족'은 그레인 미존재 또는 n<30 경우.
@@ -699,7 +699,7 @@ Expected: residual_src = '군시설×S3', residual_applied ≠ 0, diff = -residu
 
 - 행 수: <Step 2 결과>
 - 군부대 4개 그레인: <Step 3 결과 표>
-- predict_v7_combined 잔차 적용 동작: <Step 4 결과>
+- predict_dist_combined 잔차 적용 동작: <Step 4 결과>
 ```
 
 ```bash
@@ -730,7 +730,7 @@ WITH samples AS (
 SELECT s.canonical_ag, s.ba,
        pvc.final_adj, pvc.median_adj, pvc.residual_applied, pvc.tier
 FROM samples s,
-LATERAL predict_v7_combined(s.canonical_ag, '전기', s.ba) pvc
+LATERAL predict_dist_combined(s.canonical_ag, '전기', s.ba) pvc
 ORDER BY s.canonical_ag, s.ba;
 ```
 
@@ -788,9 +788,9 @@ git commit -m "docs(phase-21ab): 통합 검증 완료 — Phase 21-C 진입 준�
 | §4.1 agency_rate_distribution | Task 1 Step 2 (DDL), Task 4 (백필) |
 | §4.2 lower_bound_rate_lookup | Task 1 Step 2 (DDL), Task 2 (시드) |
 | §4.3 bid_records 컬럼 | Task 1 Step 2 |
-| §5.1 predict_v7 RPC | Task 3 Step 1 |
-| §5.2 잔차 층 (agency_residual_offset, predict_v7_combined) | Task 1 Step 2, Task 3 Step 1, Task 5 |
-| §5.3 calc_bid_amount_v7 | Task 3 Step 1 |
+| §5.1 predict_dist RPC | Task 3 Step 1 |
+| §5.2 잔차 층 (agency_residual_offset, predict_dist_combined) | Task 1 Step 2, Task 3 Step 1, Task 5 |
+| §5.3 calc_bid_amount_dist | Task 3 Step 1 |
 | §5.2 deprecate 게이트 | Phase 21-C plan에서 측정 (이 plan 범위 밖) |
 | §6 Phase 21-A | Task 1, 2 |
 | §6 Phase 21-B | Task 3, 4, 5 |

@@ -151,12 +151,12 @@ ALTER TABLE bid_records
 
 ---
 
-## 5. `predict_v7()` RPC 설계
+## 5. `predict_dist()` RPC 설계
 
 ### 5.1 시그니처
 
 ```sql
-CREATE OR REPLACE FUNCTION predict_v7(
+CREATE OR REPLACE FUNCTION predict_dist(
     p_canonical_ag text,
     p_cat          text DEFAULT '전기'
 ) RETURNS TABLE (
@@ -263,7 +263,7 @@ CREATE POLICY anon_read_agency_residual_offset
 #### 결합 산식 (v7 최종 사정률)
 
 ```sql
-CREATE OR REPLACE FUNCTION predict_v7_combined(
+CREATE OR REPLACE FUNCTION predict_dist_combined(
     p_canonical_ag text,
     p_cat          text DEFAULT '전기',
     p_ba           numeric DEFAULT NULL
@@ -311,7 +311,7 @@ BEGIN
         v.median_adj, v.p25_adj, v.p75_adj, v.std_adj,
         v.confidence, v.tier, v.sample_size,
         v_residual, v_residual_src
-    FROM predict_v7(p_canonical_ag, p_cat) v;
+    FROM predict_dist(p_canonical_ag, p_cat) v;
 END;
 $$;
 ```
@@ -322,12 +322,12 @@ $$;
 
 2차 시뮬레이션 결과 잔차 층의 한계 이득이 −0.0009 ~ +0.0016 범위(사실상 0). 군부대 S1/S2 그레인은 잔차=0(분포 median이 이미 실측과 일치) → 21-E 단계에서 잔차 층 제거 검토.
 
-**Deprecate 임계**: 21-C Shadow 1주 후 모든 핵심 영역에서 `|MAE_combined − MAE_simple| ≤ 0.005` 이면 잔차 층은 회귀 안전망 역할만 하고 효과 없음으로 판정. Phase 21-E에서 `agency_residual_offset` DROP + `predict_v7_combined` 폐기, 호출부는 `predict_v7` 직접 사용으로 단순화.
+**Deprecate 임계**: 21-C Shadow 1주 후 모든 핵심 영역에서 `|MAE_combined − MAE_simple| ≤ 0.005` 이면 잔차 층은 회귀 안전망 역할만 하고 효과 없음으로 판정. Phase 21-E에서 `agency_residual_offset` DROP + `predict_dist_combined` 폐기, 호출부는 `predict_dist` 직접 사용으로 단순화.
 
 ### 5.3 투찰금액 (모델 외부, 결정적 산식)
 
 ```sql
-CREATE OR REPLACE FUNCTION calc_bid_amount_v7(
+CREATE OR REPLACE FUNCTION calc_bid_amount_dist(
     p_ba              numeric,
     p_adj_ratio_pct   numeric,    -- 100% 기준 (예: 99.876)
     p_lower_bound_pct numeric     -- 100% 기준 (예: 87.745)
@@ -336,7 +336,7 @@ CREATE OR REPLACE FUNCTION calc_bid_amount_v7(
 $$;
 ```
 
-> **LH 특례 (예정가격 천원 절상 후 하한율)**: 현재 핸드오프 §3.2 주석으로 후속. Phase 21-B에서 `calc_bid_amount_v7_lh()` 별도 함수로 분리 — bid_records 데이터에서 LH 비율 + 평균 ba 측정한 뒤 결정. 시드 시점에 미적용이면 LH는 일반 함수 결과 사용 (소수 케이스, 추후 보정).
+> **LH 특례 (예정가격 천원 절상 후 하한율)**: 현재 핸드오프 §3.2 주석으로 후속. Phase 21-B에서 `calc_bid_amount_dist_lh()` 별도 함수로 분리 — bid_records 데이터에서 LH 비율 + 평균 ba 측정한 뒤 결정. 시드 시점에 미적용이면 LH는 일반 함수 결과 사용 (소수 케이스, 추후 보정).
 
 ---
 
@@ -354,9 +354,9 @@ $$;
 **검증**: `npx vite build` 통과 (UI 미변경, 빌드 영향 없어야 함). `deploy-gate` 통과.
 
 ### Phase 21-B — 추정 함수 + 백필
-1. `predict_v7()` RPC 작성 (위 5.1 완성, **outlier 필터 `abs(ar1-100) ≤ 30` 포함**)
-2. `predict_v7_combined()` RPC 작성 (5.2 잔차 결합 산식)
-3. `calc_bid_amount_v7()` 작성
+1. `predict_dist()` RPC 작성 (위 5.1 완성, **outlier 필터 `abs(ar1-100) ≤ 30` 포함**)
+2. `predict_dist_combined()` RPC 작성 (5.2 잔차 결합 산식)
+3. `calc_bid_amount_dist()` 작성
 4. `agency_rate_distribution` 초기 백필 (outlier 필터 적용):
    ```sql
    INSERT INTO agency_rate_distribution
@@ -403,7 +403,7 @@ $$;
    ```
 6. 야간 재계산: GitHub Actions 기존 keep-alive workflow에 두 테이블 SQL 트리거 추가 (메모리상 운영 중).
 
-**검증**: `predict_v7()` 호출 결과가 `bid_records` 직접 집계와 일치하는지 표본 5건 확인. `deploy-gate` 통과.
+**검증**: `predict_dist()` 호출 결과가 `bid_records` 직접 집계와 일치하는지 표본 5건 확인. `deploy-gate` 통과.
 
 ### Phase 21-C — Shadow mode (1주, 가속)
 1. `WinStrategyDashboard.jsx`에 "v7 (베타)" 토글 추가 (default OFF)
@@ -492,7 +492,7 @@ $$;
 | FAIL 판정 시 git push 금지 | `deploy-gate` 가 강제 |
 | 핵심 영역(한전·고양시·군부대) MAE +0.02 악화 즉시 FAIL | Phase 21-C 합격 기준 |
 | WARN 이상 변경 후 24시간 내 `/accuracy` 재측정 | 운영 게이트로 명시 |
-| Supabase SDK 미사용, REST 직접 호출 유지 | UI는 PostgREST RPC 호출로 `predict_v7` 사용 |
+| Supabase SDK 미사용, REST 직접 호출 유지 | UI는 PostgREST RPC 호출로 `predict_dist` 사용 |
 | 브랜치 자제, main 직접 작업 | 핸드오프의 `feature/` 권장 무시, Phase별 push |
 | `apply_migration` ↔ DDL, `execute_sql` ↔ DML 분리 | 21-A 시드 INSERT 분리 |
 
@@ -502,7 +502,7 @@ $$;
 
 | 리스크 | 영향 | 대응 |
 |---|---|---|
-| LH 특례 함수 분리 미적용 시 LH 입찰 투찰금액 미세 오차 | 낮음 (LH 비율 적음 추정) | Phase 21-B 진단으로 LH 비율 측정, 임계 초과 시 `calc_bid_amount_v7_lh()` 추가 |
+| LH 특례 함수 분리 미적용 시 LH 입찰 투찰금액 미세 오차 | 낮음 (LH 비율 적음 추정) | Phase 21-B 진단으로 LH 비율 측정, 임계 초과 시 `calc_bid_amount_dist_lh()` 추가 |
 | 공동도급 보류로 분포에 컨소시엄 데이터 혼입 | 중 (현재 마킹 신호 없음) | 영향도 측정용 사후 모니터링 — `co` 패턴 외 다른 신호 발견 시 Phase 22 재격리 |
 | `cat` 단일성으로 인한 industry 차원 무용 | 낮음 | PK 유지 (스키마 비용 미미), 통신·소방 데이터 누적 시 자연 활용 |
 | 가속 페이스(1주/20건)로 표본 부족 | 중 | `evaluate_model_release` 통합 + 핵심 영역 MAE 게이트로 보완. **WARN 시 Shadow 기간 자동 연장 (1주/20건 → 핸드오프 원안 2~3주/50건)**, FAIL 시 즉시 토글 OFF |
@@ -548,7 +548,7 @@ $$;
 
 ### 11.3 BLOCK 신호 처리 (사용자 결정)
 
-군부대 MAE +0.086 회귀는 단순 median으로 흡수 불가. 사용자 결정: **잔차 재보정 층 추가** (옵션 1). §5.2의 `agency_residual_offset` 테이블 + `predict_v7_combined()` RPC가 이 결정의 구현체. 21-C Shadow에서 `final_adj = median - residual` 측정값으로 군부대 합격 여부 재평가.
+군부대 MAE +0.086 회귀는 단순 median으로 흡수 불가. 사용자 결정: **잔차 재보정 층 추가** (옵션 1). §5.2의 `agency_residual_offset` 테이블 + `predict_dist_combined()` RPC가 이 결정의 구현체. 21-C Shadow에서 `final_adj = median - residual` 측정값으로 군부대 합격 여부 재평가.
 
 ### 11.4 2차 재검토 결과 (2026-05-08, CONDITIONAL → writing-plans 진입)
 
@@ -596,7 +596,7 @@ $$;
 #    → 핵심 영역 영향 표 받은 후에만 21-A 진행
 
 # 2. Phase 21-A: 스키마 마이그레이션
-#    - apply_migration 명: phase_21a_v7_distribution_schema
+#    - apply_migration 명: phase_21a_dist_schema
 #    - execute_sql 로 시드 INSERT
 
 # 3. 빌드 검증
