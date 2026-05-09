@@ -203,3 +203,47 @@
 - residual_offset은 predict_dist_combined가 직접 참조하므로 본 백필이 RPC 잔차 결합 동작에 직접 영향.
 - HAVING count(*)>=5는 분석용 보존, RPC 적용 게이트는 residual_n_required=30 (테이블 기본값).
 
+## Task 6: 통합 검증
+
+### 핵심 영역 final_adj 시뮬 (Shadow 진입 직전 baseline)
+
+random LIMIT 15 결과 중 대표 5건 (전체 15건은 모두 95~105 범위):
+
+| canonical_ag             | ba          | final_adj | median_adj | residual_applied | tier  |
+|--------------------------|------------:|----------:|-----------:|-----------------:|-------|
+| 경기도 고양시            |  50,468,000 |  99.89450 |   99.89450 |          0.00000 | tier1 |
+| 공군제10전투비행단       | 107,906,820 |  99.63500 |   99.63500 |          0.00000 | tier1 |
+| 제28보병사단             |  99,115,825 | 100.20690 |  100.20690 |          0.00000 | tier1 |
+| 한국전력공사 경기본부    |  47,313,491 |  99.71755 |   99.78245 |          0.06490 | tier1 |
+| 한국전력공사 경기북부본부| 483,384,000 |  99.79275 |   99.75360 |         -0.03915 | tier1 |
+
+- final_adj range (15건): min=99.58060, max=100.20690, 평균 ≈ 99.85
+- 전 행 95~105 범위 내 ✅
+- tier 분포: 15/15 모두 tier1 (핵심 영역은 백필이 풍부 — 정상)
+- residual_applied: 한전 본부 그룹은 -0.03915 ~ +0.06490 (plausible, |residual| < 0.1), 고양시·군부대는 0.00000 (잔차 미적용 그레인)
+- 산식 검증: 한전 경기본부 ba=47,313,491 → final_adj(99.71755) = median_adj(99.78245) - residual_applied(0.06490) ✅
+
+### 빌드 검증
+
+`npx vite build`: PASS — 42 modules transformed, built in 3.45s. UI/JS 미변경, 영향 없음.
+
+## Phase 21-A·B 완료 요약
+
+- 신규 테이블 3개: agency_rate_distribution (1,846행), lower_bound_rate_lookup (7행), agency_residual_offset (97행)
+- bid_records 컬럼 2개: is_joint_contract (NOT NULL DEFAULT false, 61,624행 적용), joint_contract_type
+- 신규 RPC 함수 3개: predict_dist, predict_dist_combined, calc_bid_amount_dist
+- 기존 v7 라인 (predict_v7, predict_v7_2, v7_calibration, v_this_week_targets_v72 등) **보존**
+- UI/코드 변경 없음 (Phase 21-C부터 시작 예정)
+
+### Spec/Plan errata (후속 PR에서 정정 권장)
+
+1. plan/spec §Step 4 calc_bid_amount_dist 예상값: "87,628,798"은 산술 오류. 정확값 100,000,000 × 0.99876 × 0.87745 = ceil(87,636,196.2) = **87,636,197**
+2. plan §Task 5 Step 4: "br.ba >= 1e9 AND br.ba < 3e9 → 군시설×S3"는 모순. 1e9~3e9는 S4 범위. 검증은 S3 범위(3e8~1e9)로 우회 실행됨
+3. spec §2.2 표 행수 추정 ~1,400은 'cat=전기' 단일 정규화 가정. 실제 백필은 raw cat GROUP으로 1,846행 (predict_dist의 cat LIKE '전기%' 매칭이 변형 흡수하므로 예측 정확도 무관)
+
+### 후속 결정 사항 (사용자 보고 대상)
+
+1. **agency_rate_distribution 활용 방향**: predict_dist는 bid_records 직접 집계 — distribution 테이블 미참조. Phase 21-C UI에서 분포 박스 시각화에 distribution 테이블을 직접 SELECT 하는 설계가 필요 (또는 predict_dist를 distribution 테이블 참조로 리팩토링).
+2. **Phase 21-C 진입**: predict-architect 3차 검토 권장 (실제 백필 데이터로 시뮬 재실측). 21-C plan 작성 시 UI 변경(예측탭 모달 단순화) 범위 명시.
+3. **푸시 결정**: 5개 commit이 main에 누적. push 시 Vercel 자동 배포(2~3분), 단 UI 변경 없으므로 사용자 영향 0. deploy-gate는 코드 변경에 트리거되므로 docs-only commit은 면제 가능 — 사용자 확인 필요.
+
