@@ -331,6 +331,9 @@ $$;
 직격 노림 시점이며 Phase 1 균일 마진은 0.30%로 시작 후 std 기반 동적으로.
 
 ### 4.3 `calculate_disq_risk(p_margin NUMERIC, p_std NUMERIC) → NUMERIC`
+
+> p_margin IS NULL 가드는 spec smoke의 r_margin_null=0.5 기대값을 보장.
+
 ```sql
 CREATE OR REPLACE FUNCTION calculate_disq_risk(p_margin NUMERIC, p_std NUMERIC)
 RETURNS NUMERIC LANGUAGE plpgsql IMMUTABLE AS $$
@@ -341,8 +344,13 @@ DECLARE
   v_phi NUMERIC;                          -- φ(z) PDF
   v_cdf NUMERIC;                          -- Φ(z) CDF
 BEGIN
+  -- p_margin IS NULL 가드: margin 미입력 시 50% 부적격 반환 (안전 기본값)
+  IF p_margin IS NULL THEN
+    RETURN 0.5;
+  END IF;
+
   IF p_std IS NULL OR p_std <= 0 THEN
-    RETURN CASE WHEN p_margin IS NOT NULL AND p_margin > 0 THEN 0 ELSE 0.5 END;
+    RETURN CASE WHEN p_margin > 0 THEN 0 ELSE 0.5 END;
   END IF;
 
   v_z  := p_margin / p_std;
@@ -397,6 +405,7 @@ RETURNS TABLE (
   signal_stage             INTEGER,                -- 1/2/3
   sample_size_used         INTEGER
 ) LANGUAGE plpgsql STABLE AS $$
+#variable_conflict use_column
 DECLARE
   v_tier         TEXT  := amount_tier_of(p_base_amount);
   v_mean         NUMERIC;
@@ -541,6 +550,8 @@ CREATE TRIGGER bpv3_lifecycle
 
 ## 6. 백필 SQL (62,365건 일괄)
 
+> rev2: pn_no 중복 disambiguation. bid_records.pn_no가 고유하지 않아(2,011 중복 그룹) 첫 시도에서 4.5% 손실 발생. CASE 표현식으로 100% unique bid_no 보장.
+
 ```sql
 INSERT INTO bid_history (
   bid_no, legacy_record_id, source,
@@ -552,7 +563,12 @@ INSERT INTO bid_history (
   competitor_count, is_excluded, excl_reason
 )
 SELECT
-  COALESCE(pn_no, 'legacy_' || id::TEXT)        AS bid_no,
+  CASE
+    WHEN pn_no IS NULL                                        THEN 'legacy_' || id::TEXT
+    WHEN ROW_NUMBER() OVER (PARTITION BY pn_no ORDER BY id) > 1
+                                                              THEN pn_no || '_' || id::TEXT
+    ELSE pn_no
+  END                                            AS bid_no,
   id                                            AS legacy_record_id,
   'legacy_bid_records'                          AS source,
   ag,
@@ -614,7 +630,7 @@ BEGIN
   ),
   agg AS (
     SELECT canonical_ag, industry, amount_tier,
-           COUNT(*)                                          AS sample_size,
+           COUNT(*)::INTEGER                                  AS sample_size,
            AVG(price_ratio)                                  AS mean_ratio,
            PERCENTILE_CONT(0.5)  WITHIN GROUP (ORDER BY price_ratio) AS median_ratio,
            STDDEV_SAMP(price_ratio)                          AS std_dev,
@@ -745,6 +761,8 @@ CREATE INDEX bnt_batch_pending ON bid_notices_temp (batch_id) WHERE predicted = 
 | trigger normalize 호출 비용 | 백필 시 한 번만 (62K건). 이후는 INSERT 시점 매번이지만 단순 정규식 함수 |
 | `bid_history.price_ratio_dev` | V6-A에선 항상 NULL. V6-C 분석 RPC가 동적 계산하거나 후속에서 별도 갱신 RPC 추가 |
 | `amount_tier_of(NULL)` | NULL 반환. recalibrate에선 NULL을 "전체 합계" 의미로 GROUP BY |
+| 글로벌 폴백 mean이 sane range 밖 | outlier 영향 가능성. confidence='insufficient'로 UI 차단 권장. V6-B에서 outlier 필터 도입 검토. |
+| bid_records 원본 사정률 outlier (>110 등) | V6-A는 데이터를 그대로 백필. outlier 필터링은 V6-B/V6-C 책임. |
 
 ## 11. Phase 23-3 게이트 적용
 
@@ -784,6 +802,7 @@ CREATE INDEX bnt_batch_pending ON bid_notices_temp (batch_id) WHERE predicted = 
 - 외부 인포나·낙찰정보 시드 100건+100건 임포트 (파서 구현 후)
 - 자사 사업자번호 매칭 로직 (V6-D)
 - 기존 17개 테이블 RLS 활성화 정책 (V6-A 범위 밖, 별도 결정)
+- recalibrate_agency_profiles()에 outlier 필터 (예: price_ratio BETWEEN 70 AND 130) 추가 검토. 현재 글로벌 폴백 mean이 일부 이상치 영향으로 sane range 밖일 수 있음.
 
 ---
 

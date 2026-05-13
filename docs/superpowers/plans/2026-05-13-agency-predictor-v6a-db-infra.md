@@ -754,9 +754,13 @@ git commit -m "feat(agency-predictor-v6a): add bpv3_lifecycle trigger (immutabil
 
 - [ ] **Step 10-1: SQL 파일 작성**
 
+> rev2 (2026-05-13, commit `93678ff`): pn_no 중복 disambiguation으로 2,803건 손실 회복
+
 ```sql
--- V6-A Migration 10: bid_records 62,365건 → bid_history 백필
+-- V6-A Migration 10: bid_records 62,365건 → bid_history 백필 (FIX rev2)
 -- spec §6
+-- rev2 (fix): bid_records.pn_no가 고유하지 않아(2,011 중복 그룹) 첫 시도에서 4.5% 손실 발생.
+--             pn_no가 NULL이거나 중복인 경우 id를 합성해 100% unique 보장.
 
 INSERT INTO bid_history (
   bid_no, legacy_record_id, source,
@@ -768,7 +772,12 @@ INSERT INTO bid_history (
   competitor_count, is_excluded, excl_reason
 )
 SELECT
-  COALESCE(pn_no, 'legacy_' || id::TEXT)        AS bid_no,
+  CASE
+    WHEN pn_no IS NULL                                        THEN 'legacy_' || id::TEXT
+    WHEN ROW_NUMBER() OVER (PARTITION BY pn_no ORDER BY id) > 1
+                                                              THEN pn_no || '_' || id::TEXT
+    ELSE pn_no
+  END                                            AS bid_no,
   id                                            AS legacy_record_id,
   'legacy_bid_records'                          AS source,
   ag,
@@ -830,6 +839,8 @@ git commit -m "feat(agency-predictor-v6a): backfill bid_records (62K) into bid_h
 
 - [ ] **Step 11-1: SQL 파일 작성**
 
+> fix1 (commit `9acbcea`): bigint→integer cast for calculate_recommended_margin signature.
+
 ```sql
 -- V6-A Migration 11: recalibrate_agency_profiles 함수
 -- spec §7
@@ -865,7 +876,7 @@ BEGIN
   ),
   agg AS (
     SELECT canonical_ag, industry, amount_tier,
-           COUNT(*)                                                       AS sample_size,
+           COUNT(*)::INTEGER                                              AS sample_size,
            AVG(price_ratio)                                               AS mean_ratio,
            PERCENTILE_CONT(0.5)  WITHIN GROUP (ORDER BY price_ratio)      AS median_ratio,
            STDDEV_SAMP(price_ratio)                                       AS std_dev,
@@ -956,6 +967,8 @@ git commit -m "feat(agency-predictor-v6a): define recalibrate_agency_profiles() 
 
 - [ ] **Step 12-1: SQL 파일 작성**
 
+> fix1 (commit `ae53ec2`): OUT 변수 vs agency_profile.confidence_tier ambiguity 해소.
+
 ```sql
 -- V6-A Migration 12: 메인 예측 RPC (3단계 폴백)
 -- spec §4.4
@@ -984,6 +997,7 @@ RETURNS TABLE (
   signal_stage             INTEGER,
   sample_size_used         INTEGER
 ) LANGUAGE plpgsql STABLE AS $$
+#variable_conflict use_column
 DECLARE
   v_tier       TEXT := amount_tier_of(p_base_amount);
   v_mean       NUMERIC;
