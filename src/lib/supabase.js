@@ -466,3 +466,75 @@ export async function sbFetchNotices(){
 export async function sbPredictNotice(noticeId){
   try{const res=await authedFetch("/rest/v1/rpc/predict_notice",{method:"POST",headers:{...JSON_H,"Prefer":"return=representation"},body:JSON.stringify({p_notice_id:noticeId})});if(!res.ok)return null;const rows=await res.json();return rows[0]||null}catch(e){return null}
 }
+
+
+// ─── V6-B1: 발주처 예측 탭 (2026-05-13) ──────────────────────
+// 디자인 문서: docs/superpowers/specs/2026-05-13-agency-predictor-v6b1-mvp-design.md
+// 4개 헬퍼: (1) predict_with_history RPC, (2) bid_history file_upload 일괄 INSERT,
+//          (3) bid_predictions_v3 일괄 INSERT, (4) 최근 예측 조회.
+
+// (1) predict_with_history RPC 호출 — 행 1건당
+export async function sbCallPredictWithHistory({bid_no,canonical_ag,industry,base_amount,a_value,floor_rate}){
+  try{
+    const body=JSON.stringify({
+      p_bid_no:bid_no,p_canonical_ag:canonical_ag,p_industry:industry,
+      p_base_amount:base_amount,p_a_value:a_value,p_floor_rate:floor_rate
+    });
+    const res=await authedFetch("/rest/v1/rpc/predict_with_history",{method:"POST",headers:JSON_H,body});
+    if(!res.ok)return null;
+    const rows=await res.json();
+    return Array.isArray(rows)&&rows[0]?rows[0]:null;
+  }catch(e){return null}
+}
+
+// (2) bid_history file_upload 일괄 INSERT — UNIQUE (bid_no, source) ON CONFLICT DO NOTHING
+//     rows: [{bid_no,ag,industry,opened_at,base_amount,a_value,floor_rate,notice_title,contract_method}]
+export async function sbBatchInsertBidHistoryUpload(rows){
+  if(!rows||!rows.length)return;
+  const BATCH=100;
+  for(let i=0;i<rows.length;i+=BATCH){
+    const batch=rows.slice(i,i+BATCH).map(r=>({...r,source:"file_upload"}));
+    const body=sanitizeJson(JSON.stringify(batch));
+    await authedFetch("/rest/v1/bid_history?on_conflict=bid_no,source",{
+      method:"POST",
+      headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},
+      body
+    });
+  }
+}
+
+// (3) bid_predictions_v3 일괄 INSERT — model_version DEFAULT 'v3.0' (DB 측)
+export async function sbBatchInsertBidPredictionsV3(rows){
+  if(!rows||!rows.length)return;
+  const BATCH=50;
+  for(let i=0;i<rows.length;i+=BATCH){
+    const batch=rows.slice(i,i+BATCH);
+    const body=sanitizeJson(JSON.stringify(batch));
+    const res=await authedFetch("/rest/v1/bid_predictions_v3",{
+      method:"POST",
+      headers:{...JSON_H,"Prefer":"return=minimal"},
+      body
+    });
+    if(!res.ok)throw new Error(`bpv3 INSERT: ${res.status}`);
+  }
+}
+
+// (4) 최근 예측 조회 — 탭 진입 시 첫 표시
+export async function sbFetchAgencyPredictionsV3(limit=200){
+  try{
+    const cols="id,bid_no,canonical_ag,industry,amount_tier,base_amount,"
+      +"predicted_ratio,predicted_floor_amount,"
+      +"strategy_aggressive_bid,strategy_balanced_bid,strategy_safe_bid,"
+      +"aggressive_margin,balanced_margin,safe_margin,"
+      +"disq_risk_aggressive,disq_risk_balanced,disq_risk_safe,"
+      +"confidence_tier,signal_stage,sample_size_used,model_version,"
+      +"match_status,actual_ratio,result,created_at";
+    const res=await authedFetch(
+      "/rest/v1/bid_predictions_v3?select="+cols
+      +"&order=created_at.desc&limit="+limit
+    );
+    if(!res.ok)return[];
+    const rows=await res.json();
+    return Array.isArray(rows)?rows:[];
+  }catch(e){return[]}
+}
