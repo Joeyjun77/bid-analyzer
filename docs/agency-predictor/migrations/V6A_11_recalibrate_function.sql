@@ -32,7 +32,7 @@ BEGIN
   ),
   agg AS (
     SELECT canonical_ag, industry, amount_tier,
-           COUNT(*)                                                       AS sample_size,
+           COUNT(*)::INTEGER                                              AS sample_size,
            AVG(price_ratio)                                               AS mean_ratio,
            PERCENTILE_CONT(0.5)  WITHIN GROUP (ORDER BY price_ratio)      AS median_ratio,
            STDDEV_SAMP(price_ratio)                                       AS std_dev,
