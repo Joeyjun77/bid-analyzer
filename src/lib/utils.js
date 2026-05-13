@@ -60,6 +60,8 @@ export function sn(v){const n=pnv(v);return n===0?null:n}
 export function tc(v){return Number(v||0).toLocaleString()}
 export function tn(s){return Number(String(s).replace(/,/g,""))||0}
 export function pDt(v){if(!v)return null;const s=String(v).trim();let m;if((m=s.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/)))return`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;if((m=s.match(/^(\d{2})[-./](\d{1,2})[-./](\d{1,2})/)))return`20${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;return null}
+// V6-B1: DB amount_tier_of() 의 JS 사본 — bid_predictions_v3.amount_tier INSERT용
+export function amountTierOf(amt){const n=Number(amt);if(!isFinite(n))return null;if(n<1e8)return"~1억";if(n<3e8)return"1억~3억";if(n<5e8)return"3억~5억";if(n<1e9)return"5억~10억";if(n<3e9)return"10억~30억";return"30억~"}
 // CHO imported from constants.js
 export function getCho(c){const code=c.charCodeAt(0);if(code>=0xAC00&&code<=0xD7A3)return CHO[Math.floor((code-0xAC00)/588)];return c}
 export function mSch(t,q){if(!q)return true;const tl=t.toLowerCase(),ql=q.toLowerCase();if(tl.includes(ql))return true;return Array.from(t).map(getCho).join("").includes(q)}
