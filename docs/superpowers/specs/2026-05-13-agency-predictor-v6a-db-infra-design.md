@@ -617,6 +617,7 @@ BEGIN
     WHERE expected_price IS NOT NULL
       AND is_excluded = FALSE
       AND canonical_ag IS NOT NULL
+      AND price_ratio BETWEEN 70 AND 110   -- V6A_14 hotfix (2026-05-14): outlier 1,297건(2.6%) 제외
   ),
   -- 4가지 grain 동시 집계: (ag, ind, tier), (ag, ind, NULL), (ag, NULL, tier), (ag, NULL, NULL)
   grouped AS (
@@ -777,6 +778,7 @@ CREATE INDEX bnt_batch_pending ON bid_notices_temp (batch_id) WHERE predicted = 
 | trigger normalize 호출 비용 | 백필 시 한 번만 (62K건). 이후는 INSERT 시점 매번이지만 단순 정규식 함수 |
 | `bid_history.price_ratio_dev` | V6-A에선 항상 NULL. V6-C 분석 RPC가 동적 계산하거나 후속에서 별도 갱신 RPC 추가 |
 | `amount_tier_of(NULL)` | NULL 반환. recalibrate에선 NULL을 "전체 합계" 의미로 GROUP BY |
+| `bid_history.price_ratio` outlier (<70 또는 >110) | V6A_14 hotfix(2026-05-14)로 recalibrate WHERE 절에서 제외. 1,297건/2.6% 영향. 원본은 보존(legacy_record_id로 역추적 가능) |
 | 글로벌 폴백 mean이 sane range 밖 | outlier 영향 가능성. confidence='insufficient'로 UI 차단 권장. V6-B에서 outlier 필터 도입 검토. |
 | bid_records 원본 사정률 outlier (>110 등) | V6-A는 데이터를 그대로 백필. outlier 필터링은 V6-B/V6-C 책임. |
 
