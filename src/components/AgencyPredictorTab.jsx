@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { C } from "../lib/constants.js";
 import { sbFetchAgencyPredictionsV3, sbBatchInsertBidHistoryUpload, sbCallPredictWithHistory, sbBatchInsertBidPredictionsV3 } from "../lib/supabase.js";
-import { parseFile, parseSucview, parseBidDoc, isSucviewFile, normalizeAgencyName, clsAg, eraFR, clean, pDt, sn, pnv, amountTierOf } from "../lib/utils.js";
+import { parseFile, parseSucview, parseBidDoc, isSucviewFile, normalizeAgencyName, clsAg, eraFR, clean, pDt, amountTierOf } from "../lib/utils.js";
 
 // ─── V6-B1: 발주처 예측 탭 ────────────────────────────────────
 // spec: docs/superpowers/specs/2026-05-13-agency-predictor-v6b1-mvp-design.md
@@ -221,11 +221,13 @@ export default function AgencyPredictorTab(){
       signal_stage:output.signal_stage,
       sample_size_used:output.sample_size_used
     }));
+    let bpv3InsertFailed=false;
     if(insertRows.length){
       try{
         await sbBatchInsertBidPredictionsV3(insertRows);
       }catch(e){
         console.error("bpv3 INSERT failed:",e);
+        bpv3InsertFailed=true;
       }
     }
 
@@ -239,6 +241,9 @@ export default function AgencyPredictorTab(){
     // 5) 에러 로그를 parseLogs에 한 줄 추가
     if(errors.length){
       setParseLogs(prev=>[...prev,{name:"(예측 실패)",ok:false,msg:`${errors.length}건 RPC 실패 — 건너뜀`}]);
+    }
+    if(bpv3InsertFailed){
+      setParseLogs(prev=>[...prev,{name:"(DB 저장 실패)",ok:false,msg:"bid_predictions_v3 INSERT 오류 — 결과가 영구 저장되지 않았습니다. 콘솔 로그 확인 후 재시도 권장"}]);
     }
   }
 
