@@ -1,5 +1,7 @@
--- V6-A Migration 10: bid_records 62,365건 → bid_history 백필
+-- V6-A Migration 10: bid_records 62,365건 → bid_history 백필 (FIX rev2)
 -- spec §6
+-- rev2 (fix): bid_records.pn_no가 고유하지 않아(2,011 중복 그룹) 첫 시도에서 4.5% 손실 발생.
+--             pn_no가 NULL이거나 중복인 경우 id를 합성해 100% unique 보장.
 
 INSERT INTO bid_history (
   bid_no, legacy_record_id, source,
@@ -11,7 +13,12 @@ INSERT INTO bid_history (
   competitor_count, is_excluded, excl_reason
 )
 SELECT
-  COALESCE(pn_no, 'legacy_' || id::TEXT)        AS bid_no,
+  CASE
+    WHEN pn_no IS NULL                                        THEN 'legacy_' || id::TEXT
+    WHEN ROW_NUMBER() OVER (PARTITION BY pn_no ORDER BY id) > 1
+                                                              THEN pn_no || '_' || id::TEXT
+    ELSE pn_no
+  END                                            AS bid_no,
   id                                            AS legacy_record_id,
   'legacy_bid_records'                          AS source,
   ag,
