@@ -148,6 +148,100 @@ export default function AgencyPredictorTab(){
     setLoading("idle");
   }
 
+  async function handleBatchPredict(){
+    if(!pendingInputs.length)return;
+    setLoading("predicting");
+    setProgress({done:0,total:pendingInputs.length});
+
+    // 1) bid_history file_upload 일괄 INSERT (예측 호출 직전 — 매칭/감사 추적용)
+    try{
+      await sbBatchInsertBidHistoryUpload(pendingInputs.map(i=>({
+        bid_no:i.bid_no, ag:i.ag, canonical_ag:i.canonical_ag,
+        industry:i.industry, opened_at:i.opened_at, base_amount:i.base_amount,
+        a_value:i.a_value, floor_rate:i.floor_rate,
+        notice_title:i.notice_title, contract_method:i.contract_method
+      })));
+    }catch(e){
+      // history INSERT 실패는 치명적 아님 (예측은 진행 가능). 로그만.
+      console.warn("bid_history upload INSERT failed:",e);
+    }
+
+    // 2) Promise pool (concurrency=5) — 행마다 predict_with_history 호출
+    const results=[],errors=[];
+    const CONCURRENCY=5;
+    let cursor=0,done=0;
+    async function worker(){
+      while(cursor<pendingInputs.length){
+        const idx=cursor++;
+        const input=pendingInputs[idx];
+        try{
+          const r=await sbCallPredictWithHistory({
+            bid_no:input.bid_no, canonical_ag:input.canonical_ag,
+            industry:input.industry, base_amount:input.base_amount,
+            a_value:input.a_value||0, floor_rate:input.floor_rate
+          });
+          if(r){
+            results.push({input,output:r});
+          }else{
+            errors.push({input,reason:"RPC null"});
+          }
+        }catch(e){
+          errors.push({input,reason:e.message||"RPC error"});
+        }
+        done++;
+        setProgress({done,total:pendingInputs.length});
+      }
+    }
+    const workers=[];
+    for(let i=0;i<Math.min(CONCURRENCY,pendingInputs.length);i++)workers.push(worker());
+    await Promise.all(workers);
+
+    // 3) bid_predictions_v3 일괄 INSERT
+    setLoading("saving");
+    const insertRows=results.map(({input,output})=>({
+      bid_no:input.bid_no,
+      canonical_ag:input.canonical_ag,
+      industry:input.industry,
+      amount_tier:amountTierOf(input.base_amount),
+      base_amount:input.base_amount,
+      a_value:input.a_value,
+      floor_rate:input.floor_rate,
+      predicted_ratio:output.predicted_ratio,
+      predicted_floor_amount:output.predicted_floor_amount,
+      aggressive_margin:output.aggressive_margin,
+      balanced_margin:output.balanced_margin,
+      safe_margin:output.safe_margin,
+      strategy_aggressive_bid:output.aggressive_bid,
+      strategy_balanced_bid:output.balanced_bid,
+      strategy_safe_bid:output.safe_bid,
+      disq_risk_aggressive:output.disq_risk_aggressive,
+      disq_risk_balanced:output.disq_risk_balanced,
+      disq_risk_safe:output.disq_risk_safe,
+      confidence_tier:output.confidence_tier,
+      signal_stage:output.signal_stage,
+      sample_size_used:output.sample_size_used
+    }));
+    if(insertRows.length){
+      try{
+        await sbBatchInsertBidPredictionsV3(insertRows);
+      }catch(e){
+        console.error("bpv3 INSERT failed:",e);
+      }
+    }
+
+    // 4) 결과 재조회 + 상태 초기화
+    const rows=await sbFetchAgencyPredictionsV3(200);
+    setPreds(rows||[]);
+    setPendingInputs([]);
+    setProgress({done:0,total:0});
+    setLoading("idle");
+
+    // 5) 에러 로그를 parseLogs에 한 줄 추가
+    if(errors.length){
+      setParseLogs(prev=>[...prev,{name:"(예측 실패)",ok:false,msg:`${errors.length}건 RPC 실패 — 건너뜀`}]);
+    }
+  }
+
   useEffect(()=>{
     let cancel=false;
     setLoading("fetching");
@@ -179,8 +273,14 @@ export default function AgencyPredictorTab(){
       {pendingInputs.length>0&&<>
         <span style={{color:C.bdr}}>|</span>
         <span><strong>{pendingInputs.length}건</strong> 대기</span>
+        <button onClick={handleBatchPredict} disabled={loading!=="idle"}
+          style={{padding:"6px 14px",background:C.gold,color:"#000",border:"none",borderRadius:6,fontWeight:700,cursor:loading==="idle"?"pointer":"not-allowed",opacity:loading==="idle"?1:0.6}}>
+          ▶ 일괄 예측 시작
+        </button>
       </>}
       {loading==="parsing"&&<span style={{color:C.gold}}>파싱 중...</span>}
+      {loading==="predicting"&&<span style={{color:C.gold}}>예측 중... {progress.done}/{progress.total}</span>}
+      {loading==="saving"&&<span style={{color:C.gold}}>저장 중...</span>}
     </div>
     {parseLogs.length>0&&<div style={{padding:"8px 12px",marginBottom:12,background:C.bg2,border:"1px solid "+C.bdr,borderRadius:6,fontSize:11}}>
       <div style={{color:C.txm,marginBottom:4,fontWeight:600}}>업로드 로그</div>
