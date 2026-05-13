@@ -253,6 +253,21 @@ export default function AgencyPredictorTab(){
     return()=>{cancel=true};
   },[]);
 
+  // 요약 통계 (클라이언트 집계)
+  const summary=preds?(()=>{
+    const n=preds.length;
+    if(n===0)return{n:0,avgDisqB:null,stage1:0,stage2:0,stage3:0};
+    let disqSum=0,disqCnt=0,s1=0,s2=0,s3=0;
+    for(const p of preds){
+      const d=Number(p.disq_risk_balanced);
+      if(isFinite(d)){disqSum+=d;disqCnt++;}
+      if(p.signal_stage===1)s1++;
+      else if(p.signal_stage===2)s2++;
+      else if(p.signal_stage===3)s3++;
+    }
+    return{n,avgDisqB:disqCnt?disqSum/disqCnt:null,stage1:s1,stage2:s2,stage3:s3};
+  })():null;
+
   if(preds==null){
     return<div style={{padding:24,color:C.txd,fontSize:12}}>발주처 예측 데이터 로딩 중...</div>;
   }
@@ -261,9 +276,17 @@ export default function AgencyPredictorTab(){
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:"10px 12px",background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,fontSize:12,flexWrap:"wrap"}}>
       <span style={{fontWeight:700,color:C.gold}}>💎 발주처 예측 V6</span>
       <span style={{color:C.bdr}}>|</span>
-      <span>예측 대상 <strong>{preds.length}건</strong></span>
+      <span>예측 대상 <strong>{summary?summary.n:0}건</strong></span>
+      {summary&&summary.avgDisqB!=null&&<>
+        <span style={{color:C.bdr}}>·</span>
+        <span>평균 부적격(균형) <strong>{(summary.avgDisqB*100).toFixed(1)}%</strong></span>
+      </>}
+      {summary&&summary.n>0&&<>
+        <span style={{color:C.bdr}}>·</span>
+        <span>단계 1/2/3 = <strong>{summary.stage1}/{summary.stage2}/{summary.stage3}</strong></span>
+      </>}
       <span style={{color:C.bdr}}>·</span>
-      <span style={{color:C.txd}}>파일 업로드 + 일괄 예측은 후속 Task에서 추가됩니다</span>
+      <span style={{color:C.txd}}>v3.0</span>
     </div>
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:"10px 12px",background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,fontSize:12,flexWrap:"wrap"}}>
       <input id="v6b1_fi" type="file" accept=".xls,.xlsx" multiple style={{display:"none"}}
