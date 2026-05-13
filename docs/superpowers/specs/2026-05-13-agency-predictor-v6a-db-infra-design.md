@@ -715,8 +715,24 @@ CREATE POLICY "authenticated_read" ON bid_notices_temp
 -- INSERT/UPDATE/DELETE 정책 미선언 → service_role 만 가능
 ```
 
-V6-B에서 클라이언트 직접 INSERT가 필요해지면 (예: 파일 업로드 → upload_batches INSERT)
-정책 추가 또는 Edge Function 경유로 결정.
+### 8.1 V6-B1 hotfix (2026-05-14, `V6A_13_rls_insert_v6b1_hotfix.sql`)
+
+V6-B1이 클라이언트(authenticated)에서 `bid_history(file_upload)`와 `bid_predictions_v3`에 직접
+INSERT하므로 §8의 "service_role만 INSERT"는 V6-B1 가동을 막는다. 다음 정책 2개를 추가한다.
+`bid_history`는 `source='file_upload'`만 허용해 legacy/external_award 위변조를 차단하고,
+`bid_predictions_v3`는 무제한 INSERT 허용하되 `bpv3_lifecycle` 트리거가 `expires_at` 자동 설정
+및 UPDATE 시 불변 컬럼 보호 책임.
+
+```sql
+CREATE POLICY "authenticated_insert_upload" ON bid_history
+  FOR INSERT TO authenticated WITH CHECK (source = 'file_upload');
+
+CREATE POLICY "authenticated_insert" ON bid_predictions_v3
+  FOR INSERT TO authenticated WITH CHECK (true);
+```
+
+`upload_batches`/`bid_notices_temp`는 V6-B2 파서 도입 시점에 동일 패턴으로 INSERT 정책 추가
+예정 — V6-B1엔 미사용.
 
 ⚠️ 보안 알림 (Supabase advisory): 기존 17개 테이블이 RLS disabled 상태이며, V6-A는
 이를 변경하지 않는다(00-COMPATIBILITY 원칙). 사용자가 별도로 정책을 추가하길 권장하나 본 spec

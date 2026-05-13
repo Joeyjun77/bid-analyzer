@@ -44,6 +44,17 @@ V6-A spec §1.3과 동일. `bid_records`/`bid_predictions`/`predict_v6` 등 일�
 - 자사 사업자번호 매칭 ↛ V6-D.
 - recalibrate outlier 필터 ↛ V6-B2 (외부 데이터 누적 후 함께 결정).
 
+### 1.6 V6-B1 RLS hotfix (2026-05-14, post-deploy)
+
+V6-B1 spec/plan 작성 시 V6-A `§8 RLS 정책`의 "INSERT/UPDATE/DELETE는 service_role만"이 클라이언트
+직접 INSERT 패턴과 충돌함을 명세 누락. 첫 일괄 예측에서 403 5건(bid_history 2 + bpv3 3) 발생.
+사후 적용 마이그레이션 `V6A_13_rls_insert_v6b1_hotfix.sql`이 다음 두 정책 추가:
+- `bid_history` INSERT WITH CHECK `(source='file_upload')` — legacy/external_award는 service_role 전용 유지
+- `bid_predictions_v3` INSERT WITH CHECK `(true)` — bpv3_lifecycle 트리거가 불변성/expires_at 보호
+
+V6-A spec §8.1에 동일 내용 반영 완료. 향후 V6-B2 파서가 `upload_batches`/`bid_notices_temp` INSERT
+필요 시 같은 패턴으로 정책 추가 예정.
+
 ## 2. 컴포넌트 분해
 
 ### 2.1 파일 구조 (변경 매트릭스)
