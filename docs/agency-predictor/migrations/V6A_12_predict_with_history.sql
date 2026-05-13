@@ -25,6 +25,7 @@ RETURNS TABLE (
   signal_stage             INTEGER,
   sample_size_used         INTEGER
 ) LANGUAGE plpgsql STABLE AS $$
+#variable_conflict use_column
 DECLARE
   v_tier       TEXT := amount_tier_of(p_base_amount);
   v_mean       NUMERIC;
