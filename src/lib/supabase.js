@@ -538,3 +538,86 @@ export async function sbFetchAgencyPredictionsV3(limit=200){
     return Array.isArray(rows)?rows:[];
   }catch(e){return[]}
 }
+
+// ─── V1: 발주사 하한 예측탭 (2026-05-13) ──────────────────
+// 디자인 문서: docs/superpowers/specs/2026-05-13-agency-floor-prediction-tab-v1-design.md
+// 4개 헬퍼: (1) file_upload 예측 리스트, (2) 발주사 사정률 분포 신호,
+//          (3) 매칭된 bid_records 일괄, (4) 펼침 시 발주사 최근 이력.
+
+// (1) 예측 리스트 — source=file_upload, 필요 컬럼만 select
+export async function sbFetchAgencyFloorPredictions(limit=500){
+  try{
+    const cols="id,ag,canonical_ag,cat,ba,ep,av,od,"
+      +"actual_adj_rate,actual_bid_amount,actual_winner,"
+      +"match_status,matched_record_id,is_cancelled,created_at";
+    const res=await authedFetch(
+      "/rest/v1/bid_predictions?source=eq.file_upload"
+      +"&select="+cols
+      +"&order=od.desc.nullslast&limit="+limit
+    );
+    if(!res.ok)return[];
+    const rows=await res.json();
+    return Array.isArray(rows)?rows:[];
+  }catch(e){return[]}
+}
+
+// (2) 발주사 사정률 분포 신호 — canonical_ag in.() 일괄, 100건 청크
+//     반환: {rows:[{canonical_ag,cat,median_adj_ratio,p25_adj_ratio,p75_adj_ratio,
+//                   std_adj_ratio,sample_size,tier,confidence}]}
+export async function sbFetchAgencyRateDistribution(canonicalAgs){
+  if(!canonicalAgs||!canonicalAgs.length)return{rows:[]};
+  try{
+    const unique=[...new Set(canonicalAgs.filter(Boolean))];
+    const CHUNK=100;let all=[];
+    for(let i=0;i<unique.length;i+=CHUNK){
+      const c=unique.slice(i,i+CHUNK);
+      const qs="canonical_ag=in.("+c.map(s=>encodeURIComponent('"'+s+'"')).join(",")+")";
+      const res=await authedFetch(
+        "/rest/v1/agency_rate_distribution?"+qs
+        +"&select=canonical_ag,cat,median_adj_ratio,p25_adj_ratio,p75_adj_ratio,"
+        +"std_adj_ratio,sample_size,tier,confidence"
+      );
+      if(!res.ok)continue;
+      const rows=await res.json();
+      if(Array.isArray(rows))all=all.concat(rows);
+    }
+    return{rows:all};
+  }catch(e){return{rows:[]}}
+}
+
+// (3) 매칭된 bid_records 일괄 — matched_record_id 집합 → {id:{ar1,base_ratio,fr,bp,co}}
+export async function sbFetchMatchedRecords(ids){
+  if(!ids||!ids.length)return{};
+  try{
+    const unique=[...new Set(ids.filter(v=>v!=null))];
+    const CHUNK=100;const out={};
+    for(let i=0;i<unique.length;i+=CHUNK){
+      const c=unique.slice(i,i+CHUNK);
+      const res=await authedFetch(
+        "/rest/v1/bid_records?id=in.("+c.join(",")+")"
+        +"&select=id,ar1,base_ratio,fr,bp,co"
+      );
+      if(!res.ok)continue;
+      const rows=await res.json();
+      if(Array.isArray(rows))for(const r of rows)out[r.id]=r;
+    }
+    return out;
+  }catch(e){return{}}
+}
+
+// (4) 발주사 최근 입찰 이력 — 펼침 시 lazy fetch
+//     ar1 not null + is_excluded=false 필터, od desc 30건
+export async function sbFetchAgencyHistoryByName(canonicalAg,limit=30){
+  if(!canonicalAg)return[];
+  try{
+    const res=await authedFetch(
+      "/rest/v1/bid_records?canonical_ag=eq."+encodeURIComponent(canonicalAg)
+      +"&ar1=not.is.null&is_excluded=eq.false"
+      +"&order=od.desc.nullslast&limit="+limit
+      +"&select=id,od,pn,ba,ar1,base_ratio,fr,bp,co,pc"
+    );
+    if(!res.ok)return[];
+    const rows=await res.json();
+    return Array.isArray(rows)?rows:[];
+  }catch(e){return[]}
+}
