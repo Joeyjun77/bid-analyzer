@@ -151,6 +151,52 @@ function AgencyFloorHistoryPanel({canonicalAg}){
   </td></tr>;
 }
 
+// 메인 테이블 한 행 — 클릭 시 펼침 토글
+function AgencyFloorRow({pred,signal,matched,expanded,onToggle}){
+  const predRate=signal?signal.median:null;
+  const actRate=pred.actual_adj_rate!=null?(100+Number(pred.actual_adj_rate)):null;
+  const error=(predRate!=null&&actRate!=null)?(predRate-actRate):null;
+  const errColor=error==null?C.txd:(Math.abs(error)>=0.5?"#e24b4a":C.txd);
+  const stageBadge=signal?(
+    signal.stage===1?"업종·"+(signal.confidence||""):
+    signal.stage===2?"발주사평균":
+    signal.stage===3?"글로벌":""
+  ):"";
+  return<>
+    <tr style={{borderTop:"1px solid "+C.bdr,cursor:"pointer"}}
+        onClick={onToggle}
+        title={expanded?"클릭하여 닫기":"클릭하여 이전 입찰 이력 보기"}>
+      <td style={{padding:"6px 8px",fontSize:11}}>{pred.od||"-"}</td>
+      <td style={{padding:"6px 8px",fontSize:11}}>
+        <div style={{fontWeight:600}}>{pred.ag||"-"}</div>
+        <div style={{fontSize:9,color:C.txd}}>{pred.cat||"-"}</div>
+      </td>
+      <td style={{padding:"6px 8px",fontSize:11,textAlign:"right",fontFamily:"monospace"}}>
+        {pred.ba!=null?(Number(pred.ba)/1e8).toFixed(2):"-"}
+      </td>
+      <td style={{padding:"6px 8px",fontSize:11,textAlign:"right",fontFamily:"monospace"}}>
+        {predRate!=null?<>
+          <div style={{fontWeight:600}}>{Number(predRate).toFixed(4)}%</div>
+          {stageBadge&&<div style={{fontSize:9,color:C.txd}}>[{stageBadge}·n={signal.n||0}]</div>}
+        </>:<span style={{color:C.txd}}>예측 불가</span>}
+      </td>
+      <td style={{padding:"6px 8px",fontSize:11,textAlign:"right",fontFamily:"monospace"}}>
+        {actRate!=null?Number(actRate).toFixed(4)+"%":<span style={{color:C.txd}}>—</span>}
+      </td>
+      <td style={{padding:"6px 8px",fontSize:11,textAlign:"right",fontFamily:"monospace"}}>
+        {matched&&matched.base_ratio!=null?Number(matched.base_ratio).toFixed(4)+"%":<span style={{color:C.txd}}>—</span>}
+      </td>
+      <td style={{padding:"6px 8px",fontSize:11,textAlign:"right",fontFamily:"monospace"}}>
+        {matched&&matched.fr!=null?Number(matched.fr).toFixed(3)+"%":<span style={{color:C.txd}}>—</span>}
+      </td>
+      <td style={{padding:"6px 8px",fontSize:11,textAlign:"right",fontFamily:"monospace",color:errColor,fontWeight:Math.abs(error||0)>=0.5?700:400}}>
+        {error!=null?(error>0?"+":"")+Number(error).toFixed(4):<span style={{color:C.txd}}>—</span>}
+      </td>
+    </tr>
+    {expanded&&<AgencyFloorHistoryPanel canonicalAg={pred.canonical_ag}/>}
+  </>;
+}
+
 // 티어별 배지 스타일
 const TIER_STYLES={
   1:{emoji:"🏆",label:"P1",color:"#e24b4a",bg:"rgba(226,75,74,0.12)",border:"#e24b4a"},
