@@ -197,6 +197,140 @@ function AgencyFloorRow({pred,signal,matched,expanded,onToggle}){
   </>;
 }
 
+// 메인 컨테이너 — 데이터 fetch + 신호 4단계 폴백 + 요약 헤더 + 테이블
+function AgencyFloorTab(){
+  const [preds,setPreds]=useState(null);
+  const [sigRows,setSigRows]=useState([]);
+  const [matched,setMatched]=useState({});
+  const [expandedId,setExpandedId]=useState(null);
+  const [loading,setLoading]=useState(false);
+
+  useEffect(()=>{
+    let cancel=false;
+    setLoading(true);
+    (async()=>{
+      const p=await sbFetchAgencyFloorPredictions(500);
+      if(cancel)return;
+      const filtered=(p||[]).filter(x=>!x.is_cancelled);
+      setPreds(filtered);
+      const ags=[...new Set(filtered.map(x=>x.canonical_ag).filter(Boolean))];
+      const matchedIds=[...new Set(filtered.map(x=>x.matched_record_id).filter(v=>v!=null))];
+      const [d,mr]=await Promise.all([
+        sbFetchAgencyRateDistribution(ags),
+        sbFetchMatchedRecords(matchedIds)
+      ]);
+      if(cancel)return;
+      setSigRows((d&&d.rows)||[]);
+      setMatched(mr||{});
+      setLoading(false);
+    })().catch(()=>{if(!cancel)setLoading(false)});
+    return()=>{cancel=true};
+  },[]);
+
+  // 신호 매핑 함수 (3단계 폴백: 업종 정확 → 발주사 평균 → 글로벌 중앙값)
+  const sigLookup=useMemo(()=>{
+    const byKey={};const byAg={};const allMed=[];
+    for(const r of sigRows){
+      const med=Number(r.median_adj_ratio);
+      if(!isFinite(med))continue;
+      const k=r.canonical_ag+"|"+(r.cat||"");
+      byKey[k]={median:med,n:Number(r.sample_size)||0,confidence:r.confidence,tier:r.tier};
+      if(!byAg[r.canonical_ag])byAg[r.canonical_ag]={sum:0,cnt:0,n:0};
+      byAg[r.canonical_ag].sum+=med;
+      byAg[r.canonical_ag].cnt+=1;
+      byAg[r.canonical_ag].n+=Number(r.sample_size)||0;
+      allMed.push(med);
+    }
+    let globalMed=100;
+    if(allMed.length){
+      const sorted=allMed.slice().sort((a,b)=>a-b);
+      globalMed=sorted[Math.floor(sorted.length/2)];
+    }
+    return function lookup(canonicalAg,cat){
+      if(!canonicalAg)return null;
+      const k=canonicalAg+"|"+(cat||"");
+      const s1=byKey[k];
+      if(s1&&(s1.confidence==="high"||s1.confidence==="medium")&&s1.n>=5){
+        return{stage:1,median:s1.median,n:s1.n,confidence:s1.confidence};
+      }
+      const s2=byAg[canonicalAg];
+      if(s2&&s2.cnt>0){
+        return{stage:2,median:s2.sum/s2.cnt,n:s2.n,confidence:"avg"};
+      }
+      return{stage:3,median:globalMed,n:allMed.length,confidence:"global"};
+    };
+  },[sigRows]);
+
+  // 요약 통계 (전체 n / matched / 평균 |오차| / 1pp 적중률)
+  const summary=useMemo(()=>{
+    if(!preds)return null;
+    const n=preds.length;
+    const matchedCnt=preds.filter(p=>p.match_status==="matched"&&p.actual_adj_rate!=null).length;
+    const errs=[];let hit1=0;
+    for(const p of preds){
+      if(p.actual_adj_rate==null)continue;
+      const sig=sigLookup(p.canonical_ag,p.cat);
+      if(!sig)continue;
+      const act=100+Number(p.actual_adj_rate);
+      const err=Math.abs(sig.median-act);
+      if(!isFinite(err))continue;
+      errs.push(err);
+      if(err<1.0)hit1++;
+    }
+    return{
+      n:n,
+      matched:matchedCnt,
+      mae:errs.length?(errs.reduce((a,b)=>a+b,0)/errs.length):null,
+      hit1pp:errs.length?((hit1/errs.length)*100):null
+    };
+  },[preds,sigLookup]);
+
+  if(loading||preds==null){
+    return<div style={{padding:24,color:C.txd,fontSize:12}}>발주사 하한 예측 데이터 로딩 중...</div>;
+  }
+
+  return<div>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:"10px 12px",background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,fontSize:12,flexWrap:"wrap"}}>
+      <span style={{fontWeight:700,color:C.gold}}>발주사 하한 예측</span>
+      <span style={{color:C.bdr}}>|</span>
+      <span>예측 대상 <strong>{summary?summary.n:0}건</strong></span>
+      <span style={{color:C.bdr}}>·</span>
+      <span>매칭 <strong>{summary?summary.matched:0}건</strong></span>
+      {summary&&summary.mae!=null&&<>
+        <span style={{color:C.bdr}}>·</span>
+        <span>평균 |오차| <strong>{summary.mae.toFixed(4)}pp</strong></span>
+      </>}
+      {summary&&summary.hit1pp!=null&&<>
+        <span style={{color:C.bdr}}>·</span>
+        <span>1pp 적중률 <strong>{summary.hit1pp.toFixed(1)}%</strong></span>
+      </>}
+    </div>
+    {preds.length===0?
+      <div style={{padding:24,color:C.txd,textAlign:"center",fontSize:12,background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8}}>업로드된 file_upload 예측이 없습니다.</div>
+      :
+      <table style={{width:"100%",fontSize:11,borderCollapse:"collapse",background:C.bg2,border:"1px solid "+C.bdr,borderRadius:6,overflow:"hidden"}}>
+        <thead><tr style={{color:C.txd,background:C.bg3}}>
+          <th style={{textAlign:"left",padding:"6px 8px",fontWeight:600}}>개찰일</th>
+          <th style={{textAlign:"left",padding:"6px 8px",fontWeight:600}}>발주사 / 업종</th>
+          <th style={{textAlign:"right",padding:"6px 8px",fontWeight:600}}>기초(억)</th>
+          <th style={{textAlign:"right",padding:"6px 8px",fontWeight:600}}>예측 1위 사정률</th>
+          <th style={{textAlign:"right",padding:"6px 8px",fontWeight:600}}>실측 1위 사정률</th>
+          <th style={{textAlign:"right",padding:"6px 8px",fontWeight:600}}>낙찰가/기초</th>
+          <th style={{textAlign:"right",padding:"6px 8px",fontWeight:600}}>낙찰하한율</th>
+          <th style={{textAlign:"right",padding:"6px 8px",fontWeight:600}}>오차(pp)</th>
+        </tr></thead>
+        <tbody>{preds.map(p=>{
+          const sig=sigLookup(p.canonical_ag,p.cat);
+          const m=p.matched_record_id?matched[p.matched_record_id]:null;
+          return<AgencyFloorRow key={p.id} pred={p} signal={sig} matched={m}
+            expanded={expandedId===p.id}
+            onToggle={()=>setExpandedId(expandedId===p.id?null:p.id)} />;
+        })}</tbody>
+      </table>
+    }
+  </div>;
+}
+
 // 티어별 배지 스타일
 const TIER_STYLES={
   1:{emoji:"🏆",label:"P1",color:"#e24b4a",bg:"rgba(226,75,74,0.12)",border:"#e24b4a"},
