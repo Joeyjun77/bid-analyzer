@@ -88,6 +88,69 @@ function fmtP100(adj0,decimals=3){
   if(v==null||isNaN(v))return"-";
   return v.toFixed(decimals)+"%"
 }
+
+// ─── V1: 발주사 하한 예측탭 (2026-05-13) ──────────────────
+// 펼침 패널: 해당 canonical_ag의 최근 30건 + 평균/std 요약
+function AgencyFloorHistoryPanel({canonicalAg}){
+  const [rows,setRows]=useState(null);
+  const [loading,setLoading]=useState(false);
+  useEffect(()=>{
+    if(!canonicalAg)return;
+    let cancel=false;
+    setLoading(true);
+    sbFetchAgencyHistoryByName(canonicalAg,30).then(r=>{
+      if(cancel)return;
+      setRows(Array.isArray(r)?r:[]);
+      setLoading(false);
+    });
+    return()=>{cancel=true};
+  },[canonicalAg]);
+  if(loading)return<tr><td colSpan={8} style={{padding:"10px 14px",color:C.txd,fontSize:11,background:C.bg2}}>이력 로딩 중...</td></tr>;
+  if(!rows)return null;
+  if(rows.length===0)return<tr><td colSpan={8} style={{padding:"10px 14px",color:C.txd,fontSize:11,background:C.bg2}}>이전 입찰 없음</td></tr>;
+  const ar1s=rows.map(r=>Number(r.ar1)).filter(v=>isFinite(v));
+  const ar1Mean=ar1s.length?ar1s.reduce((a,b)=>a+b,0)/ar1s.length:NaN;
+  const ar1Std=ar1s.length?Math.sqrt(ar1s.reduce((s,v)=>s+(v-ar1Mean)**2,0)/ar1s.length):NaN;
+  const brs=rows.map(r=>Number(r.base_ratio)).filter(v=>isFinite(v));
+  const brMean=brs.length?brs.reduce((a,b)=>a+b,0)/brs.length:NaN;
+  const frs=rows.map(r=>Number(r.fr)).filter(v=>isFinite(v));
+  const frMean=frs.length?frs.reduce((a,b)=>a+b,0)/frs.length:NaN;
+  return<tr><td colSpan={8} style={{padding:0,background:C.bg2}}>
+    <div style={{padding:"10px 14px"}}>
+      <div style={{fontSize:11,color:C.txm,marginBottom:8,fontWeight:600}}>
+        {canonicalAg} — 이전 입찰 이력 (최근 {rows.length}건)
+      </div>
+      <table style={{width:"100%",fontSize:11,borderCollapse:"collapse"}}>
+        <thead><tr style={{color:C.txd}}>
+          <th style={{textAlign:"left",padding:"3px 6px"}}>개찰일</th>
+          <th style={{textAlign:"left",padding:"3px 6px"}}>공고명</th>
+          <th style={{textAlign:"right",padding:"3px 6px"}}>기초(억)</th>
+          <th style={{textAlign:"right",padding:"3px 6px"}}>1위 사정률</th>
+          <th style={{textAlign:"right",padding:"3px 6px"}}>낙찰가/기초</th>
+          <th style={{textAlign:"right",padding:"3px 6px"}}>fr</th>
+          <th style={{textAlign:"right",padding:"3px 6px"}}>낙찰가(원)</th>
+          <th style={{textAlign:"left",padding:"3px 6px"}}>1위 업체</th>
+        </tr></thead>
+        <tbody>{rows.map(r=>(
+          <tr key={r.id} style={{borderTop:"1px solid "+C.bdr}}>
+            <td style={{padding:"3px 6px"}}>{r.od||"-"}</td>
+            <td style={{padding:"3px 6px",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.pn||""}>{(r.pn||"").slice(0,35)}{(r.pn||"").length>35?"...":""}</td>
+            <td style={{padding:"3px 6px",textAlign:"right",fontFamily:"monospace"}}>{r.ba!=null?(Number(r.ba)/1e8).toFixed(2):"-"}</td>
+            <td style={{padding:"3px 6px",textAlign:"right",fontFamily:"monospace"}}>{r.ar1!=null?Number(r.ar1).toFixed(4)+"%":"-"}</td>
+            <td style={{padding:"3px 6px",textAlign:"right",fontFamily:"monospace"}}>{r.base_ratio!=null?Number(r.base_ratio).toFixed(4)+"%":"-"}</td>
+            <td style={{padding:"3px 6px",textAlign:"right",fontFamily:"monospace"}}>{r.fr!=null?Number(r.fr).toFixed(3)+"%":"-"}</td>
+            <td style={{padding:"3px 6px",textAlign:"right",fontFamily:"monospace"}}>{r.bp!=null?Number(r.bp).toLocaleString():"-"}</td>
+            <td style={{padding:"3px 6px"}}>{r.co||"-"}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+      <div style={{fontSize:10,color:C.txd,marginTop:8}}>
+        평균 1위 사정률 {isFinite(ar1Mean)?ar1Mean.toFixed(4)+"%":"-"} · std {isFinite(ar1Std)?ar1Std.toFixed(4)+"pp":"-"} · 평균 낙찰가/기초 {isFinite(brMean)?brMean.toFixed(4)+"%":"-"} (fr 평균 {isFinite(frMean)?frMean.toFixed(3)+"%":"-"} · 마진 {isFinite(brMean-frMean)?(brMean-frMean).toFixed(4)+"pp":"-"})
+      </div>
+    </div>
+  </td></tr>;
+}
+
 // 티어별 배지 스타일
 const TIER_STYLES={
   1:{emoji:"🏆",label:"P1",color:"#e24b4a",bg:"rgba(226,75,74,0.12)",border:"#e24b4a"},
