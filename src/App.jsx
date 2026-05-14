@@ -1229,7 +1229,7 @@ ${baseInfo}
         })()}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="quality" ch="🔬 검증"/><Tb id="agency_predict_v6" ch="💎 발주처 예측 V6"/><Tb id="chat" ch="AI 상담"/>{isAdmin&&<Tb id="admin" ch="👤 관리자"/>}</div>
+        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="quality" ch="🔬 검증"/><Tb id="agency_predict_v6" ch="💎 발주처 예측 V6"/><Tb id="agency_floor" ch="🎯 발주사 하한"/><Tb id="chat" ch="AI 상담"/>{isAdmin&&<Tb id="admin" ch="👤 관리자"/>}</div>
         <UserBadge/>
       </div>
     </div>
@@ -3023,6 +3023,9 @@ ${baseInfo}
 
     {/* ═══ 발주처 예측 V6 탭 ═══ */}
     {tab==="agency_predict_v6"&&<AgencyPredictorTab/>}
+
+    {/* ═══ 발주사 하한 예측 탭 (V1, 2026-05-13) ═══ */}
+    {tab==="agency_floor"&&<AgencyFloorTab/>}
 
     {/* ═══ AI 상담 탭 ═══ */}
     {tab==="chat"&&(()=>{
