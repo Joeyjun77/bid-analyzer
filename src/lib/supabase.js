@@ -547,13 +547,13 @@ export async function sbFetchAgencyPredictionsV3(limit=200){
 // (1) 예측 리스트 — source=file_upload, 필요 컬럼만 select
 export async function sbFetchAgencyFloorPredictions(limit=500){
   try{
-    const cols="id,ag,canonical_ag,cat,ba,ep,av,od,"
+    const cols="id,ag,canonical_ag,cat,ba,ep,av,open_date,"
       +"actual_adj_rate,actual_bid_amount,actual_winner,"
       +"match_status,matched_record_id,is_cancelled,created_at";
     const res=await authedFetch(
       "/rest/v1/bid_predictions?source=eq.file_upload"
       +"&select="+cols
-      +"&order=od.desc.nullslast&limit="+limit
+      +"&order=open_date.desc.nullslast&limit="+limit
     );
     if(!res.ok)return[];
     const rows=await res.json();

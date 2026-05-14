@@ -166,7 +166,7 @@ function AgencyFloorRow({pred,signal,matched,expanded,onToggle}){
     <tr style={{borderTop:"1px solid "+C.bdr,cursor:"pointer"}}
         onClick={onToggle}
         title={expanded?"클릭하여 닫기":"클릭하여 이전 입찰 이력 보기"}>
-      <td style={{padding:"6px 8px",fontSize:11}}>{pred.od||"-"}</td>
+      <td style={{padding:"6px 8px",fontSize:11}}>{pred.open_date||"-"}</td>
       <td style={{padding:"6px 8px",fontSize:11}}>
         <div style={{fontWeight:600}}>{pred.ag||"-"}</div>
         <div style={{fontSize:9,color:C.txd}}>{pred.cat||"-"}</div>
