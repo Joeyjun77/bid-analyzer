@@ -20,6 +20,8 @@ m11_refresh_floor_pass_daily_window ✅ B2.6 보강 (window 분리 — 코덱스
 m12_v2_modeB_cron_schedule          ✅ B5    (pg_cron 자동화 — 코덱스 라운드 5 권고 #2)
 m13_create_agency_gap_distribution  ✅ B3.1  (군시설 gap 분포 테이블)
 m14_create_lookup_gap_distribution_rpc ✅ B3.2 (gap 분포 3단계 fallback RPC)
+m15_create_refresh_win_zone_daily   ✅ B3.6  (Mode A KPI 누적 함수)
+m16_v2_modeA_cron_schedule          ✅ B3.7  (Mode A pg_cron 자동화)
 ```
 
 > **m10 → m11 변경**: 같은 row에서 예측·실측 산출 시 자기충족예언 위험 → window 분리.
