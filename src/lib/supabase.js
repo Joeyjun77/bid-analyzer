@@ -291,16 +291,32 @@ export async function sbFetchPredBiasMap(){
   }catch(e){return{agBa:{},ag:{},atBa:{},at:{}}}
 }
 
-// ─── Phase 23-9: pending 건 v2 backfill 전용 PATCH ─────────────
-// 기존 행의 bid1st_v2_* 6개 컬럼만 업데이트 (다른 컬럼 보존)
-// updates: [{id, bid1st_v2_adj, bid1st_v2_bid, bid1st_v2_win_prob,
-//            bid1st_v2_floor_safe, bid1st_v2_grain, bid1st_v2_src}]
+// ─── Phase 23-9 + B2.4: V2 신규 컬럼 PATCH (A안 INSERT-only) ─────────────
+// 허용 컬럼: bid1st_v2_* 6개 + b_pred_* 6개 (총 12개)
+// 보호 컬럼: opt_adj, actual_adj_rate, matched_at, opt_bid 등은 PATCH 금지
+// 근거: docs/v2/HANDOFF_V2_PREDICTION_DEFINITION §8 (A안), 코덱스 라운드 3 권고 #3
+// 호출자가 임의 컬럼을 전달해도 함수 내부에서 강제 필터링 — 게이트 우회 방지
+const ALLOWED_V2_COLUMNS = new Set([
+  // Phase 23-9 V2 1차 (bid1st_v2_*)
+  'bid1st_v2_adj','bid1st_v2_bid','bid1st_v2_win_prob',
+  'bid1st_v2_floor_safe','bid1st_v2_grain','bid1st_v2_src',
+  // B2 Mode B 엔진 (b_pred_*)
+  'b_pred_mode','b_pred_adj','b_pred_bid_amount',
+  'b_pred_floor_pass_prob','b_pred_grain','b_pred_src'
+]);
+
 export async function sbUpdatePredictionsV2(updates){
   if(!updates||!updates.length)return 0;
   let ok=0;
   for(const u of updates){
-    const{id,...fields}=u;
+    const{id,...rawFields}=u;
     if(!id)continue;
+    // A안 allowlist 강제 — 허용 컬럼만 통과
+    const fields={};
+    for(const k of Object.keys(rawFields)){
+      if(ALLOWED_V2_COLUMNS.has(k)) fields[k]=rawFields[k];
+    }
+    if(Object.keys(fields).length===0)continue;
     try{
       const res=await authedFetch(`/rest/v1/bid_predictions?id=eq.${id}`,{
         method:"PATCH",

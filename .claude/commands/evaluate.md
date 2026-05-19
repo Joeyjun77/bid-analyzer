@@ -255,6 +255,18 @@ if [ -f src/App.jsx ]; then
     echo "WARN-PRE-V2: src/App.jsx — V2 모드 분기 미도입 + 낙찰확률 표시 ($has_winprob건). U0 진입 전 일률 표시 상태."
   fi
 fi
+
+# B-3: b_pred_mode NULL fallback 미처리 검사 (코덱스 라운드 3 권고 #1)
+# Mode B 분기에 b_pred_mode === 'B' 검사만 있고 NULL fallback 처리(effMode/at 기반 추정) 없으면 WARN
+# b_pred_mode NULL인 실질 Mode B row가 게이트 우회로 "낙찰확률" 표시되는 위험
+for f in $(git ls-files 'src/components/*.jsx' 'src/App.jsx' 2>/dev/null); do
+  uses_bpred=$(grep -cE "b_pred_mode\s*===?\s*['\"][AB]['\"]|b_pred_mode\s*==\s*null|!d?\.b_pred_mode|!p?\.b_pred_mode" "$f" 2>/dev/null)
+  has_fallback=$(grep -cE "effMode|d\.at\s*===?\s*['\"]군시설['\"]|fallback.*mode|at\s*===?\s*['\"]군시설['\"]" "$f" 2>/dev/null)
+  has_winprob_in_file=$(grep -cE "낙찰\s*확률|낙찰확률|win[_-]?prob" "$f" 2>/dev/null)
+  if [ "${uses_bpred:-0}" != "0" ] && [ "${has_fallback:-0}" = "0" ] && [ "${has_winprob_in_file:-0}" != "0" ]; then
+    echo "SUSPECT-NULL: $f — b_pred_mode 분기는 있으나 NULL fallback 미처리 (effMode/at 기반 추정 없음)"
+  fi
+done
 ```
 
 C) **빌드 산출물 측면 (최신 빌드 강제)**:
@@ -285,6 +297,7 @@ grep -rn "안착.*낙찰\s*확률\|Mode\s*B.*낙찰\s*확률" docs/ src/ 2>/dev/
 - 모든 검출 0건 → **PASS**
 - A·B-1 SUSPECT 1건 이상 → **FAIL** (Mode B 분기에서 "낙찰 확률" 문구 제거 또는 메인 숫자를 하한 통과 확률로 교체)
 - B-2 WARN-PRE-V2만 (모드 분기 미도입 + 낙찰확률) → **WARN** (V2 분기 도입 시 즉시 FAIL 전환 — U2 시점부터 enforcement)
+- B-3 SUSPECT-NULL → **WARN** (b_pred_mode NULL row 게이트 우회 위험, effMode/at-fallback 도입 필요)
 - C-1 STALE-BUILD → **WARN** (빌드 재실행 후 재검증)
 - C-2 빌드 산출물 매칭만 + A·B-1 SUSPECT 없음 → **WARN** (수동 QA로 컴포넌트 트리 확인)
 - 기획 문서 충돌 → **WARN** (V2_UI_SPEC 갱신 또는 정합 회복)

@@ -1671,18 +1671,24 @@ ${baseInfo}
             </div>;
             return<div style={{marginBottom:14,borderRadius:10,overflow:"hidden",border:"2px solid rgba(212,168,52,0.5)"}}>
               {/* 헤더 */}
+              {/* B2.5a + 코덱스 라운드 3 보강: effMode = b_pred_mode 우선, NULL이면 at-level 정적 추정 */}
+              {(()=>{
+                const effMode = d.b_pred_mode || (d.at==='군시설' ? 'A' : (d.at ? 'B' : null));
+                const effModeIsStatic = !d.b_pred_mode;
+                return(
               <div style={{background:"rgba(212,168,52,0.12)",padding:"9px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:12,fontWeight:700,color:C.gold}}>📋 투찰 결정 가이드</span>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  {/* B2.5a: V2 모드 배지 (안착/공략) — b_pred_mode 적재된 row만 표시 */}
-                  {d.b_pred_mode&&<ModeBadge mode={d.b_pred_mode} confidence={null}/>}
+                  {effMode&&<ModeBadge mode={effMode} confidence={effModeIsStatic?"low":null}/>}
                   {grade&&<span style={{fontSize:12,fontWeight:700,padding:"2px 9px",borderRadius:4,background:gc+"33",color:gc,border:"1px solid "+gc+"77"}}>{grade} {gradeDesc}</span>}
-                  {/* G-모드표시 게이트 정합: Mode B에는 "낙찰 확률" 표시 금지 (안착 = 낙찰 운에 가까움) */}
-                  {d.b_pred_mode==='A'&&winProb!=null&&<span style={{fontSize:11,color:gc,fontWeight:600}}>예상 낙찰 확률 {(winProb*100).toFixed(1)}%</span>}
-                  {d.b_pred_mode==='B'&&<span style={{fontSize:11,color:"#888",fontWeight:500}}>안착 — 낙찰 운에 가까움</span>}
-                  {!d.b_pred_mode&&winProb!=null&&<span style={{fontSize:11,color:gc,fontWeight:600}}>낙찰확률 {(winProb*100).toFixed(1)}%</span>}
+                  {/* G-모드표시 게이트 정합: Mode B에는 "낙찰 확률" 표시 금지 */}
+                  {effMode==='A'&&winProb!=null&&<span style={{fontSize:11,color:gc,fontWeight:600}}>예상 낙찰 확률 {(winProb*100).toFixed(1)}%</span>}
+                  {effMode==='B'&&<span style={{fontSize:11,color:"#888",fontWeight:500}}>안착 — 낙찰 운에 가까움</span>}
+                  {!effMode&&winProb!=null&&<span style={{fontSize:11,color:gc,fontWeight:600}}>낙찰확률 {(winProb*100).toFixed(1)}%</span>}
                 </div>
               </div>
+                );
+              })()}
               {/* 핵심 2값: 사정률 + 투찰금 */}
               <div style={{padding:"14px 16px",background:"rgba(0,0,0,0.2)",display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <div>
