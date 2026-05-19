@@ -24,6 +24,8 @@ m15_create_refresh_win_zone_daily   ✅ B3.6  (Mode A KPI 누적 함수)
 m16_v2_modeA_cron_schedule          ✅ B3.7  (Mode A pg_cron 자동화)
 m17_add_era_v2_columns              ✅ Phase1 Step1 (era_v2 컬럼 — V2_DOMAIN_RULES_CHECK #0)
 m18_alter_agency_gap_distribution_add_era_v2 ✅ Phase1 Step2 (B3 보류 — 시대 혼입 표본 'mixed' 마킹 + current 재적재)
+m19_lookup_gap_distribution_era_filter ✅ Phase1 Step3 (RPC era_v2='current' 필터)
+m20_refresh_funcs_joint_contract_filter ✅ Phase1 Step4 (refresh 함수들 공동도급 제외 #7)
 ```
 
 ## ⚠ B3 보류 선언 (2026-05-20)
