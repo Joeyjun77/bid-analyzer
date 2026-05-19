@@ -42,6 +42,28 @@ export async function resolveMode({ at, canonicalAg, ba }) {
   return { matched_grain: null, mode_recommend: "B", confidence: "low", n: 0, median_gap: null, p90_gap: null, source: "unknown" };
 }
 
+// V2 Mode A (군시설) gap 분포 lookup — B3.5
+// 근거: docs/v2/HANDOFF_V2_MASTER_PLAN §4 B3
+// lookup_gap_distribution RPC 래퍼. 3단계 fallback (AG_BA → AG → AT).
+// Mode A 영역(군시설)에서만 호출, 다른 영역은 빈 결과
+export async function resolveGapDist({ at, canonicalAg, ba }) {
+  if (!at) return null;
+  try {
+    const params = new URLSearchParams({
+      p_at: at,
+      ...(canonicalAg ? { p_canonical_ag: canonicalAg } : {}),
+      ...(ba != null ? { p_ba: String(ba) } : {}),
+    });
+    const res = await authedFetch(`/rest/v1/rpc/lookup_gap_distribution?${params}`, { method: "POST" });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows.length > 0) return rows[0];
+  } catch (err) {
+    // 조용히 실패 — Mode A는 fallback 가능 (recommendV2 종형 분기)
+  }
+  return null;
+}
+
 // V2_UI_SPEC §3 — 안착 모드에서 "낙찰 확률" 문자열 표시 금지 가드
 // /evaluate G-모드표시 게이트와 정합 (.claude/commands/evaluate.md §9)
 export function getMainMetricLabel(mode) {

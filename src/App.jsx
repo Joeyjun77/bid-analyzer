@@ -12,7 +12,7 @@ import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./lib/utils.js";
-import { resolveMode } from "./lib/modeResolver.js";
+import { resolveMode, resolveGapDist } from "./lib/modeResolver.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
@@ -1152,9 +1152,13 @@ ${baseInfo}
       for(const p of targets){
         try{
           const modeRes=await resolveMode({at:p.at,canonicalAg:p.ag,ba:Number(p.ba)});
+          // B3.5: Mode A (군시설) row만 gap 분포 추가 조회 (불필요한 RPC 차단)
+          const gapDist=(modeRes?.mode_recommend==='A')
+            ?await resolveGapDist({at:p.at,canonicalAg:p.ag,ba:Number(p.ba)})
+            :null;
           const v2=recommendV2(
             {at:p.at,agName:p.ag,ba:Number(p.ba),ep:Number(p.ep)||Number(p.ba),av:Number(p.av)||0,fr:Number(p.pred_floor_rate)},
-            {distMap:win1stDistMap,modeResolution:modeRes}
+            {distMap:win1stDistMap,modeResolution:modeRes,gapDist}
           );
           if(!v2||v2.adj==null)continue;
           updates.push({

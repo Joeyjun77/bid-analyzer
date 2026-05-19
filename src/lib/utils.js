@@ -774,6 +774,52 @@ export function calcFloorPassProb(adj, mean, std) {
   return _phi(z);
 }
 
+// V2 Mode A 추천 — 군시설 한정 gap 분포 기반 (B3.3)
+// 근거: docs/v2/HANDOFF_V2_MASTER_PLAN §4 B3, V2_PREDICTION_DEFINITION §1.3
+// 정의:
+//   gap = win_bid_rate - floor_rate (1위 vs 낙찰하한율)
+//   자사 추천 = floor + δ_recommend, δ_recommend ∈ [0, gap]
+//   P(낙찰 | δ) = P(δ ≤ winner_gap) = 1 − CDF_gap(δ)
+//   δ가 작을수록 P(낙찰)↑ but 0이면 하한 미달 위험
+//
+// 전략:
+//   strategy='balanced' (기본): δ = gap_p25 — P(낙찰) ≈ 75%
+//   strategy='aggressive':       δ = gap_p10 — P(낙찰) ≈ 90%, 하한 미달 위험 약간↑
+//   strategy='safe':             δ = gap_p50 — P(낙찰) ≈ 50%, 안전 마진 확보
+//
+// 입력:
+//   gapDist: { n, gap_p10, gap_p25, gap_p50, gap_p75, gap_p90, gap_mean, gap_std }
+//   strategy: 'balanced' | 'aggressive' | 'safe' (기본 balanced)
+// 반환: { delta_adj, win_prob_estimate, strategy_used } | null
+//
+// δ_adj는 자사 사정률 단위 (실제 사정률 단위). bid_rate 공간에서 floor_rate 위의 위치.
+// 실제 추천 사정률 = b_pred_adj_floor + δ_adj (where b_pred_adj_floor는 사정률 분포에서 가져옴)
+export function recommendModeA(gapDist, options) {
+  const opt = Object.assign({ strategy: 'balanced' }, options || {});
+  if (!gapDist || gapDist.n == null || gapDist.n < 5) return null;
+
+  let delta = null;
+  let winProb = null;
+  if (opt.strategy === 'aggressive') {
+    delta = Number(gapDist.gap_p10);
+    winProb = 0.90; // 분포의 p10 이하는 약 90%가 위에 있음
+  } else if (opt.strategy === 'safe') {
+    delta = Number(gapDist.gap_p50);
+    winProb = 0.50;
+  } else {
+    // balanced
+    delta = Number(gapDist.gap_p25);
+    winProb = 0.75;
+  }
+  if (delta == null || isNaN(delta) || delta < 0) return null;
+
+  return {
+    delta_adj: delta,
+    win_prob_estimate: winProb,
+    strategy_used: opt.strategy
+  };
+}
+
 // V2 Mode B 추천 — 하한 통과확률 ≥ targetProb 만족하는 가장 공격적(작은) X
 // 근거: docs/v2/HANDOFF_V2_MASTER_PLAN §4 B2 — "≥95% 만족하는 가장 공격적인 X"
 // calibration 검증은 floor_pass_daily 일배치가 사후 1주 실측과 비교
@@ -1002,18 +1048,40 @@ export function recommendV2(bid, context, options) {
     };
   }
 
-  // Mode A: 군시설 공략 — 현재는 기존 recommendBid1st 종형 사용 (B3에서 컨볼루션 교체)
+  // Mode A: 군시설 공략 — B3.4 gap 분포 기반 컨볼루션 (recommendModeA)
+  // gapDist는 context에서 전달 (App.jsx의 lookup_gap_distribution RPC 결과)
+  // 표본 부족(n<5) 또는 미전달 시 기존 종형 fallback
+  const gapDist = context?.gapDist;
+  if (gapDist && gapDist.n >= 5 && gapDist.gap_p25 != null) {
+    const result = recommendModeA(gapDist, { strategy: opt.strategy || 'balanced' });
+    if (result && result.delta_adj != null) {
+      const adj = Number(result.delta_adj);
+      return {
+        mode: 'A',
+        adj,
+        bid: bidC(adj),
+        floor_pass_prob: null, // Mode A는 통과확률 미산출 (낙찰확률 1차 KPI)
+        win_prob: result.win_prob_estimate,
+        grain,
+        src: `modeA_gap(n=${gapDist.n} · p25=${gapDist.gap_p25?.toFixed?.(4) ?? '?'} · p50=${gapDist.gap_p50?.toFixed?.(4) ?? '?'} · strategy=${result.strategy_used})`,
+        source: 'modeA_gap',
+        floor_safe: floorSafeC(adj)
+      };
+    }
+  }
+
+  // Fallback: 기존 종형 (gapDist 미전달 또는 표본 부족)
   const v1 = recommendBid1st({ at, agName, ba, ep, av, fr }, { distMap: context?.distMap }, { enableMonteCarlo: false });
   if (!v1 || !v1.auto) return null;
   return {
     mode: 'A',
     adj: v1.auto.adj,
     bid: v1.auto.bid,
-    floor_pass_prob: null, // Mode A는 통과확률 미산출 (낙찰확률이 1차 KPI)
+    floor_pass_prob: null,
     win_prob: v1.auto.winProb,
     grain,
-    src: `modeA_bell(${v1.distribution?.grain || 'fallback'}: ${v1.distribution?.src || '-'})`,
-    source: 'modeA_bell',
+    src: `modeA_bell_fallback(${v1.distribution?.grain || 'fallback'}: ${v1.distribution?.src || '-'})`,
+    source: 'modeA_bell_fallback',
     floor_safe: v1.auto.floorSafe
   };
 }
