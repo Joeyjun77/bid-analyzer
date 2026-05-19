@@ -46,7 +46,7 @@
 3. FAIL 판정 시 git push 금지 → 롤백 또는 수정 후 재검증
 4. WARN 이상 판정 받은 변경은 배포 후 24시간 내 `/accuracy` 재측정 필수
 5. 핵심 영역(한전·고양시·군부대) MAE +0.02 이상 악화는 즉시 FAIL
-슬래시 커맨드: `.claude/commands/accuracy.md`, `.claude/commands/evaluate.md`
+슬래시 커맨드: `.claude/commands/accuracy.md`, `.claude/commands/evaluate.md` (단일 위치 — `.codex/`에는 commands 폴더 없음)
 
 ## 5단계 하네스 진입 트리거 (세션 무관 강제)
 어떤 세션에서 작업하더라도 아래 트리거 발동 시 해당 단계 절차를 강제 실행한다.
@@ -104,11 +104,10 @@
 - **DB 인프라 (B0a/B0b/B1 완료, 2026-05-19)**: 4개 테이블 + lookup RPC 완성
   - `agency_mode_lookup` — 41건 적재 (at 6 + AG 22 + AG_BA 13)
   - `floor_pass_daily` / `win_zone_daily` / `mode_gate_report` — 빈 테이블, 일배치 대기
-  - 모두 UNIQUE NULLS NOT DISTINCT + RLS + service_role INSERT 정책
   - `lookup_agency_mode(at, canonical_ag, ba)` RPC — 3단계 fallback (AG_BA→AG→AT)
 - **DB 인프라 (예정)**: B2 시점 `bid_predictions` 모드 컬럼 6개 ADD, B0b 잔여 `m8_alter_phase17_add_floor_bidrate`
 - **모드 분기**: 군시설=A(WIN-zone 노림), 그 외=B(하한 안착). 자사 낙찰률은 추적만, KPI 아님
-- **검증 게이트**: `/evaluate` 4대 강제 — G-단위/G-A안/G-bias/G-모드표시 (`.claude/commands/evaluate.md`)
+- **검증 게이트**: `/evaluate` 4대 강제 — G-단위/G-A안/G-bias/G-모드표시
 - **MAE 강등**: 보조 모니터링만, 1차 KPI 아님 (V2 retire 후 제거 검토)
 
 ## 금기사항
