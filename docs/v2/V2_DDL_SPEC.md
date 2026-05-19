@@ -174,6 +174,7 @@ m6_create_mode_gate_report         (B0b) ✅ 적용 완료 2026-05-19
 m7_alter_bid_predictions_add_modeb (B2)  — 예정
 m8_alter_phase17_add_floor_bidrate (B0b) ✅ 적용 완료 2026-05-19 (passed_floor_bid_rate 컬럼 ADD)
 m9_create_lookup_agency_mode_rpc   (B1)  ✅ 적용 완료 2026-05-19 (3단계 fallback RPC)
+m10_create_refresh_floor_pass_daily(B2.6) ✅ 적용 완료 2026-05-19 (Mode B calibration 일배치 함수)
 ```
 
 각 마이그레이션은 snake_case 명명, RLS 활성화 + 정책 본문 명시 (anon/auth SELECT + service_role INSERT).
