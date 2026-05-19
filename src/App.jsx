@@ -1129,9 +1129,15 @@ ${baseInfo}
   // 근거: docs/v2/HANDOFF_V2_MASTER_PLAN §4 B2 + V2_DDL_SPEC §5
   // resolveMode RPC + recommendV2 → b_pred_mode/adj/bid_amount/floor_pass_prob/grain/src 적재
   // A안: 매칭 후 신규 컬럼 적재만 (기존 opt_adj/bid1st_v2_* 보호)
+  //
+  // ★ B2.4-fix (사용자 검출, 2026-05-19): win1stDistMap 로드 가드 필수
+  // 가드 누락 시 useEffect 첫 트리거에서 빈 distMap으로 전체 row가 AT-fallback(n=0, μ=0, σ=0.642)
+  // 일률 적재되어 발주사별 분포 학습이 무력화됨. 기존 bid1st_v2 자동채움(line 1082)과 동일 패턴 적용.
   const v2BPredBackfillDone=useRef(false);
   useEffect(()=>{
     if(v2BPredBackfillDone.current)return;
+    // 가드: win1stDistMap이 로드되어야 발주사별 분포 사용 가능
+    if(!Object.keys(win1stDistMap?.agBa||{}).length&&!Object.keys(win1stDistMap?.ag||{}).length)return;
     if(!predictions||!predictions.length)return;
     const targets=predictions.filter(p=>
       p.b_pred_mode==null
