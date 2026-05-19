@@ -4,6 +4,9 @@ import { C, PAGE, inpS } from "./lib/constants.js";
 import { authedFetch } from "./auth.js";
 import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import V2PreviewTab from "./components/V2PreviewTab.jsx";
+import ModeBadge from "./components/ModeBadge.jsx";
+import { fmtAdj as v2FmtAdj, fmtPct as v2FmtPct, fmtKRW as v2FmtKRW } from "./lib/fmtAdj.js";
+import { getMainMetricLabel, getModeNotice } from "./lib/modeResolver.js";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
@@ -1671,8 +1674,13 @@ ${baseInfo}
               <div style={{background:"rgba(212,168,52,0.12)",padding:"9px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:12,fontWeight:700,color:C.gold}}>📋 투찰 결정 가이드</span>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  {/* B2.5a: V2 모드 배지 (안착/공략) — b_pred_mode 적재된 row만 표시 */}
+                  {d.b_pred_mode&&<ModeBadge mode={d.b_pred_mode} confidence={null}/>}
                   {grade&&<span style={{fontSize:12,fontWeight:700,padding:"2px 9px",borderRadius:4,background:gc+"33",color:gc,border:"1px solid "+gc+"77"}}>{grade} {gradeDesc}</span>}
-                  {winProb!=null&&<span style={{fontSize:11,color:gc,fontWeight:600}}>낙찰확률 {(winProb*100).toFixed(1)}%</span>}
+                  {/* G-모드표시 게이트 정합: Mode B에는 "낙찰 확률" 표시 금지 (안착 = 낙찰 운에 가까움) */}
+                  {d.b_pred_mode==='A'&&winProb!=null&&<span style={{fontSize:11,color:gc,fontWeight:600}}>예상 낙찰 확률 {(winProb*100).toFixed(1)}%</span>}
+                  {d.b_pred_mode==='B'&&<span style={{fontSize:11,color:"#888",fontWeight:500}}>안착 — 낙찰 운에 가까움</span>}
+                  {!d.b_pred_mode&&winProb!=null&&<span style={{fontSize:11,color:gc,fontWeight:600}}>낙찰확률 {(winProb*100).toFixed(1)}%</span>}
                 </div>
               </div>
               {/* 핵심 2값: 사정률 + 투찰금 */}
