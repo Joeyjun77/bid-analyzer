@@ -1697,11 +1697,27 @@ ${baseInfo}
                     )}
                   </div>
                   <div style={{fontSize:10,color:C.txd,marginTop:3}}>이 예정가격을 기초금액으로 계산한 값</div>
+                  {/* B2.5b: V2 보조 표시 — 사정률 */}
+                  {d.b_pred_adj!=null&&(
+                    <div style={{fontSize:10,color:d.b_pred_mode==='A'?"#d28b16":"#1a7a4a",marginTop:4,fontFamily:"monospace"}}>
+                      V2 {d.b_pred_mode==='A'?'공략':'안착'}: {fmtAdj(d.b_pred_adj)}
+                      {d.b_pred_grain&&<span style={{color:C.txd,marginLeft:6}}>({d.b_pred_grain})</span>}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <div style={{fontSize:10,color:C.txm,marginBottom:3}}>💰 입찰 시 사용할 투찰금액</div>
                   <div style={{fontSize:28,fontWeight:700,color:C.gold,fontFamily:"monospace",lineHeight:1}}>{winBid?tc(winBid)+"원":"—"}</div>
                   <div style={{fontSize:10,color:C.txd,marginTop:3}}>낙찰하한율 {d.pred_floor_rate||"—"}% 적용{d.av&&Number(d.av)>0?" (A값 "+tc(Number(d.av))+"원)":""}</div>
+                  {/* B2.5b: V2 보조 표시 — 투찰금액 + Mode B 통과확률 */}
+                  {d.b_pred_bid_amount!=null&&(
+                    <div style={{fontSize:10,color:d.b_pred_mode==='A'?"#d28b16":"#1a7a4a",marginTop:4,fontFamily:"monospace"}}>
+                      V2: {tc(Number(d.b_pred_bid_amount))}원
+                      {d.b_pred_mode==='B'&&d.b_pred_floor_pass_prob!=null&&(
+                        <span style={{marginLeft:6,color:C.txd}}>· 통과 확률 {(Number(d.b_pred_floor_pass_prob)*100).toFixed(0)}%</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               {/* Phase 23-5: 화살표 범례 (다른 이용자용 해설) */}
