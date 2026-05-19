@@ -22,7 +22,17 @@ m13_create_agency_gap_distribution  ✅ B3.1  (군시설 gap 분포 테이블)
 m14_create_lookup_gap_distribution_rpc ✅ B3.2 (gap 분포 3단계 fallback RPC)
 m15_create_refresh_win_zone_daily   ✅ B3.6  (Mode A KPI 누적 함수)
 m16_v2_modeA_cron_schedule          ✅ B3.7  (Mode A pg_cron 자동화)
+m17_add_era_v2_columns              ✅ Phase1 Step1 (era_v2 컬럼 — V2_DOMAIN_RULES_CHECK #0)
+m18_alter_agency_gap_distribution_add_era_v2 ✅ Phase1 Step2 (B3 보류 — 시대 혼입 표본 'mixed' 마킹 + current 재적재)
 ```
+
+## ⚠ B3 보류 선언 (2026-05-20)
+
+`V2_DOMAIN_RULES_CHECK.md` §2 권고에 따라 B3 (Mode A 군시설 엔진) 즉시 착수 보류:
+- 시대 혼입: n=186 = legacy 155 + current 31
+- 현행 표본 n=31뿐, 발주사별(AG grain) 모두 n<5
+- recommendV2 Mode A 분기는 종형 fallback으로 동작 (gap 분포 lookup 실패 시)
+- 군시설 데이터 누적 후 (주 ~10건 가정 시 7개월) B3 재착수
 
 > **m10 → m11 변경**: 같은 row에서 예측·실측 산출 시 자기충족예언 위험 → window 분리.
 > `created_at < matched_at AND matched_at < NOW() - 24h` 조건 추가. m10 함수는 DROP되고 m11 시그니처 (4 params)로 재생성.

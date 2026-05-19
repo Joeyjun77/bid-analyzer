@@ -177,6 +177,12 @@ m9_create_lookup_agency_mode_rpc   (B1)  ✅ 적용 완료 2026-05-19 (3단계 f
 m10_create_refresh_floor_pass_daily(B2.6) ✅ 적용 완료 2026-05-19 (Mode B calibration 일배치 함수)
 m11_refresh_floor_pass_daily_window(B2.6+) ✅ 적용 완료 2026-05-19 (window 분리 — 자기충족예언 방지, 코덱스 라운드 3 권고 #2)
 m12_v2_modeB_cron_schedule        (B5)      ✅ 적용 완료 2026-05-19 (pg_cron 자동화 — 일간 calibration + 주간 게이트, 코덱스 라운드 5 권고 #2)
+m13_create_agency_gap_distribution(B3.1)    ✅ 적용 완료 2026-05-20 (군시설 gap 분포 테이블)
+m14_create_lookup_gap_distribution_rpc(B3.2)✅ 적용 완료 2026-05-20 (gap 분포 3단계 fallback RPC)
+m15_create_refresh_win_zone_daily (B3.6)    ✅ 적용 완료 2026-05-20 (Mode A KPI 누적 함수)
+m16_v2_modeA_cron_schedule        (B3.7)    ✅ 적용 완료 2026-05-20 (Mode A pg_cron 자동화)
+m17_add_era_v2_columns            (Phase1)  ✅ 적용 완료 2026-05-20 (era_v2 컬럼 — V2_DOMAIN_RULES_CHECK #0)
+m18_alter_agency_gap_distribution_add_era_v2 (Phase1) ✅ 적용 완료 2026-05-20 (B3 보류 — 시대 혼입 'mixed' 마킹)
 ```
 
 각 마이그레이션은 snake_case 명명, RLS 활성화 + 정책 본문 명시 (anon/auth SELECT + service_role INSERT).
