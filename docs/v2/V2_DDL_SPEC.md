@@ -176,6 +176,7 @@ m8_alter_phase17_add_floor_bidrate (B0b) ✅ 적용 완료 2026-05-19 (passed_fl
 m9_create_lookup_agency_mode_rpc   (B1)  ✅ 적용 완료 2026-05-19 (3단계 fallback RPC)
 m10_create_refresh_floor_pass_daily(B2.6) ✅ 적용 완료 2026-05-19 (Mode B calibration 일배치 함수)
 m11_refresh_floor_pass_daily_window(B2.6+) ✅ 적용 완료 2026-05-19 (window 분리 — 자기충족예언 방지, 코덱스 라운드 3 권고 #2)
+m12_v2_modeB_cron_schedule        (B5)      ✅ 적용 완료 2026-05-19 (pg_cron 자동화 — 일간 calibration + 주간 게이트, 코덱스 라운드 5 권고 #2)
 ```
 
 각 마이그레이션은 snake_case 명명, RLS 활성화 + 정책 본문 명시 (anon/auth SELECT + service_role INSERT).

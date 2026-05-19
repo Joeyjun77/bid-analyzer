@@ -17,6 +17,7 @@ m8_alter_phase17_add_floor_bidrate ✅ B0b (phase17 bid_rate 컬럼 ADD)
 m9_create_lookup_agency_mode_rpc   ✅ B1   (3단계 fallback RPC)
 m10_create_refresh_floor_pass_daily ✅ B2.6 (calibration 일배치)
 m11_refresh_floor_pass_daily_window ✅ B2.6 보강 (window 분리 — 코덱스 라운드 3 권고 #2)
+m12_v2_modeB_cron_schedule          ✅ B5    (pg_cron 자동화 — 코덱스 라운드 5 권고 #2)
 ```
 
 > **m10 → m11 변경**: 같은 row에서 예측·실측 산출 시 자기충족예언 위험 → window 분리.
@@ -38,6 +39,6 @@ m11_refresh_floor_pass_daily_window ✅ B2.6 보강 (window 분리 — 코덱스
 
 | ID | 명칭 | 작업 |
 |---|---|---|
-| m12+ | Mode A 엔진 (B3) | 군시설 한정 경쟁 분포 컨볼루션 + 부트스트랩 신뢰구간 |
-| m13+ | win_zone_daily 일배치 함수 | Mode A KPI 누적 (B5 dual-run) |
-| m14+ | mode_gate_report 주간 집계 함수 | 영역별 게이트 자동화 (B5) |
+| m13+ | Mode A 엔진 (B3) | 군시설 한정 경쟁 분포 컨볼루션 + 부트스트랩 신뢰구간 |
+| m14+ | refresh_win_zone_daily 함수 | Mode A KPI 누적 |
+| m15+ | recompute_bpred_modeb_sql 함수 | App.jsx useEffect 우회 — SQL 단독 재계산 (메모리화)
