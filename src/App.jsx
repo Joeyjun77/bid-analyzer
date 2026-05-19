@@ -1720,6 +1720,34 @@ ${baseInfo}
                   )}
                 </div>
               </div>
+              {/* B2.5c: V2 메인 메트릭 행 (Mode B=하한 통과 확률 / Mode A=예상 낙찰 확률) */}
+              {d.b_pred_mode&&(()=>{
+                const isModeA=d.b_pred_mode==='A';
+                const probVal=isModeA?(winProb!=null?Number(winProb):null):(d.b_pred_floor_pass_prob!=null?Number(d.b_pred_floor_pass_prob):null);
+                const probPct=probVal!=null?Math.round(probVal*100):null;
+                const accent=isModeA?"#d28b16":"#1a7a4a";
+                const label=isModeA?'🎯 예상 낙찰 확률':'🛡️ 하한 통과 확률';
+                return(
+                  <div style={{padding:"10px 16px",background:"rgba(0,0,0,0.1)",borderTop:"1px solid "+C.bdr+"33",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <span style={{fontSize:11,color:C.txm,fontWeight:600}}>{label}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:120,height:8,background:"#1a1a30",borderRadius:4,overflow:"hidden"}}>
+                        {probPct!=null&&<div style={{width:Math.min(100,probPct)+"%",height:"100%",background:accent,transition:"width 0.3s"}}/>}
+                      </div>
+                      <span style={{fontSize:18,fontWeight:700,fontFamily:"monospace",color:accent,minWidth:48,textAlign:"right"}}>
+                        {probPct!=null?probPct+"%":"—"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+              {d.b_pred_mode&&(
+                <div style={{padding:"6px 16px",background:"rgba(0,0,0,0.15)",fontSize:10,color:C.txd,borderTop:"1px solid "+C.bdr+"22",lineHeight:1.4}}>
+                  {d.b_pred_mode==='B'
+                    ? '⚠ 안착 모드 — 이 발주처는 낙찰이 운에 가깝습니다. 목표는 하한 미달 탈락 방지.'
+                    : '✓ 공략 모드 — 군시설은 낙찰 가능 구간이 존재합니다.'}
+                </div>
+              )}
               {/* Phase 23-5: 화살표 범례 (다른 이용자용 해설) */}
               <div style={{padding:"6px 16px",background:"rgba(0,0,0,0.1)",borderTop:"1px solid "+C.bdr+"33",fontSize:10,lineHeight:1.7,color:C.txm}}>
                 <b style={{color:C.txt}}>추천 사정률 화살표</b> — 이 기관·금액대에서 <b>과거 실제 1위 사정률</b>이 시스템 추천보다 <b style={{color:"#5dca96"}}>↑ 높은 편</b>이었는지 <b style={{color:"#e24b4a"}}>↓ 낮은 편</b>이었는지 편향 방향을 표시합니다. 투찰 판단의 보조 힌트이며 추천값 자체는 변경되지 않습니다.
