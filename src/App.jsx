@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { C, PAGE, inpS } from "./lib/constants.js";
 import { authedFetch } from "./auth.js";
 import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
+import V2PreviewTab from "./components/V2PreviewTab.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
@@ -1229,7 +1230,7 @@ ${baseInfo}
         })()}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="quality" ch="🔬 검증"/><Tb id="agency_predict_v6" ch="💎 발주처 예측 V6"/><Tb id="agency_floor" ch="🎯 발주사 하한"/><Tb id="chat" ch="AI 상담"/>{isAdmin&&<Tb id="admin" ch="👤 관리자"/>}</div>
+        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="quality" ch="🔬 검증"/><Tb id="agency_predict_v6" ch="💎 발주처 예측 V6"/><Tb id="agency_floor" ch="🎯 발주사 하한"/><Tb id="v2_preview" ch="🧪 V2 미리보기"/><Tb id="chat" ch="AI 상담"/>{isAdmin&&<Tb id="admin" ch="👤 관리자"/>}</div>
         <UserBadge/>
       </div>
     </div>
@@ -2659,6 +2660,9 @@ ${baseInfo}
 
     {/* ═══ Phase 20: 작전 대시보드 탭 ═══ */}
     {tab==="winstrat"&&<WinStrategyDashboard/>}
+
+    {/* ═══ U0 Phase 2: V2 미리보기 (mock 표시, B2/B3 엔진 미연결) ═══ */}
+    {tab==="v2_preview"&&<V2PreviewTab/>}
 
     {/* ═══ Phase 22 P2-2: 낙찰 결과 자동 피드백 탭 ═══ */}
     {tab==="feedback"&&<PredictionFeedback/>}

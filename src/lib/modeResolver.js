@@ -3,7 +3,7 @@
 // DB RPC: public.lookup_agency_mode(at, canonical_ag, ba)
 // 3단계 fallback: AG_BA → AG → AT
 
-import { authedFetch } from "./supabase.js";
+import { authedFetch } from "../auth.js";
 
 // 정적 fallback 매핑 — RPC 호출 실패 시 마지막 안전망 (HANDOFF_V2_DIAGNOSIS_RESULT §3.1 표 기준)
 const AT_LEVEL_STATIC_FALLBACK = {
