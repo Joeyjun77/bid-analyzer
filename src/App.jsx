@@ -8,7 +8,8 @@ import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./lib/utils.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./lib/utils.js";
+import { resolveMode } from "./lib/modeResolver.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
 import { useAuth, getSession } from "./auth.js";
 
@@ -1118,6 +1119,54 @@ ${baseInfo}
           setPredictions(refreshed);
         }
       }catch(e){console.warn("v2 backfill 실패:",e?.message);}
+    })();
+  },[predictions,win1stDistMap]);
+
+  // ─── B2.4: V2 Mode B/A 자동채움 (bid_predictions.b_pred_* 6컬럼) ───
+  // 근거: docs/v2/HANDOFF_V2_MASTER_PLAN §4 B2 + V2_DDL_SPEC §5
+  // resolveMode RPC + recommendV2 → b_pred_mode/adj/bid_amount/floor_pass_prob/grain/src 적재
+  // A안: 매칭 후 신규 컬럼 적재만 (기존 opt_adj/bid1st_v2_* 보호)
+  const v2BPredBackfillDone=useRef(false);
+  useEffect(()=>{
+    if(v2BPredBackfillDone.current)return;
+    if(!predictions||!predictions.length)return;
+    const targets=predictions.filter(p=>
+      p.b_pred_mode==null
+      &&p.at!=null
+      &&p.ba!=null
+      &&p.pred_floor_rate!=null
+    );
+    if(!targets.length){v2BPredBackfillDone.current=true;return;}
+    v2BPredBackfillDone.current=true; // 동시 진입 방지
+    (async()=>{
+      const updates=[];
+      for(const p of targets){
+        try{
+          const modeRes=await resolveMode({at:p.at,canonicalAg:p.ag,ba:Number(p.ba)});
+          const v2=recommendV2(
+            {at:p.at,agName:p.ag,ba:Number(p.ba),ep:Number(p.ep)||Number(p.ba),av:Number(p.av)||0,fr:Number(p.pred_floor_rate)},
+            {distMap:win1stDistMap,modeResolution:modeRes}
+          );
+          if(!v2||v2.adj==null)continue;
+          updates.push({
+            id:p.id,
+            b_pred_mode:v2.mode,
+            b_pred_adj:Number(Number(v2.adj).toFixed(4)),
+            b_pred_bid_amount:v2.bid,
+            b_pred_floor_pass_prob:v2.floor_pass_prob!=null?Number(Number(v2.floor_pass_prob).toFixed(4)):null,
+            b_pred_grain:v2.grain,
+            b_pred_src:v2.src
+          });
+        }catch(e){/* row 단위 실패 무시, 다음 진행 */}
+      }
+      if(!updates.length)return;
+      try{
+        const ok=await sbUpdatePredictionsV2(updates);
+        if(ok>0){
+          const refreshed=await sbFetchPredictions();
+          setPredictions(refreshed);
+        }
+      }catch(e){console.warn("b_pred 자동채움 실패:",e?.message);}
     })();
   },[predictions,win1stDistMap]);
 

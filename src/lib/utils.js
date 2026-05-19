@@ -758,6 +758,57 @@ export function calcWinProb(adj,mean,effStd,floorSafe){
   return 4*cdf*(1-cdf);
 }
 
+// ─── V2 Mode B 엔진 (B2) ────────────────────────────────────
+// 근거: docs/v2/HANDOFF_V2_PREDICTION_DEFINITION §1.3, HANDOFF_V2_DIAGNOSIS_RESULT §6 Step2
+// 정의: P(자사투찰 ≥ 낙찰하한가) = P(실제 사정률 ≤ X) = Φ((X − mean) / std)
+//   - 정규분포 가정 (사정률 분포 위치·폭은 발주사별 학습)
+//   - mean: 발주사 사정률 분포 평균 / std: 표준편차 (노이즈 플로어 0.642%보다 작으면 floor 적용)
+// 입력: adj (자사 후보 사정률), mean (분포 중심), std (분포 폭)
+// 반환: 0~1 확률
+export function calcFloorPassProb(adj, mean, std) {
+  if (adj == null) return null;
+  const effStd = Math.max(Number(std) || 0, 0.642); // 노이즈 플로어
+  if (effStd <= 0) return null;
+  const m = Number(mean) || 0;
+  const z = (Number(adj) - m) / effStd;
+  return _phi(z);
+}
+
+// V2 Mode B 추천 — 하한 통과확률 ≥ targetProb 만족하는 가장 공격적(작은) X
+// 근거: docs/v2/HANDOFF_V2_MASTER_PLAN §4 B2 — "≥95% 만족하는 가장 공격적인 X"
+// calibration 검증은 floor_pass_daily 일배치가 사후 1주 실측과 비교
+// 입력:
+//   distribution: { mean, std, n }  // 발주사 사정률 분포 (Bayesian shrinkage 적용된 형태)
+//   targetProb:   0.95              // 하한 통과율 임계
+//   gridStep:     0.0001            // 사정률 그리드 정밀도
+//   gridRange:    1.5               // mean ± gridRange 탐색 범위
+// 반환: { adj, floor_pass_prob } | null
+export function recommendModeB(distribution, options) {
+  const opt = Object.assign({ targetProb: 0.95, gridStep: 0.0001, gridRange: 1.5 }, options || {});
+  if (!distribution || distribution.mean == null) return null;
+  const { mean, std } = distribution;
+  const startAdj = Number(mean) - opt.gridRange;
+  const endAdj = Number(mean) + opt.gridRange;
+
+  // 가장 작은 X부터 탐색해 P(통과) >= targetProb 처음 만족하는 지점
+  let bestAdj = null;
+  let bestProb = null;
+  for (let adj = startAdj; adj <= endAdj; adj += opt.gridStep) {
+    const p = calcFloorPassProb(adj, mean, std);
+    if (p != null && p >= opt.targetProb) {
+      bestAdj = adj;
+      bestProb = p;
+      break; // 가장 공격적 X — 가장 작은 X 채택
+    }
+  }
+  // targetProb 도달 불가 시 — 분포 우측 끝(가장 높은 X)을 fallback
+  if (bestAdj == null) {
+    bestAdj = endAdj;
+    bestProb = calcFloorPassProb(endAdj, mean, std);
+  }
+  return { adj: bestAdj, floor_pass_prob: bestProb };
+}
+
 // ba_seg 분할 (predictV5와 동일)
 export function baSegOf(ba){
   const n=Number(ba)||0;
@@ -881,5 +932,88 @@ export function recommendBid1st(bid,context,options){
       src:distSrc,
       monteCarloUsed:false
     }
+  };
+}
+
+// ─── V2 통합 추천 함수 (B2.3) ────────────────────────────────
+// 근거: docs/v2/HANDOFF_V2_MASTER_PLAN §4 B2 + V2_UI_SPEC §3
+// 모드 분기:
+//   Mode B (안착, 한전·LH·교육청·조달청·지자체): recommendModeB → 하한 통과확률 ≥95%
+//   Mode A (공략, 군시설): 기존 recommendBid1st 종형 (B3에서 컨볼루션 교체 예정)
+// 기존 recommendBid1st는 보존 — 호환성 + Mode A fallback용
+//
+// 입력:
+//   bid:     { at, agName, ba, ep, av, fr }
+//   context: { distMap, modeResolution, agencyDist }
+//     - distMap        : win1stDistMap (Mode A 종형용)
+//     - modeResolution : lookup_agency_mode 결과 { mode_recommend, confidence, n, median_gap, p90_gap, matched_grain }
+//     - agencyDist     : Mode B용 사정률 분포 { mean, std, n } (없으면 분포 lookup의 mean/std fallback)
+// 반환:
+//   { mode, adj, bid, floor_pass_prob, win_prob, grain, src, source }
+//   - source: 'modeB' | 'modeA_bell' | 'modeA_convolution' | 'fallback'
+export function recommendV2(bid, context, options) {
+  const opt = Object.assign({ targetProb: 0.95, gridStep: 0.0001, gridRange: 1.5 }, options || {});
+  const { at, agName, ba, ep, av, fr } = bid || {};
+  if (!at || !ba || !fr) return null;
+
+  const mode = context?.modeResolution?.mode_recommend || 'B'; // 미조회 시 안전한 안착 모드
+  const grain = context?.modeResolution?.matched_grain || null;
+  const baSeg = baSegOf(ba);
+
+  // 투찰금액 계산식 (recommendBid1st와 동일 — A값 보정)
+  const xpC = (adj) => ba * (1 + adj / 100);
+  const bidC = (adj) => {
+    const xp = xpC(adj);
+    return (av && av > 0)
+      ? Math.ceil(av + (xp - av) * (fr / 100))
+      : Math.ceil(xp * (fr / 100));
+  };
+  const floorSafeC = (adj) => {
+    const xp = xpC(adj);
+    return (!av || av <= 0) ? true : xp >= av;
+  };
+
+  if (mode === 'B') {
+    // Mode B: 하한 통과확률 ≥ 95% 만족하는 가장 공격적 X
+    // 사정률 분포 입력: 우선 agencyDist, 없으면 distMap lookup의 mean/std fallback
+    let distribution = context?.agencyDist || null;
+    if (!distribution || distribution.mean == null) {
+      const lookup = lookupWin1stDist(at, agName, baSeg, context?.distMap);
+      if (lookup) distribution = { mean: Number(lookup.mean) || 0, std: Number(lookup.std) || 0.642, n: lookup.n };
+    }
+    if (!distribution || distribution.mean == null) {
+      // 분포 lookup 완전 실패 — at-level 기본값 (mean=0, 노이즈 플로어)
+      distribution = { mean: 0, std: 0.642, n: 0 };
+    }
+
+    const result = recommendModeB(distribution, opt);
+    if (!result || result.adj == null) return null;
+    const adj = result.adj;
+    return {
+      mode: 'B',
+      adj,
+      bid: bidC(adj),
+      floor_pass_prob: result.floor_pass_prob,
+      win_prob: null, // Mode B는 낙찰 확률 미산출 (안착 모드 거짓 약속 방지)
+      grain,
+      src: `modeB(${distribution.n||0}건 · μ=${distribution.mean?.toFixed?.(4) ?? '?'} · σ=${distribution.std?.toFixed?.(4) ?? '?'})`,
+      source: 'modeB',
+      floor_safe: floorSafeC(adj)
+    };
+  }
+
+  // Mode A: 군시설 공략 — 현재는 기존 recommendBid1st 종형 사용 (B3에서 컨볼루션 교체)
+  const v1 = recommendBid1st({ at, agName, ba, ep, av, fr }, { distMap: context?.distMap }, { enableMonteCarlo: false });
+  if (!v1 || !v1.auto) return null;
+  return {
+    mode: 'A',
+    adj: v1.auto.adj,
+    bid: v1.auto.bid,
+    floor_pass_prob: null, // Mode A는 통과확률 미산출 (낙찰확률이 1차 KPI)
+    win_prob: v1.auto.winProb,
+    grain,
+    src: `modeA_bell(${v1.distribution?.grain || 'fallback'}: ${v1.distribution?.src || '-'})`,
+    source: 'modeA_bell',
+    floor_safe: v1.auto.floorSafe
   };
 }
