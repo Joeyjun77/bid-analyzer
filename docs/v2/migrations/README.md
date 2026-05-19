@@ -38,5 +38,6 @@ m11_refresh_floor_pass_daily_window ✅ B2.6 보강 (window 분리 — 코덱스
 
 | ID | 명칭 | 작업 |
 |---|---|---|
-| m11 | refresh_floor_pass_daily_window | calibration window 분리 (코덱스 권고 추가 #2) |
-| m12+ | Mode A 엔진 (B3) | 군시설 컨볼루션·부트스트랩 함수 |
+| m12+ | Mode A 엔진 (B3) | 군시설 한정 경쟁 분포 컨볼루션 + 부트스트랩 신뢰구간 |
+| m13+ | win_zone_daily 일배치 함수 | Mode A KPI 누적 (B5 dual-run) |
+| m14+ | mode_gate_report 주간 집계 함수 | 영역별 게이트 자동화 (B5) |

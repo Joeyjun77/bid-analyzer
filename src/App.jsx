@@ -1624,6 +1624,10 @@ ${baseInfo}
         const grade=sc?sc.roi_grade:null;
         const gc=grade?{S:"#a855f7",A:"#5dca96",B:"#d4a834",C:"#a8b4ff",D:"#666680"}[grade]:C.txm;
         const gradeDesc=grade?{S:"반드시 투찰",A:"우선 투찰",B:"선택 투찰",C:"여력시 투찰",D:"제외 권장"}[grade]:"";
+        // B2.5+ 코덱스 라운드 4 권고 #2: effMode를 블록 전체에서 일관 사용
+        // b_pred_mode 우선, NULL이면 at-level 정적 추정 (군시설=A, 그 외=B)
+        const effMode = d.b_pred_mode || (d.at==='군시설' ? 'A' : (d.at ? 'B' : null));
+        const effModeIsStatic = !d.b_pred_mode;
         const winProb=sc?Number(sc.win_prob):null;
         // 매칭 결과 판정
         const floorLine=axp?(av>0?av+(axp-av)*(fr2/100):axp*(fr2/100)):null;
@@ -1671,11 +1675,7 @@ ${baseInfo}
             </div>;
             return<div style={{marginBottom:14,borderRadius:10,overflow:"hidden",border:"2px solid rgba(212,168,52,0.5)"}}>
               {/* 헤더 */}
-              {/* B2.5a + 코덱스 라운드 3 보강: effMode = b_pred_mode 우선, NULL이면 at-level 정적 추정 */}
-              {(()=>{
-                const effMode = d.b_pred_mode || (d.at==='군시설' ? 'A' : (d.at ? 'B' : null));
-                const effModeIsStatic = !d.b_pred_mode;
-                return(
+              {/* B2.5a + 코덱스 라운드 3·4 보강: effMode (외부 변수, line 1627) 일관 사용 */}
               <div style={{background:"rgba(212,168,52,0.12)",padding:"9px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:12,fontWeight:700,color:C.gold}}>📋 투찰 결정 가이드</span>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -1687,8 +1687,6 @@ ${baseInfo}
                   {!effMode&&winProb!=null&&<span style={{fontSize:11,color:gc,fontWeight:600}}>낙찰확률 {(winProb*100).toFixed(1)}%</span>}
                 </div>
               </div>
-                );
-              })()}
               {/* 핵심 2값: 사정률 + 투찰금 */}
               <div style={{padding:"14px 16px",background:"rgba(0,0,0,0.2)",display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <div>
@@ -1726,7 +1724,7 @@ ${baseInfo}
                   )}
                 </div>
               </div>
-              {/* B2.5c: V2 메인 메트릭 행 (Mode B=하한 통과 확률 / Mode A=예상 낙찰 확률) */}
+              {/* B2.5c: V2 메인 메트릭 행 (Mode B=하한 통과 확률 / Mode A=예상 낙찰 확률) — 실 데이터 의존이라 d.b_pred_mode 유지 */}
               {d.b_pred_mode&&(()=>{
                 const isModeA=d.b_pred_mode==='A';
                 const probVal=isModeA?(winProb!=null?Number(winProb):null):(d.b_pred_floor_pass_prob!=null?Number(d.b_pred_floor_pass_prob):null);
@@ -1747,11 +1745,13 @@ ${baseInfo}
                   </div>
                 );
               })()}
-              {d.b_pred_mode&&(
+              {/* 안내문 — effMode 사용 (정적 fallback도 안내문 표시, 코덱스 라운드 4 권고 #2) */}
+              {effMode&&(
                 <div style={{padding:"6px 16px",background:"rgba(0,0,0,0.15)",fontSize:10,color:C.txd,borderTop:"1px solid "+C.bdr+"22",lineHeight:1.4}}>
-                  {d.b_pred_mode==='B'
+                  {effMode==='B'
                     ? '⚠ 안착 모드 — 이 발주처는 낙찰이 운에 가깝습니다. 목표는 하한 미달 탈락 방지.'
                     : '✓ 공략 모드 — 군시설은 낙찰 가능 구간이 존재합니다.'}
+                  {effModeIsStatic&&<span style={{marginLeft:6,color:"#666",fontSize:9}}>(at-level 정적 추정 · V2 적재 대기)</span>}
                 </div>
               )}
               {/* Phase 23-5: 화살표 범례 (다른 이용자용 해설) */}
