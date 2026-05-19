@@ -18,6 +18,8 @@ m9_create_lookup_agency_mode_rpc   ✅ B1   (3단계 fallback RPC)
 m10_create_refresh_floor_pass_daily ✅ B2.6 (calibration 일배치)
 m11_refresh_floor_pass_daily_window ✅ B2.6 보강 (window 분리 — 코덱스 라운드 3 권고 #2)
 m12_v2_modeB_cron_schedule          ✅ B5    (pg_cron 자동화 — 코덱스 라운드 5 권고 #2)
+m13_create_agency_gap_distribution  ✅ B3.1  (군시설 gap 분포 테이블)
+m14_create_lookup_gap_distribution_rpc ✅ B3.2 (gap 분포 3단계 fallback RPC)
 ```
 
 > **m10 → m11 변경**: 같은 row에서 예측·실측 산출 시 자기충족예언 위험 → window 분리.
