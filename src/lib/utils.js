@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { CHO } from "./constants.js";
 import { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./constants-tables.js";
+import { ceilToWon, ceilToThousand } from "./fmtAdj.js";
 // 도메인 상수 테이블은 constants-tables.js에 분리. 아래는 App.jsx 호환을 위한 re-export.
 export { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH };
 
@@ -498,8 +499,9 @@ export function recommendAssumedAdj({at,agName,ba,ep,av,pc},ts,as,agAss){
   const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
   const calcBid=(adjRate)=>{
     const xp=ba*(1+adjRate/100);
-    if(at==="LH")return Math.ceil((av>0?av+(xp-av)*(fr/100):xp*(fr/100))/1000)*1000;
-    return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100))};
+    const raw=av>0?av+(xp-av)*(fr/100):xp*(fr/100);
+    return at==="LH"?ceilToThousand(raw):ceilToWon(raw);
+  };
 
   // 추천 전략 결정
   let strategy="balanced";

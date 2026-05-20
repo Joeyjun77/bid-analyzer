@@ -38,3 +38,15 @@ export function fmtKRW(amount) {
   if (amount == null || isNaN(Number(amount))) return "—";
   return "₩ " + Math.round(Number(amount)).toLocaleString("ko-KR");
 }
+
+// 투찰금액 절상 — 원 단위 (V2_DOMAIN_RULES_CHECK #5)
+// 한국 공공조달 투찰금액은 원 미만 절상이 표준
+export function ceilToWon(amount) {
+  return Math.ceil(Number(amount));
+}
+
+// 투찰금액 절상 — 천원 단위 (V2_DOMAIN_RULES_CHECK #3)
+// LH 등 일부 발주처는 천원 단위 절상
+export function ceilToThousand(amount) {
+  return Math.ceil(Number(amount) / 1000) * 1000;
+}
