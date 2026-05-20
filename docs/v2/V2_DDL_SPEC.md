@@ -182,7 +182,7 @@ m14_create_lookup_gap_distribution_rpc(B3.2)✅ 적용 완료 2026-05-20 (gap �
 m15_create_refresh_win_zone_daily (B3.6)    ✅ 적용 완료 2026-05-20 (Mode A KPI 누적 함수)
 m16_v2_modeA_cron_schedule        (B3.7)    ✅ 적용 완료 2026-05-20 (Mode A pg_cron 자동화)
 m17_add_era_v2_columns            (Phase1)  ✅ 적용 완료 2026-05-20 (era_v2 컬럼 — V2_DOMAIN_RULES_CHECK #0)
-m18_alter_agency_gap_distribution_add_era_v2 (Phase1) ✅ 적용 완료 2026-05-20 (B3 보류 — 시대 혼입 'mixed' 마킹)
+m18_alter_agency_gap_distribution_add_era_v2 (Phase1) ✅ 적용 완료 2026-05-20 (시대 혼입 'mixed' 마킹 + current 재적재 — current AT n=31로 Mode A 가동, 라운드 8 옵션 A)
 ```
 
 각 마이그레이션은 snake_case 명명, RLS 활성화 + 정책 본문 명시 (anon/auth SELECT + service_role INSERT).

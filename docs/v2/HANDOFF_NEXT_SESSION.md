@@ -9,7 +9,7 @@
 
 ## 0. 현 상태 한 줄
 
-V2 Mode B 본격 도입 + Mode A 군시설 엔진(보류) + 도메인 규칙 정정 Phase 1 완료. 코덱스 마지막 평가 8.6/10(라운드 5) / 8.9/10(라운드 6) / 도메인 심각도 8.5/10 → Phase 1 후 잠정 5/10.
+V2 Mode B 본격 도입 + Mode A 군시설 엔진(AT grain n=31 컨볼루션 가동, KPI WARN) + 도메인 규칙 정정 Phase 1 완료. 코덱스 라운드 5 8.6/10 → 라운드 6 8.9/10 → 라운드 8 8.1/10 (코드-문서 정합성 6.5 + KPI 신뢰도 6.8 감점). 도메인 정확성은 8.5 → 8.8 상승. B3 정책-실태 불일치는 라운드 8 권고 옵션 A(현 동작 유지 + 문서 정정)로 해소.
 
 ---
 
@@ -22,10 +22,11 @@ V2 Mode B 본격 도입 + Mode A 군시설 엔진(보류) + 도메인 규칙 정
 - ✅ B2.5: UI wire-up (ModeBadge·effMode·메인 메트릭·안내문)
 - ✅ B2.6: calibration (m10·m11 window 분리)
 - ✅ B5: pg_cron 자동화 (m12 일간/주간)
-- 🚨 **B3 보류** (군시설 시대 혼입 표본 — current n=31뿐)
-  - m13~m16 적재됨, 그러나 v2_modeA_real 데이터는 mixed/legacy
+- 🟡 **B3 운영 중 (KPI 신뢰도 낮음/WARN)** — 코덱스 라운드 8 (2026-05-21) 권고 옵션 A 채택
+  - AG/AG_BA grain 0건, AT grain n=31 current 실측으로 Mode A gap 추천 가동
+  - m13~m16 적재됨, v2_modeA_weekly_gate KPI는 12.42% (목표 15%) WARN 유지
   - cron 2개(v2_modeA_daily_winzone, v2_modeA_weekly_gate) active 상태 그대로
-  - recommendV2 Mode A 분기는 현재 종형 fallback 동작 (gap n<5)
+  - recommendV2 Mode A 분기는 AT grain n=31로 `recommendModeA` 컨볼루션 정상 가동 (gap_p25=0.0013, gap_p50=0.3903)
 
 ### U 트랙 (UI)
 - ✅ U0 Phase 1·2: V2 미리보기 탭 + mock 컴포넌트 + App.jsx import
@@ -38,7 +39,7 @@ V2 Mode B 본격 도입 + Mode A 군시설 엔진(보류) + 도메인 규칙 정
 
 ### Phase 1 (도메인 규칙 정정 — V2_DOMAIN_RULES_CHECK 7건)
 - ✅ #0 era_v2 컬럼 (m17, bid_records legacy 50,632 / current 13,045, bid_details legacy 209 / current 671)
-- ✅ #4 B3 보류 + agency_gap_distribution 'mixed' 마킹 + current 재적재 (m18)
+- ✅ #4 agency_gap_distribution 'mixed' 마킹 + current 재적재 (m18) — current AT n=31로 Mode A 가동
 - ✅ #7 refresh 함수들 공동도급 제외 (m20)
 - ✅ G-도메인 게이트 신설 (.claude/commands/evaluate.md §10, 5번째 게이트)
 
@@ -63,7 +64,7 @@ m10·m11 refresh_floor_pass_daily + window 분리
 m12     Mode B pg_cron (일간·주간)
 m13~m16 B3 인프라 (현재 보류)
 m17     era_v2 컬럼 (V2_DOMAIN_RULES_CHECK #0)
-m18     agency_gap_distribution era_v2 (B3 보류 선언)
+m18     agency_gap_distribution era_v2 ('mixed' 마킹 + current 재적재)
 m19     lookup_gap_distribution RPC era_v2='current' 필터
 m20     refresh 함수 공동도급 제외 (#7)
 ```
@@ -107,7 +108,7 @@ m20     refresh 함수 공동도급 제외 (#7)
    SELECT * FROM floor_pass_daily WHERE model_version='v2_modeB_post_m20';
    ```
 2. **라운드 8 코덱스 재검증** — Phase 1 5단계 효과 정량 평가
-3. **B3 보류 검증** — recommendV2가 종형 fallback 잘 동작하는지 확인
+3. ✅ **B3 컨볼루션 가동 검증 완료 (2026-05-21)** — AT grain n=31로 `recommendModeA` 정상 실행 확인. 코덱스 라운드 8 (composite 8.1/10) 권고 옵션 A 채택.
 
 ### 우선순위 B (Phase 2 — 자사 유효 낙찰하한율 + LH 천원 절상)
 4. **자사 유효 낙찰하한율 모듈** — utils.js에 calcEffectiveFloorRate(at, baseFloorRate, ownScore)
@@ -153,8 +154,8 @@ m20     refresh 함수 공동도급 제외 (#7)
 - 라운드 6 검증 8.9점 → 도메인 게이트 누락 8.5점 결함 명시
 - 핵심: 낙찰하한율 두 차례 개정 (2025-07-01 + 2026-01-30) — 발주유형별 이중 경계
 - B3 시대 혼입 표본: n=186 = legacy 155 + current 31 (median_gap 260배 차이)
-- agency_gap_distribution 'mixed' 마킹 후 current 재적재 → current AG grain 0건 (n<5)
-- B3 사실상 보류, 종형 fallback 동작
+- agency_gap_distribution 'mixed' 마킹 후 current 재적재 → current AG/AG_BA grain 0건, current AT grain n=31만 생존
+- **recommendV2 Mode A는 AT grain n=31로 `recommendModeA` 컨볼루션 정상 가동** (gap_p25=0.0013, gap_p50=0.3903 사용). KPI 신뢰도 낮음/WARN 상태. 코덱스 라운드 8 (2026-05-21, composite 8.1/10) 권고 옵션 A 채택
 
 ### Mode B 안전성 (잠정)
 - calibration 96.00% 측정값이 mixed/legacy 혼입 가능 — m20 공동도급 제외 후 재측정 필요

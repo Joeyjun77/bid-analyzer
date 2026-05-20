@@ -1,4 +1,4 @@
--- m18: agency_gap_distribution에 era_v2 컬럼 추가 (V2_DOMAIN_RULES_CHECK 정정 #4 — B3 보류)
+-- m18: agency_gap_distribution에 era_v2 컬럼 추가 (V2_DOMAIN_RULES_CHECK 정정 #4 — 시대 혼입 격리)
 -- 기존 군시설 12 row는 시대 혼입 (legacy 155 + current 31) → 'mixed' 마킹
 -- UNIQUE 제약에 era_v2 포함 — 같은 키에 legacy/current/mixed 별도 row 가능
 -- 적용: apply_migration (Supabase MCP), 2026-05-20
@@ -28,4 +28,4 @@ COMMENT ON COLUMN agency_gap_distribution.era_v2 IS
 -- 적재 결과 (2026-05-20):
 --   current at-level: n=31 (군시설 전체)
 --   current AG grain: 0 (모든 발주사 n<5)
---   → B3 사실상 보류 — 종형 fallback 동작
+--   → AT grain n=31로 `recommendModeA` 컨볼루션 정상 가동 (KPI WARN). 라운드 8 (2026-05-21) 옵션 A.
