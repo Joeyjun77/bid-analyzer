@@ -302,7 +302,9 @@ const ALLOWED_V2_COLUMNS = new Set([
   'bid1st_v2_floor_safe','bid1st_v2_grain','bid1st_v2_src',
   // B2 Mode B 엔진 (b_pred_*)
   'b_pred_mode','b_pred_adj','b_pred_bid_amount',
-  'b_pred_floor_pass_prob','b_pred_grain','b_pred_src'
+  'b_pred_floor_pass_prob','b_pred_grain','b_pred_src',
+  // m22 own_score 컬럼 (라운드 12 critical fix — allowlist 누락 수정)
+  'own_score'
 ]);
 
 export async function sbUpdatePredictionsV2(updates){

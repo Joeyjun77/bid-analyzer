@@ -2,6 +2,8 @@
 -- 근거: 코덱스 라운드 11 권고 #3 — m21 operational화. recommendV2 grid 동적 설정용.
 -- 정책: 기존 6개 컬럼(matched_grain, mode_recommend, confidence, n, median_gap, p90_gap) + 2개 추가
 -- 적용: apply_migration, 2026-05-21
+-- ★ 라운드 12 정정: PostgreSQL은 반환 타입 변경 시 CREATE OR REPLACE 불가 → DROP 명시 필수
+DROP FUNCTION IF EXISTS lookup_agency_mode(TEXT, TEXT, NUMERIC);
 
 CREATE OR REPLACE FUNCTION lookup_agency_mode(
   p_at TEXT,
