@@ -967,7 +967,7 @@ ${baseInfo}
     }
     const summary=fileList.length===1?logs[0]?.ok?`${totalResults.length}건 예측 완료 · DB 저장`:logs[0]?.msg
       :`${fileList.length}개 파일 처리: 성공 ${successCount} · 실패 ${failCount} · 총 ${totalResults.length}건 예측`;
-    setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap]);
+    setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap,ownScore]);
 
   // ★ 마크다운 → HTML 변환 (공통)
   const md2html=(text)=>{if(!text)return"";
@@ -1016,7 +1016,7 @@ ${baseInfo}
     // Phase 23-9: v2 추천
     const v2=recommendBid1st({at,agName,ba,ep,av,fr:p.fr},{distMap:win1stDistMap,ownScore},{enableMonteCarlo:false});
     setManualV2(v2);
-  },[inp,allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap]);
+  },[inp,allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap,ownScore]);
 
   // 삭제
   const selCount=Object.keys(sel).filter(k=>sel[k]).length;
@@ -1131,7 +1131,7 @@ ${baseInfo}
         }
       }catch(e){console.warn("v2 backfill 실패:",e?.message);}
     })();
-  },[predictions,win1stDistMap]);
+  },[predictions,win1stDistMap,ownScore]);
 
   // ─── B2.4: V2 Mode B/A 자동채움 (bid_predictions.b_pred_* 6컬럼) ───
   // 근거: docs/v2/HANDOFF_V2_MASTER_PLAN §4 B2 + V2_DDL_SPEC §5
@@ -1189,7 +1189,7 @@ ${baseInfo}
         }
       }catch(e){console.warn("b_pred 자동채움 실패:",e?.message);}
     })();
-  },[predictions,win1stDistMap]);
+  },[predictions,win1stDistMap,ownScore]);
 
   // focusedPredId 변경 시: 리스트 확장 + 해당 행으로 스크롤 (공고→예측 이동 시 자동 포커스)
   useEffect(()=>{
