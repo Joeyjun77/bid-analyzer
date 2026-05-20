@@ -1727,6 +1727,12 @@ ${baseInfo}
                       {d.b_pred_grain&&<span style={{color:C.txd,marginLeft:6}}>({d.b_pred_grain})</span>}
                     </div>
                   )}
+                  {/* V2_DOMAIN_RULES_CHECK #1-a: 자사 유효 낙찰하한율 듀얼 표기 (라운드 9 권고 #2) */}
+                  {d.b_pred_adj!=null&&d.pred_floor_rate!=null&&(
+                    <div style={{fontSize:10,color:C.txm,marginTop:2,fontFamily:"monospace"}}>
+                      자사 하한: {formatFloorDual(Number(d.pred_floor_rate), calcEffectiveFloorRate(d.at, Number(d.pred_floor_rate), ownScore))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <div style={{fontSize:10,color:C.txm,marginBottom:3}}>💰 입찰 시 사용할 투찰금액</div>
