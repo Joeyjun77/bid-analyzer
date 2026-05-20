@@ -26,6 +26,7 @@ m17_add_era_v2_columns              ✅ Phase1 Step1 (era_v2 컬럼 — V2_DOMAI
 m18_alter_agency_gap_distribution_add_era_v2 ✅ Phase1 Step2 (시대 혼입 'mixed' 마킹 + current 재적재 — current AT n=31로 Mode A 가동)
 m19_lookup_gap_distribution_era_filter ✅ Phase1 Step3 (RPC era_v2='current' 필터)
 m20_refresh_funcs_joint_contract_filter ✅ Phase1 Step4 (refresh 함수들 공동도급 제외 #7)
+m21_alter_agency_mode_lookup_add_adj_range ✅ Phase2 (사정범위 메타 #6 — adj_range_min/max 컬럼 + 41 row 일률 ±3% 적재)
 ```
 
 ## 🟡 B3 운영 중 — KPI 신뢰도 낮음 (2026-05-21 코덱스 라운드 8 권고 옵션 A)

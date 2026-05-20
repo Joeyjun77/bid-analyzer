@@ -33,6 +33,9 @@ CREATE TABLE agency_mode_lookup (
   confidence      TEXT NOT NULL CHECK (confidence IN ('high','medium','low')),
   updated_at      TIMESTAMPTZ DEFAULT NOW(),
   sample_window_days INT DEFAULT 180,
+  adj_range_min   NUMERIC(4,2) CHECK (adj_range_min IS NULL OR adj_range_min BETWEEN -10.0 AND 0.0),  -- V2_DOMAIN_RULES_CHECK #6 (m21)
+  adj_range_max   NUMERIC(4,2) CHECK (adj_range_max IS NULL OR adj_range_max BETWEEN 0.0 AND 10.0),   -- V2_DOMAIN_RULES_CHECK #6 (m21)
+  CONSTRAINT adj_range_min_le_max CHECK (adj_range_min IS NULL OR adj_range_max IS NULL OR adj_range_min <= adj_range_max),
   UNIQUE NULLS NOT DISTINCT (at, canonical_ag, ba_seg)
   -- PG15+ NULLS NOT DISTINCT: (at, NULL, NULL) fallback row 중복 방지
 );
@@ -51,6 +54,12 @@ CREATE POLICY agency_mode_lookup_service_update ON agency_mode_lookup FOR UPDATE
 - `low`    : n < 20  (한전 39→medium, 조달청 26→medium, LH 11→low)
 
 **fallback 규칙**: `(at, canonical_ag, ba_seg)` 미스 → `(at, NULL, NULL)` row 사용.
+
+**adj_range_min/max 메타 (m21, V2_DOMAIN_RULES_CHECK #6)**
+- 발주사가 복수예비가격 작성 시 사용하는 사정률 폭(%) — 도메인 상수.
+- 표준 ±3% (대부분), ±2% (일부 소액), +0~-6% (특수 비대칭).
+- m21 적재 1차: 41 row 일률 `(-3.0, +3.0)` 디폴트. 비대칭 예외는 사용자 입력 시 UPDATE.
+- 미래 용도: `recommendV2` grid 검색 범위를 발주사별 동적 설정 (현재 ±1.5% 고정 — `bid1st-recommendation-redesign-design.md:140`).
 
 ---
 
@@ -183,6 +192,9 @@ m15_create_refresh_win_zone_daily (B3.6)    ✅ 적용 완료 2026-05-20 (Mode A
 m16_v2_modeA_cron_schedule        (B3.7)    ✅ 적용 완료 2026-05-20 (Mode A pg_cron 자동화)
 m17_add_era_v2_columns            (Phase1)  ✅ 적용 완료 2026-05-20 (era_v2 컬럼 — V2_DOMAIN_RULES_CHECK #0)
 m18_alter_agency_gap_distribution_add_era_v2 (Phase1) ✅ 적용 완료 2026-05-20 (시대 혼입 'mixed' 마킹 + current 재적재 — current AT n=31로 Mode A 가동, 라운드 8 옵션 A)
+m19_lookup_gap_distribution_era_filter (Phase1) ✅ 적용 완료 2026-05-20 (RPC era_v2='current' 필터)
+m20_refresh_funcs_joint_contract_filter (Phase1) ✅ 적용 완료 2026-05-20 (공동도급 제외 #7)
+m21_alter_agency_mode_lookup_add_adj_range (Phase2) ✅ 적용 완료 2026-05-21 (사정범위 메타 #6 — 41 row 일률 ±3% 적재)
 ```
 
 각 마이그레이션은 snake_case 명명, RLS 활성화 + 정책 본문 명시 (anon/auth SELECT + service_role INSERT).
