@@ -44,11 +44,12 @@ V2 Mode B 본격 도입 + Mode A 군시설 엔진(AT grain n=31 컨볼루션 가
 - ✅ G-도메인 게이트 신설 (.claude/commands/evaluate.md §10, 5번째 게이트)
 
 ### 잔여 정정 (Phase 2·3)
-- ⚠ #1 적격심사 ≠ 1.0 — 자사 유효 낙찰하한율 모듈
+- ✅ #1-a 자사 유효 낙찰하한율 모듈 (commit `466a308`, 2026-05-21) — recommendV2 한정, score=20 디폴트=비트 동등 / Plan #1-b 분리
+- ⚠ #1-b legacy 통합 — predictV5/recommendBid1st/recommendAssumedAdj에도 calcEffectiveFloorRate 적용 (회귀 위험 통제용 분리)
 - ⚠ #2 ba_seg = ep — 추정가격 기반 전환
-- ⚠ #3 LH 천원 절상 — recommendModeB LH 분기
-- ⚠ #5 투찰금액 절상 — fmtAdj/utils.js 공통 함수
-- ⚠ #6 발주처별 사정범위 — agency_mode_lookup 메타 컬럼
+- ✅ #3 LH 천원 절상 (commit `b4e9470`, 2026-05-21) — ceilToThousand 공통 함수 추출
+- ✅ #5 투찰금액 절상 (commit `58e95fd`, 2026-05-21) — ceilToWon 공통 함수 추출
+- ✅ #6 발주처별 사정범위 (m21, commit `7009018`, 2026-05-21) — agency_mode_lookup adj_range_min/max 41 row 일률 ±3% 적재
 
 ---
 
@@ -110,10 +111,11 @@ m20     refresh 함수 공동도급 제외 (#7)
 2. **라운드 8 코덱스 재검증** — Phase 1 5단계 효과 정량 평가
 3. ✅ **B3 컨볼루션 가동 검증 완료 (2026-05-21)** — AT grain n=31로 `recommendModeA` 정상 실행 확인. 코덱스 라운드 8 (composite 8.1/10) 권고 옵션 A 채택.
 
-### 우선순위 B (Phase 2 — 자사 유효 낙찰하한율 + LH 천원 절상)
-4. **자사 유효 낙찰하한율 모듈** — utils.js에 calcEffectiveFloorRate(at, baseFloorRate, ownScore)
-5. **LH 천원 절상 함수** — recommendV2 LH 분기에 `Math.ceil(price / 1000) * 1000`
-6. **공동 절상 함수** — `src/lib/fmtAdj.js`에 ceilToWon(amount)
+### 우선순위 B (Phase 2)
+- ✅ 자사 유효 낙찰하한율 모듈 — Plan #1-a 완료 (commit `466a308`)
+- ✅ LH 천원 절상 함수 — ceilToThousand 적용 (commit `b4e9470`)
+- ✅ 공동 절상 함수 — `src/lib/fmtAdj.js`에 ceilToWon (commit `58e95fd`)
+- ⚠ **#1-b legacy 통합** — predictV5/recommendBid1st/recommendAssumedAdj 호출 경로에도 calcEffectiveFloorRate 적용. 회귀 위험 통제를 위해 별도 PR로 분리. 사용자가 V5/V6 추천 패널을 1차로 보지 않는 한 체감 우선순위 낮음.
 
 ### 우선순위 C (Phase 3 — ba → ep 기반 전환)
 7. **agency_mode_lookup·agency_gap_distribution 재적재** (ba_seg를 ep 기반으로)
