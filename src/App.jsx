@@ -586,7 +586,7 @@ export default function App(){
     const agType=r.at||clsAg(r.ag);const agName=r.ag||"";
     const curStat=allS.as?.[agName];const typeStat=allS.ts?.[agType];
     const agDets=bidDetails.filter(d=>d.ag===agName);
-    const rec=recommendAssumedAdj({at:agType,agName,ba:r.ba,ep:r.ep,av:r.av},allS.ts,allS.as,agAss);
+    const rec=recommendAssumedAdj({at:agType,agName,ba:r.ba,ep:r.ep,av:r.av,ownScore},allS.ts,allS.as,agAss);
     const baseInfo=`■ 입찰 정보
 - 공고명: ${(r.pn||"").slice(0,50)}
 - 발주기관: ${agName} (${agType})
@@ -878,7 +878,7 @@ ${baseInfo}
           // 입찰서류함 → 예측 처리
           if(!Object.keys(allS.ts||{}).length){throw new Error("낙찰 통계가 로드되지 않았습니다. 낙찰정보리스트를 먼저 업로드해주세요.")}
           const items=parseBidDoc(raw);if(!items.length)throw new Error("입찰서류함: 예측 대상 0건");
-          const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails,agencyPred,floorBench);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
+          const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore},allS.ts,allS.as,bidDetails,agencyPred,floorBench);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
           if(!results.length)throw new Error("예측 결과 0건");
           accPredResults=accPredResults.concat(results);setPredResults([...accPredResults]); // ★ 누적 표시
           const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,source:"file_upload",match_status:"pending"}));
@@ -939,13 +939,13 @@ ${baseInfo}
         if(!isBidDoc){logs.push({name:file.name,ok:false,msg:"입찰서류함 형식이 아닙니다 (공고명·기초금액·추정가격/A값 헤더 필요)"});failCount++;continue}
         const items=parseBidDoc(rows);if(!items.length){logs.push({name:file.name,ok:false,msg:"예측 대상 0건"});failCount++;continue}
         const results=items.map(item=>{
-          const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,bidDetails,agencyPred,floorBench);
-          const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av},allS.ts,allS.as,curAgAss);
+          const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore},allS.ts,allS.as,bidDetails,agencyPred,floorBench);
+          const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore},allS.ts,allS.as,curAgAss);
           // Phase 23-9: 신규 추천 (1위 확률 최대 위치)
           const fr=p?p.fr:eraFR(item.at,item.ep||item.ba,new Date().toISOString().slice(0,10));
           const v2=recommendBid1st(
             {at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,fr},
-            {distMap:win1stDistMap},
+            {distMap:win1stDistMap,ownScore},
             {enableMonteCarlo:false}
           );
           return{...item,pred:p,rec,v2};
@@ -1008,13 +1008,13 @@ ${baseInfo}
     const ba=tn(inp.baseAmount);
     const ep=tn(inp.estimatedPrice);
     const av=tn(inp.aValue);
-    const p=predictV5({at,agName,ba,ep,av},allS.ts,allS.as,bidDetails,agencyPred,floorBench);
+    const p=predictV5({at,agName,ba,ep,av,ownScore},allS.ts,allS.as,bidDetails,agencyPred,floorBench);
     if(!p){setMsg({type:"err",text:"예측 실패: 기관 또는 금액 정보를 확인해주세요."});return}
     setPred(p);if(p)setSimSlider(Math.round(p.adj*100));
-    const rec=recommendAssumedAdj({at,agName,ba,ep,av},allS.ts,allS.as,agAss);
+    const rec=recommendAssumedAdj({at,agName,ba,ep,av,ownScore},allS.ts,allS.as,agAss);
     setManualRec(rec);
     // Phase 23-9: v2 추천
-    const v2=recommendBid1st({at,agName,ba,ep,av,fr:p.fr},{distMap:win1stDistMap},{enableMonteCarlo:false});
+    const v2=recommendBid1st({at,agName,ba,ep,av,fr:p.fr},{distMap:win1stDistMap,ownScore},{enableMonteCarlo:false});
     setManualV2(v2);
   },[inp,allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap]);
 
@@ -1108,7 +1108,7 @@ ${baseInfo}
       for(const p of targets){
         const v2=recommendBid1st(
           {at:p.at,agName:p.ag,ba:Number(p.ba),ep:Number(p.ep)||Number(p.ba),av:Number(p.av)||0,fr:Number(p.pred_floor_rate)},
-          {distMap:win1stDistMap},
+          {distMap:win1stDistMap,ownScore},
           {enableMonteCarlo:false}
         );
         if(!v2)continue;

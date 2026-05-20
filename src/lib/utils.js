@@ -228,7 +228,7 @@ export function routePrediction({at,agName},ts,as){
   return{route:"tier_fallback",agN:0,tierExists:!!tSt};
 }
 
-export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred,floorBench){
+export function predictV5({at,agName,ba,ep,av,ownScore},ts,as,details,agencyPred,floorBench){
   if(!ba)return null;
   const tKeys=Object.keys(ts||{});
   if(!tKeys.length)return null;
@@ -280,7 +280,9 @@ export function predictV5({at,agName,ba,ep,av},ts,as,details,agencyPred,floorBen
   ref={...ref,med:ref.med+biasAdj,q1:ref.q1+biasAdj,q3:ref.q3+biasAdj,avg:ref.avg+biasAdj};
 
   const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
-  const calcBid=(adjRate)=>{const xp=ba*(1+adjRate/100);return av>0?Math.ceil(av+(xp-av)*(fr/100)):Math.ceil(xp*(fr/100))};
+  // V2_DOMAIN_RULES_CHECK #1-b: 자사 유효 낙찰하한율 (ownScore 디폴트 20=만점)
+  const effFr=calcEffectiveFloorRate(at,fr,ownScore);
+  const calcBid=(adjRate)=>{const xp=ba*(1+adjRate/100);return av>0?Math.ceil(av+(xp-av)*(effFr/100)):Math.ceil(xp*(effFr/100))};
   const calcXp=(adjRate)=>Math.round(ba*(1+adjRate/100));
   const scenarios=[
     {name:"보수적 (Q1)",adj:rnd4(ref.q1),xp:calcXp(ref.q1),bid:calcBid(ref.q1)},
@@ -461,7 +463,7 @@ export function simDraws(preRates){
 // 이전 버전(3,318건 백테스트) 대비 P25 하향 → 실전 낙찰 가능성 2배 향상
 // ASSUMED_ADJ_TABLE / FAIL_RATES 상수는 constants-tables.js에 분리됨.
 
-export function recommendAssumedAdj({at,agName,ba,ep,av,pc},ts,as,agAss){
+export function recommendAssumedAdj({at,agName,ba,ep,av,pc,ownScore},ts,as,agAss){
   const tbl=ASSUMED_ADJ_TABLE[at]||ASSUMED_ADJ_TABLE["지자체"];
   const tier=(ba||0)<300000000?"under300M":"over300M";
   let base={p25:tbl[tier].p25,p50:tbl[tier].p50,p75:tbl[tier].p75};
@@ -498,9 +500,11 @@ export function recommendAssumedAdj({at,agName,ba,ep,av,pc},ts,as,agAss){
 
   const r4=v=>Math.round(v*10000)/10000;
   const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
+  // V2_DOMAIN_RULES_CHECK #1-b: 자사 유효 낙찰하한율 (ownScore 디폴트 20=만점)
+  const effFr=calcEffectiveFloorRate(at,fr,ownScore);
   const calcBid=(adjRate)=>{
     const xp=ba*(1+adjRate/100);
-    const raw=av>0?av+(xp-av)*(fr/100):xp*(fr/100);
+    const raw=av>0?av+(xp-av)*(effFr/100):xp*(effFr/100);
     return at==="LH"?ceilToThousand(raw):ceilToWon(raw);
   };
 
@@ -928,11 +932,13 @@ export function recommendBid1st(bid,context,options){
 
   // Step 4: Grid search 0.0001% 정밀도
   const xpC=(adj)=>ba*(1+adj/100);
+  // V2_DOMAIN_RULES_CHECK #1-b: 자사 유효 낙찰하한율 (context.ownScore 디폴트 20=만점)
+  const effFr=calcEffectiveFloorRate(at,fr,context?.ownScore);
   const bidC=(adj)=>{
     const xp=xpC(adj);
     return(av&&av>0)
-      ?Math.ceil(av+(xp-av)*(fr/100))
-      :Math.ceil(xp*(fr/100));
+      ?Math.ceil(av+(xp-av)*(effFr/100))
+      :Math.ceil(xp*(effFr/100));
   };
   // 적격성: bidC(adj) ≥ legal_min(adj). 두 식이 동일하므로
   // 자연스럽게 floorSafe = (xp ≥ av), 즉 ba(1+adj/100) ≥ av.
@@ -1077,7 +1083,8 @@ export function recommendV2(bid, context, options) {
   }
 
   // Fallback: 기존 종형 (gapDist 미전달 또는 표본 부족)
-  const v1 = recommendBid1st({ at, agName, ba, ep, av, fr }, { distMap: context?.distMap }, { enableMonteCarlo: false });
+  // V2_DOMAIN_RULES_CHECK #1-b: ownScore도 함께 전달 (recommendBid1st 내부에서 effFr 계산)
+  const v1 = recommendBid1st({ at, agName, ba, ep, av, fr }, { distMap: context?.distMap, ownScore: context?.ownScore }, { enableMonteCarlo: false });
   if (!v1 || !v1.auto) return null;
   return {
     mode: 'A',
