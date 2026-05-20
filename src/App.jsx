@@ -1088,21 +1088,23 @@ ${baseInfo}
     })}
     return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,predSort,hideYuchal,hideSuui,gradeFilter,scoringMap,hideP5,onlyPrimary,agencyStats,agencyPred]);
 
-  // Phase 23-9: pending 건 v2 backfill (분포 map 로드 후 NULL 행에 1회 적용)
-  const v2BackfillDone=useRef(false);
+  // Phase 23-9: pending 건 v2 backfill (분포 map 로드 후 NULL 행에 적용)
+  // 라운드 11 권고: ref를 scoreSnap으로 변환 — ownScore 변경 시 stale row 재계산
+  const v2BackfillDone=useRef(null); // null | ownScore 값 저장
   useEffect(()=>{
-    if(v2BackfillDone.current)return;
+    if(v2BackfillDone.current===ownScore)return; // 같은 score로 이미 실행됨
     if(!Object.keys(win1stDistMap?.agBa||{}).length&&!Object.keys(win1stDistMap?.at||{}).length)return;
     if(!predictions||!predictions.length)return;
+    // NULL≡20 동치 규칙: stale row 감지 — bid1st_v2_adj NULL 또는 own_score≠current
     const targets=predictions.filter(p=>
       p.match_status==='pending'
       &&p.source==='file_upload'
-      &&p.bid1st_v2_adj==null
       &&p.ba!=null
       &&p.pred_floor_rate!=null
+      &&(p.bid1st_v2_adj==null||(p.own_score??20)!==ownScore)
     );
-    if(!targets.length){v2BackfillDone.current=true;return;}
-    v2BackfillDone.current=true; // 동시 진입 방지
+    if(!targets.length){v2BackfillDone.current=ownScore;return;}
+    v2BackfillDone.current=ownScore; // 동시 진입 방지
     (async()=>{
       const updates=[];
       for(const p of targets){
@@ -1119,7 +1121,8 @@ ${baseInfo}
           bid1st_v2_win_prob:v2.auto.winProb,
           bid1st_v2_floor_safe:v2.auto.floorSafe,
           bid1st_v2_grain:v2.distribution.grain,
-          bid1st_v2_src:v2.distribution.src
+          bid1st_v2_src:v2.distribution.src,
+          own_score:ownScore // 라운드 11 권고: 적재 시점 score 기록
         });
       }
       if(!updates.length)return;
@@ -1141,20 +1144,22 @@ ${baseInfo}
   // ★ B2.4-fix (사용자 검출, 2026-05-19): win1stDistMap 로드 가드 필수
   // 가드 누락 시 useEffect 첫 트리거에서 빈 distMap으로 전체 row가 AT-fallback(n=0, μ=0, σ=0.642)
   // 일률 적재되어 발주사별 분포 학습이 무력화됨. 기존 bid1st_v2 자동채움(line 1082)과 동일 패턴 적용.
-  const v2BPredBackfillDone=useRef(false);
+  // 라운드 11 권고: ref를 scoreSnap으로 변환 — ownScore 변경 시 stale row 재계산
+  const v2BPredBackfillDone=useRef(null); // null | ownScore 값 저장
   useEffect(()=>{
-    if(v2BPredBackfillDone.current)return;
+    if(v2BPredBackfillDone.current===ownScore)return; // 같은 score로 이미 실행됨
     // 가드: win1stDistMap이 로드되어야 발주사별 분포 사용 가능
     if(!Object.keys(win1stDistMap?.agBa||{}).length&&!Object.keys(win1stDistMap?.ag||{}).length)return;
     if(!predictions||!predictions.length)return;
+    // NULL≡20 동치 규칙: b_pred_mode NULL 또는 own_score≠current (단 matched row는 INSERT-only 보호 — pending만)
     const targets=predictions.filter(p=>
-      p.b_pred_mode==null
-      &&p.at!=null
+      p.at!=null
       &&p.ba!=null
       &&p.pred_floor_rate!=null
+      &&(p.b_pred_mode==null||(p.match_status==='pending'&&(p.own_score??20)!==ownScore))
     );
-    if(!targets.length){v2BPredBackfillDone.current=true;return;}
-    v2BPredBackfillDone.current=true; // 동시 진입 방지
+    if(!targets.length){v2BPredBackfillDone.current=ownScore;return;}
+    v2BPredBackfillDone.current=ownScore; // 동시 진입 방지
     (async()=>{
       const updates=[];
       for(const p of targets){
@@ -1176,7 +1181,8 @@ ${baseInfo}
             b_pred_bid_amount:v2.bid,
             b_pred_floor_pass_prob:v2.floor_pass_prob!=null?Number(Number(v2.floor_pass_prob).toFixed(4)):null,
             b_pred_grain:v2.grain,
-            b_pred_src:v2.src
+            b_pred_src:v2.src,
+            own_score:ownScore // 라운드 11 권고: 적재 시점 score 기록
           });
         }catch(e){/* row 단위 실패 무시, 다음 진행 */}
       }
