@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import { CHO } from "./constants.js";
 import { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./constants-tables.js";
 import { ceilToWon, ceilToThousand } from "./fmtAdj.js";
+import { calcEffectiveFloorRate } from "./effectiveFloor.js";
 // 도메인 상수 테이블은 constants-tables.js에 분리. 아래는 App.jsx 호환을 위한 re-export.
 export { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH };
 
@@ -1008,13 +1009,16 @@ export function recommendV2(bid, context, options) {
   const grain = context?.modeResolution?.matched_grain || null;
   const baSeg = baSegOf(ba);
 
-  // 투찰금액 계산식 (recommendBid1st와 동일 — A값 보정)
+  // V2_DOMAIN_RULES_CHECK #1 — 자사 유효 낙찰하한율 (context.ownScore 없으면 디폴트 20=만점)
+  const effFr = calcEffectiveFloorRate(at, fr, context?.ownScore);
+
+  // 투찰금액 계산식 (recommendBid1st와 동일 — A값 보정, effFr 사용)
   const xpC = (adj) => ba * (1 + adj / 100);
   const bidC = (adj) => {
     const xp = xpC(adj);
     return (av && av > 0)
-      ? Math.ceil(av + (xp - av) * (fr / 100))
-      : Math.ceil(xp * (fr / 100));
+      ? Math.ceil(av + (xp - av) * (effFr / 100))
+      : Math.ceil(xp * (effFr / 100));
   };
   const floorSafeC = (adj) => {
     const xp = xpC(adj);

@@ -11,6 +11,8 @@ import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
+import OwnScoreInput from "./components/OwnScoreInput.jsx";
+import { calcEffectiveFloorRate, formatFloorDual } from "./lib/effectiveFloor.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./lib/utils.js";
 import { resolveMode, resolveGapDist } from "./lib/modeResolver.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
@@ -429,6 +431,12 @@ export default function App(){
   const[biasMap,setBiasMapState]=useState({agency:{},at:{}}); // Phase 5.4: 편차 보정 맵
   const[predBiasMap,setPredBiasMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Phase 23-2: 동적 편향 보정 (AG×금액대 다층)
   const[basegFinetune,setBasegFinetune]=useState({}); // Phase 23-3: 한전·고양시 (ag,at,seg) median fine-tune
+  // V2_DOMAIN_RULES_CHECK #1 — 자사 비가격 점수 (0~20, 디폴트 20=만점)
+  const OWN_SCORE_KEY='bidAnalyzer.ownScore';
+  const[ownScore,setOwnScore]=useState(()=>{
+    try{const stored=localStorage.getItem(OWN_SCORE_KEY);const n=Number(stored);return Number.isFinite(n)&&n>=0&&n<=20?n:20;}catch{return 20;}
+  });
+  useEffect(()=>{try{localStorage.setItem(OWN_SCORE_KEY,String(ownScore));}catch{}},[ownScore]);
   const[trendMap,setTrendMapState]=useState({}); // Phase 5.4: 추세 맵
   const[claudeApiKey,setClaudeApiKey]=useState(""); // Phase 5.4-B: Edge Function 프록시 사용, 레거시 호환 유지
   const[aiAnalysisMap,setAiAnalysisMap]=useState({}); // 예측ID → AI 분석 결과
@@ -1158,7 +1166,7 @@ ${baseInfo}
             :null;
           const v2=recommendV2(
             {at:p.at,agName:p.ag,ba:Number(p.ba),ep:Number(p.ep)||Number(p.ba),av:Number(p.av)||0,fr:Number(p.pred_floor_rate)},
-            {distMap:win1stDistMap,modeResolution:modeRes,gapDist}
+            {distMap:win1stDistMap,modeResolution:modeRes,gapDist,ownScore}
           );
           if(!v2||v2.adj==null)continue;
           updates.push({
@@ -1265,6 +1273,7 @@ ${baseInfo}
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <span style={{fontSize:16,fontWeight:700,color:C.gold}}>입찰 분석 시스템</span>
         <span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span>
+        <OwnScoreInput value={ownScore} onChange={setOwnScore} />
         {lastG2bAt&&<span title={"나라장터 공고 마지막 예측 갱신: "+new Date(lastG2bAt).toLocaleString("ko-KR")} style={{display:"inline-flex",alignItems:"center",gap:3,padding:"2px 7px",fontSize:9,color:"#5dca96",background:"rgba(93,202,150,0.08)",border:"1px solid rgba(93,202,150,0.2)",borderRadius:10,cursor:"default"}}>
           ● 공고 {fmtRelTime(lastG2bAt)} 갱신
         </span>}
