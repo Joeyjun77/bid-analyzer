@@ -2332,7 +2332,11 @@ ${baseInfo}
                 <div style={{color:C.txm}}>기초금액: <span style={{color:C.txt,fontFamily:"monospace"}}>{ba?tc(ba)+"원":"—"}</span></div>
                 <div style={{color:C.txm}}>추정가격: <span style={{color:C.txt,fontFamily:"monospace"}}>{ep?tc(ep)+"원":"—"}</span></div>
                 <div style={{color:C.txm}}>A값: <span style={{color:C.txt,fontFamily:"monospace"}}>{av?tc(av)+"원":"없음"}</span></div>
-                <div style={{color:C.txm}}>낙찰하한율: <span style={{color:C.txt,fontFamily:"monospace"}}>{d.pred_floor_rate||"—"}%</span></div>
+                <div style={{color:C.txm}}>낙찰하한율: <span style={{color:C.txt,fontFamily:"monospace"}}>
+                  {d.pred_floor_rate!=null
+                    ? formatFloorDual(Number(d.pred_floor_rate), calcEffectiveFloorRate(d.at, Number(d.pred_floor_rate), ownScore))
+                    : "—"}
+                </span></div>
               </div>
               {d.pred_source&&<div style={{marginTop:12,paddingTop:10,borderTop:"1px solid "+C.bdr,fontSize:11,color:C.txm}}>
                 예측 근거: <span style={{color:C.txt}}>{d.pred_source}</span>
@@ -2517,6 +2521,8 @@ ${baseInfo}
                   "추정가격":p.ep||"",
                   "A값":p.av||"",
                   "낙찰하한율":p.pred_floor_rate||"",
+                  "자사 유효 낙찰하한율":p.pred_floor_rate!=null?calcEffectiveFloorRate(p.at,Number(p.pred_floor_rate),ownScore):"",
+                  "자사 비가격 점수":ownScore,
                   // ★ Phase 6-A: 추천은 opt_adj 단일 소스
                   "추천 사정률(100%)":finalAdj!=null?(100+Number(finalAdj)).toFixed(4):"",
                   "추천 투찰금액":finalBid||"",
