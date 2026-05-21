@@ -1,9 +1,10 @@
 # V2 작업 핸드오프 — 다음 세션 (2026-05-20 종료 시점)
 
-> 작업 중단: 2026-05-20
-> 다음 재개: 2026-05-21~
-> 마지막 commit: `3bd365f` (main)
+> 작업 중단: 2026-05-20 (1차) / 라운드 9~13 후속: 2026-05-21
+> 다음 재개: 라운드 14 BRIEF 작성 또는 4주 PASS 누적 대기 (~2주)
+> 마지막 commit: `8793b4e` (main, 라운드 13 major 2건 + BRIEF minor 1건 fix)
 > 단일 진실: `docs/v2/HANDOFF_V2_MASTER_PLAN.md` + `docs/v2/V2_DOMAIN_RULES_CHECK.md`
+> 후속 § 9 참조 (라운드 9~13 진행 + DB 실측 수치, 2026-05-21 추가)
 
 ---
 
@@ -192,3 +193,80 @@ m20     refresh 함수 공동도급 제외 (#7)
 
 _본 문서는 V2 작업 중단 시점의 영구 기록. 다음 세션이 자족 가능하도록 작성됨._
 _단일 진실: `HANDOFF_V2_MASTER_PLAN.md` + `V2_DOMAIN_RULES_CHECK.md`._
+
+---
+
+## 9. 라운드 9~13 후속 진행 (2026-05-21 추가)
+
+§1~§8은 2026-05-20 종료 시점 스냅샷. 본 절은 라운드 9~13 추가 진행분 + DB 실측 수치를 기록한다.
+
+### 9.1 코덱스 라운드 9~13 점수 추이
+
+| 라운드 | composite | 핵심 사건 |
+|---|---|---|
+| 8 | 8.1/10 | 코드-문서 정합성 6.5 + KPI 신뢰도 6.8 감점 (BRIEF: `CODEX_ROUND_8_BRIEF.md`) |
+| 9 | (평가 미공개) | #1-a UI 듀얼 표기 (`edc4d9d`) |
+| 10 | 8.5/10 | #1-b legacy 4함수 calcEffectiveFloorRate 통합 (`1cc32e3`) + ownScore React deps 수정 (`fe1ee1a`) |
+| 11 | 8.6/10 | own_score 컬럼 + invalidation (`a8e18fe`) + m21 operational (`4744b93`) |
+| 12 | **8.0/10** (-0.6 회귀) | critical 3건 fix (`a12000e`) — own_score 실제저장 + m25 era_v2 + m24 DROP |
+| 13 | **8.5/10** (+0.5 회복) | major 2건 + BRIEF minor 1건 fix (`8793b4e`) — m25 적용문 + 주석 정정 + V6 retire ETA 통일 |
+
+라운드 13 항목별: 도메인 8.6 / 안전성 8.7 / 측정 일관성 8.6 / 코드-문서 8.2 / KPI 신뢰도 8.3 (composite 8.5/10).
+
+### 9.2 DB 실측 수치 (2026-05-21 조회)
+
+**bid_predictions 누적**:
+- matched_total: **1,660건**
+- matched (source=file_upload): 1,394건
+- matched + actual_adj_rate IS NOT NULL: 1,360건
+- **own_score IS NOT NULL: 532건** (라운드 12 fix 후 정상 적재 검증 — NULL만 적재 critical 해소)
+- total predictions: 2,252건
+
+**Mode B Weekly Gate (`mode_gate_report`)**:
+- 2026-05-19 주: _overall_ pass (n=300, rate=0.9600, gap=0.0102) — 모든 영역 pass
+- 2026-05-18 주: _overall_ pass (n=307, rate=0.9511, gap=0.0011) — 모든 영역 pass
+- **연속 PASS 2주 누적** (4주 연속 PASS까지 ~2주 더)
+- 다음 주간 gate: 2026-05-26
+
+**Mode A Weekly Gate**:
+- 2026-05-18 주 군시설: WARN (pct_in_win_zone=0.1242, 목표 0.15) — 첫 Mode A 게이트, gap_p90=0.8096
+
+**agency_mode_lookup adj_range (m25 5 row 정정 검증)**:
+- LH at-level: -0.87 / +0.96 (m23 그대로, m25 영향 없음)
+- 군시설 at-level: -1.21 / +1.16 (m25 갱신)
+- 한전 at-level: -1.49 / +1.23 (m25 갱신)
+- 지자체 at-level: -2.08 / +1.58 (m25 갱신)
+- 교육청 at-level: -1.70 / +1.22 (m25 min 갱신)
+- 조달청 at-level: -1.22 / +1.50 (m23 그대로)
+
+### 9.3 V2 §9 종료 조건 진척 (V6 retire)
+
+| 조건 | 상태 | 비고 |
+|---|---|---|
+| n≥500 | ✅ 충족 | matched 1,660 / matched+actual 1,360 |
+| 4주 연속 PASS | ❌ 2주 누적 | ~2주 더 (5/26·6/2 주 PASS 시 충족) |
+| Mode B 통과율 ≥90% | ✅ | 5/19 0.9600, 5/18 0.9511 |
+| calibration gap ≤5pp | ✅ | _overall_ 0.0102 (5/19), 0.0011 (5/18) |
+| Mode A WIN-zone ≥15% | ❌ WARN | 5/18 0.1242 (군시설 mixed 데이터 영향, current-only 재측정 미실행) |
+
+**V6 retire ETA**: ~2주 (4주 PASS 완성 시점, 라운드 12 대비 단축). Mode A는 retire 조건이 아니므로 V6 retire 자체에는 영향 없음.
+
+### 9.4 잔여 작업
+
+- ⚠ V2_DOMAIN_RULES_CHECK #2 — `ba_seg` → `ep` 기반 전환 (Phase 3, 별도 세션 권고)
+- ⚠ Mode A 군시설 current-only 재측정 — mixed 데이터 영향 분리
+- ⚠ m20 효과 정량 측정 — refresh_floor_pass_daily post_m20 vs real 비교 데이터 5/20에 일부 적재됨, 누적 비교 분석 미실행
+- ⚠ 라운드 14 BRIEF 작성 — 라운드 13 major fix(`8793b4e`) 효과 재평가 의뢰
+
+### 9.5 라운드 13 minor 결산
+
+| 항목 | 처리 | 근거 |
+|---|---|---|
+| major #1 — m25 적용 실행문 부재 | ✅ fix (`8793b4e`) | SELECT refresh_agency_adj_range(20) + 결과 로그 주석 추가 |
+| major #2 — m25 주석 ↔ SQL 불일치 | ✅ fix (`8793b4e`) | `bid_details d` → `bid_records r` 정정 |
+| minor #1 — BRIEF V6 retire ETA 병존 | ✅ fix (`8793b4e`) | ~4주 → ~2주 (4주 PASS 시점) |
+| minor #2 — m24 score_components 검색 안 됨 | ✅ 무효 확정 | 코드·DB 어디에도 없음, 코덱스 추측 항목 |
+| minor #3 — m25 5 row 정정 DB 검증 | ✅ 검증 완료 | §9.2 agency_mode_lookup 표 참조 |
+| minor #4 — n 누적·PASS 연속·gate date | ✅ 검증 완료 | §9.2·9.3 참조 |
+
+_§9 추가일: 2026-05-21 / 작성자: Claude Opus 4.7 / 후속 commit: `8793b4e` + 본 갱신_
