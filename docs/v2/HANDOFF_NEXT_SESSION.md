@@ -239,24 +239,28 @@ _단일 진실: `HANDOFF_V2_MASTER_PLAN.md` + `V2_DOMAIN_RULES_CHECK.md`._
 - 교육청 at-level: -1.70 / +1.22 (m25 min 갱신)
 - 조달청 at-level: -1.22 / +1.50 (m23 그대로)
 
-### 9.3 V2 §9 종료 조건 진척 (V6 retire)
+### 9.3 V2 §9 종료 조건 진척 (V6 retire) — m26·m27 적용 후 갱신
 
 | 조건 | 상태 | 비고 |
 |---|---|---|
 | n≥500 | ✅ 충족 | matched 1,660 / matched+actual 1,360 |
-| 4주 연속 PASS | ❌ 2주 누적 | ~2주 더 (5/26·6/2 주 PASS 시 충족) |
-| Mode B 통과율 ≥90% | ✅ | 5/19 0.9600, 5/18 0.9511 |
-| calibration gap ≤5pp | ✅ | _overall_ 0.0102 (5/19), 0.0011 (5/18) |
-| Mode A WIN-zone ≥15% | ❌ WARN | 5/18 0.1242 (군시설 mixed 데이터 영향, current-only 재측정 미실행) |
+| 4주 연속 PASS | ❌ **canonical 카운터 0주** | 5/18·5/19 mixed PASS 무효 (m27 적용), canonical 첫 게이트 2026-05-25(월), 4주 완성 ~2026-06-22 |
+| Mode B 통과율 ≥90% | ✅ | 5/21 canonical _overall_ 0.9704 (n=135) — v2_modeB_real ≡ v2_modeB_canonical (b_pred_* 적재가 이미 current era만) |
+| calibration gap ≤5pp | ✅ | _overall_ 0.0206 (5/21 canonical) |
+| Mode A WIN-zone ≥15% | ❌ **WARN 더 심각** | m26 current-only 재측정: 군시설 12.42% → **10.00%** (mixed가 +2.42pp 부풀려 측정). 목표 15%까지 -5pp |
 
-**V6 retire ETA**: ~2주 (4주 PASS 완성 시점, 라운드 12 대비 단축). Mode A는 retire 조건이 아니므로 V6 retire 자체에는 영향 없음.
+**V6 retire ETA**: ~**2026-06-22** (canonical 첫 weekly gate 5/25에서 4주 PASS 누적 시작, m27 정합 회복 비용 +4주 연장). 코덱스 메타 권고 Q4 "정합 회복 우선 동의" 수용.
 
 ### 9.4 잔여 작업
 
+- ✅ Mode A 군시설 current-only 재측정 — m26 적용 완료 (`c504571`), 12.42→10.00%
+- ✅ m20 효과 정량 측정 — m27 적용 직후 v2_modeB_canonical 측정 결과로 검증 완료 (canonical ≡ real 5/21, b_pred_* 이미 current era만 적재)
 - ⚠ V2_DOMAIN_RULES_CHECK #2 — `ba_seg` → `ep` 기반 전환 (Phase 3, 별도 세션 권고)
-- ⚠ Mode A 군시설 current-only 재측정 — mixed 데이터 영향 분리
-- ⚠ m20 효과 정량 측정 — refresh_floor_pass_daily post_m20 vs real 비교 데이터 5/20에 일부 적재됨, 누적 비교 분석 미실행
-- ⚠ 라운드 14 BRIEF 작성 — 라운드 13 major fix(`8793b4e`) 효과 재평가 의뢰
+- ⚠ 지자체 Mode A 조건부 활성화 검토 — m26 결과 p90_gap 0.0209→**0.2345(10배+)**, 마스터플랜 §3 D2 조건 `gap_p90 ≥ 0.10` 충족 (별도 진단 세션)
+- ⚠ 군시설 10.00% WARN 본질 검토 — Mode A 군시설 자체 적합성 (15% 목표 도달 가능성, 1주)
+- ⚠ 마스터플랜 §3 D2 표 갱신 — current-only 측정값으로 정정 (지자체 0.0209→0.2345 외)
+- ⚠ 라운드 14 BRIEF (`81d9747`) 코덱스 평가 의뢰 — m26·m27 적용 후 통합 라운드 15 BRIEF로 흡수 권고
+- ⚠ 라운드 15 BRIEF 통합 작성 — 위 잔여 항목 진행 후 m26·m27 + 정책·UI 정정 통합 의뢰
 
 ### 9.5 라운드 13 minor 결산
 
@@ -269,4 +273,56 @@ _단일 진실: `HANDOFF_V2_MASTER_PLAN.md` + `V2_DOMAIN_RULES_CHECK.md`._
 | minor #3 — m25 5 row 정정 DB 검증 | ✅ 검증 완료 | §9.2 agency_mode_lookup 표 참조 |
 | minor #4 — n 누적·PASS 연속·gate date | ✅ 검증 완료 | §9.2·9.3 참조 |
 
-_§9 추가일: 2026-05-21 / 작성자: Claude Opus 4.7 / 후속 commit: `8793b4e` + 본 갱신_
+### 9.6 메타 점검 + m26·m27 적용 결과 (2026-05-21 추가 갱신)
+
+사용자 발화 "예측 시스템에 낙찰사정율 예측이 맞는 건지" + "반복 작업만 진행" 트리거로 라운드 N+1 BRIEF 패턴을 멈추고 **메타 시스템 점검** 진입. 상세: `SYSTEM_AUDIT_2026-05-21.md`, `M26_M27_APPLY_RESULT_2026-05-21.md`.
+
+#### 9.6.1 commit 시퀀스 (4 commit, 모두 push 완료)
+
+| commit | 종류 | 내용 |
+|---|---|---|
+| `0ad2feb` | docs | 시스템 점검 보고서 — 4종 예측 비교 + 반복 루프 진단 + 작업 로드맵 재정렬 |
+| `c9c4ed3` | docs | MAE 1차 KPI 폐기 정책 영역별 예외 명문화 (MASTER §0 + MEASUREMENT_SPEC §6.1 신규) |
+| `fe26365` | docs | V2_UI_SPEC §3.1 라벨 정책 신규 ("사정률 점추정 / WIN-zone / 하한 안전망" 3분류) |
+| `c504571` | fix | **m26·m27 측정 함수 정합 회복 + cron canonical 전환** |
+
+#### 9.6.2 코덱스 메타 상의 응답 요약
+
+| # | 질문 | 코덱스 답 | 수용 |
+|---|---|---|---|
+| Q1 | 영역별 MAE 예외? | 부분 동의 (산포 낮은 영역만 예외) | ✅ `c9c4ed3` |
+| Q2 | 의사결정 분기? | 동의 + 지자체·조달청 라벨 추가 | ✅ `fe26365` §3.1.2 |
+| Q3 | 반복 루프 원인? | 동의 + 측정 신뢰도 회복도 부산물 | (분석 반영) |
+| Q4 | 로드맵 우선순위? | A→D→**C→B→E** + 라운드 N+1 메타 통합 | ✅ 통합 라운드 15 BRIEF 예정 |
+| Q5 | 정책 정정? | 명문화 + V6 retire 후 점추정 모듈 별도 분리 | ✅ MEASUREMENT_SPEC §6.1 |
+
+코덱스 추가 우려 (m20 효과 미실행) → m27 적용으로 해소.
+
+#### 9.6.3 m26·m27 적용 핵심 발견
+
+- **군시설 mixed 12.42% → current-only 10.00%** — mixed가 실제 성과를 +2.42pp 부풀려 측정
+- **지자체 p90_gap 0.0209 → 0.2345 (10배+)** — Mode A 후보 영역 신규 부상 (마스터플랜 §3 D2 조건부 A 활성화 가능성)
+- **v2_modeB_canonical ≡ v2_modeB_real (5/21)** — b_pred_* 적재가 이미 current era만, m27은 향후 안전망 역할
+- **4개 cron 모두 정합 회복** (jobid 10·11 canonical, jobid 12·13 함수 본체 era 필터)
+
+#### 9.6.4 m26·m27 적용 win_zone_daily 영역별 결과 (2026-05-21 current-only)
+
+| at | n | pct_in_win_zone | p90_gap | 모드 판정 |
+|---|---|---|---|---|
+| 군시설 | 60 | **10.00%** (WARN, ↓ 2.42pp from mixed) | 0.6070 | A 유지 |
+| 지자체 | 126 | 2.38% | **0.2345** | **B + 조건부 A 활성화 후보** |
+| 한전 | 23 | 0.00% | 0.0060 | B 유지 |
+| 교육청 | 12 | 0.00% | 0.0059 | B 유지 |
+| LH | 6 | 0.00% | 0.0013 | B (n 보강 필요) |
+| 조달청 | 7 | 0.00% | 0.0006 | B + 공격성 교정 |
+
+→ 마스터플랜 §3 D2 표 (mixed 기준)의 5건 중 4건은 측정값 유사. **지자체만 의미 있는 변동**.
+
+#### 9.6.5 V6 retire 정합 기준 카운터 신규 시작
+
+- 5/18·5/19 PASS 누적 = **mixed real 기준, 무효**
+- 첫 v2_modeB_canonical weekly gate: **2026-05-25(월) 01:00 UTC**
+- 4주 연속 PASS 완성 ETA: **~2026-06-22 무렵**
+- ETA +4주 연장 비용 < 측정 신뢰도 영구 손상 비용 (predict-architect + 코덱스 + 사용자 합의)
+
+_§9 최초 추가일: 2026-05-21 / 후속 갱신 (§9.6 포함): 2026-05-21 / 작성자: Claude Opus 4.7 / 관련 commit: `8793b4e`, `d2a3361`, `0ad2feb`, `c9c4ed3`, `fe26365`, `c504571`_
