@@ -103,12 +103,12 @@ PC 환경 → 가로 공간 활용. WhyPanel은 모바일처럼 접지 않고 �
 | 군시설 | WIN-zone 진입 | **WIN-zone 진입확률** (Mode A) | 사정률 점추정·하한 안전망 | A (gap_p90 0.7993) |
 | 한전 | 사정률 정확도 | **사정률 점추정** (V6+agency-floor) | 하한 안전망 (Mode B) | B (gap_p90 0.0060, n 보강 필요) |
 | 교육청 | 사정률 정확도 | **사정률 점추정** | 하한 안전망 | B (gap_p90 0.0102) |
-| 지자체 | 사정률 + 조건부 WIN-zone | **사정률 점추정** + Mode A 보조 배지 | 하한 안전망 | **B + 조건부 A** (gap_p90 0.0209, 조건부 Mode A) |
+| 지자체 | 사정률 정확도 | **사정률 점추정** (V6+agency-floor) | 하한 안전망 (Mode B) | **B 유지** (current p90_gap 최대 0.0518 < 0.10, 조건부 A 미활성) |
 | 조달청 | 사정률 + 공격성 교정 | **사정률 점추정** + 공격성 교정 배지 | 하한 안전망 | **B + 공격성 교정** (gap_p90 0.0019, n 보강 필요) |
 | LH | 사정률 정확도 | **사정률 점추정** | 하한 안전망 | B (gap_p90 0.0060, n 보강 후) |
 | 기타 / unknown | 사정률 정확도 (기본값) | **사정률 점추정** | 하한 안전망 | B (기본값) |
 
-지자체 "조건부 A" 배지: `agency_gap_distribution` current era에서 해당 발주사 grain의 `gap_p90 ≥ 0.10`일 때만 표시 (lookup_agency_mode RPC 활용). 그 외 지자체 케이스는 표시 없음.
+지자체 "조건부 A 미활성" 명문화 (2026-05-21 검토): `JIJACHE_MODE_A_REVIEW_2026-05-21.md`에서 `lookup_agency_mode` RPC가 지자체 7개 발주사 모두 Mode B 권장(최대 p90_gap=0.0518)을 확인. m26 win_zone_daily의 0.2345는 outlier 1건 영향(m29로 0.0183 정상 회복). 향후 grain별 `gap_p90 ≥ 0.10` 발주사가 등장하면 그 grain만 한정 조건부 A 배지를 표시할 수 있으나, **현 시점은 전 지자체 grain 미충족**.
 
 조달청 "공격성 교정" 배지: Mode B 추천값에 조달청 별도 bias 레이어가 적용됐음을 표시 (마스터플랜 §4 B2 — OPT_OFFSET·predictor_bias_correction과 중복 차단).
 
