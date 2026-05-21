@@ -454,13 +454,20 @@ export async function sbFetchAgencyHistMap(canonicalAgs){
 // pred_id → {rate, p25, p50, p75, confidence, sampleSize, scope, source}
 export async function sbFetchV8Predictions(){
   try{
-    // m34: PostgREST default limit=1000 → 누락 차단 (v_v8_predictions 2,252건, 최근 1,252건 누락 증상)
-    const res=await authedFetch("/rest/v1/v_v8_predictions?select=pred_id,v8_rate,v8_p25,v8_p50,v8_p75,v8_confidence,v8_sample_size,v8_scope,v8_source&limit=10000");
-    if(!res.ok)return{};
-    const rows=await res.json();
-    if(!Array.isArray(rows))return{};
+    // m35: Supabase 서버 max-rows=1000 hard cap → chunk 페이징 (sbFetchPredictions 패턴)
+    // limit=10000도 서버가 1,000으로 잘라서 응답 (Content-Range: 0-999/2252). offset 페이징 필수.
+    const PAGE=1000;let all=[];let offset=0;
+    while(true){
+      const res=await authedFetch("/rest/v1/v_v8_predictions?select=pred_id,v8_rate,v8_p25,v8_p50,v8_p75,v8_confidence,v8_sample_size,v8_scope,v8_source&order=pred_id.asc&offset="+offset+"&limit="+PAGE);
+      if(!res.ok)return{};
+      const rows=await res.json();
+      if(!Array.isArray(rows))break;
+      all=all.concat(rows);
+      if(rows.length<PAGE)break;
+      offset+=PAGE;
+    }
     const map={};
-    for(const r of rows){
+    for(const r of all){
       if(r.pred_id==null)continue;
       map[r.pred_id]={
         rate:r.v8_rate!=null?Number(r.v8_rate):null,
