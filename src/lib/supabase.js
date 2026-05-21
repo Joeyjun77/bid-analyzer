@@ -454,7 +454,8 @@ export async function sbFetchAgencyHistMap(canonicalAgs){
 // pred_id → {rate, p25, p50, p75, confidence, sampleSize, scope, source}
 export async function sbFetchV8Predictions(){
   try{
-    const res=await authedFetch("/rest/v1/v_v8_predictions?select=pred_id,v8_rate,v8_p25,v8_p50,v8_p75,v8_confidence,v8_sample_size,v8_scope,v8_source");
+    // m34: PostgREST default limit=1000 → 누락 차단 (v_v8_predictions 2,252건, 최근 1,252건 누락 증상)
+    const res=await authedFetch("/rest/v1/v_v8_predictions?select=pred_id,v8_rate,v8_p25,v8_p50,v8_p75,v8_confidence,v8_sample_size,v8_scope,v8_source&limit=10000");
     if(!res.ok)return{};
     const rows=await res.json();
     if(!Array.isArray(rows))return{};
