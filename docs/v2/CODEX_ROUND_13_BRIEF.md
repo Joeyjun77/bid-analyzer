@@ -78,7 +78,7 @@ m24 RPC가 반환 타입에 `adj_range_min/max` 추가 → CREATE OR REPLACE 불
 
 - ✅ n≥500: 라운드 12 시점 누적 1,127건 (라운드 13 시점 자동 누적, 정확 수치는 DB 쿼리 필요)
 - ❌ 4주 연속 PASS: 라운드 12 시점 ~2주 누적, **~2주 더 필요**
-- V6 retire ETA: ~4주 (라운드 12 대비 변경 없음, 자연 진행)
+- V6 retire ETA: ~2주 (4주 PASS 완성 시점, 라운드 12 대비 단축 — 시간 자연 누적분 반영)
 
 cron 4개 모두 active (B5 m12, m13, m14, m15) — 라운드 12 fix 이후 own_score 실제 적재가 시작됐으므로 다음 calibration cycle부터 측정값에 자사 점수 반영.
 

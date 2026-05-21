@@ -4,7 +4,7 @@
 --   - |adj|≤5 명시 의도 vs BETWEEN -10 AND 10 불일치
 --   - G-도메인 #0 위반 위험
 -- 정정:
---   - bid_predictions JOIN bid_details d ON ... + d.era_v2='current' 필터 추가
+--   - bid_predictions LEFT JOIN bid_records r ON r.id=matched_record_id + r.era_v2='current' 필터 추가
 --   - BETWEEN -10 AND 10 → ABS(actual_adj_rate) <= 5 정합
 --   - 공동도급 제외 그대로 유지 (G-도메인 #7)
 -- 적용: apply_migration, 2026-05-21
@@ -87,3 +87,8 @@ $$;
 
 COMMENT ON FUNCTION refresh_agency_adj_range(INT) IS
   'V2_DOMAIN_RULES_CHECK #6 — agency_mode_lookup adj_range 실측 분위수 갱신 (m25 정정: era_v2=current + |adj|≤5). 공동도급 제외 (G-도메인 #7), G-도메인 #0 정합.';
+
+-- m25 적용: era_v2 필터로 정합 회복 (라운드 12 critical #2, 라운드 13 코덱스 major #1 권고 수용)
+-- 1회 실행 결과(2026-05-21): 5 row 정정 갱신 (지자체 at -1.73→-2.08/+1.50→+1.58,
+--   군시설 at -1.29→-1.21/+1.38→+1.16, 한전 at -1.38→-1.49/+1.27→+1.23)
+SELECT refresh_agency_adj_range(20) AS rows_updated;
