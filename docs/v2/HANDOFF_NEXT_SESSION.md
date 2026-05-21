@@ -325,4 +325,79 @@ _단일 진실: `HANDOFF_V2_MASTER_PLAN.md` + `V2_DOMAIN_RULES_CHECK.md`._
 - 4주 연속 PASS 완성 ETA: **~2026-06-22 무렵**
 - ETA +4주 연장 비용 < 측정 신뢰도 영구 손상 비용 (predict-architect + 코덱스 + 사용자 합의)
 
-_§9 최초 추가일: 2026-05-21 / 후속 갱신 (§9.6 포함): 2026-05-21 / 작성자: Claude Opus 4.7 / 관련 commit: `8793b4e`, `d2a3361`, `0ad2feb`, `c9c4ed3`, `fe26365`, `c504571`_
+### 9.7 m28 데이터 정합 + outlier 추적 + 마스터플랜 정정 (2026-05-21 추가 갱신)
+
+JIJACHE_MODE_A_REVIEW §4.1·§4.2·§4.4 후속 작업 진행. 상세: `JIJACHE_MODE_A_REVIEW_2026-05-21.md`, `M28_APPLY_RESULT_2026-05-21.md`.
+
+#### 9.7.1 commit 시퀀스 (3 commit, push 완료)
+
+| commit | 종류 | 내용 |
+|---|---|---|
+| `7224e83` | docs | 지자체 Mode A 조건부 활성화 검토 — 활성화 불가 + 데이터 정합 결함 발견 |
+| `a76d59e` | fix | **m28 — bid_records.at 군 발주사 145건 정합 회복** (current era, 27개 발주사) |
+| (현재) | docs | HANDOFF §9.7 + 마스터플랜 §3 D2.1 (current-only 측정값 명시) |
+
+#### 9.7.2 m28 데이터 정합 회복 (145건 UPDATE)
+
+| 항목 | 값 |
+|---|---|
+| 대상 | bid_records.at='지자체' AND canonical_ag 군 키워드 |
+| 정정 | at → '군시설' |
+| 범위 | era_v2='current' 한정 (legacy 3,857건 후속 m29 보류) |
+| 영향 | 27개 발주사 — 지상작전사령부 22 / 제3697부대 15 / 특수전사령부 14 등 |
+| 거짓 양성 | 0건 (중부대학교 NOT '%대학교%' 화이트리스트 차단) |
+| 즉시 측정값 변화 | 없음 (win_zone_daily는 d.at 사용, floor_pass_daily는 p.at 사용) |
+| 영구 정합 회복 | ✅ bid_records.at 자체 + 향후 신규 예측·분석에서 정확화 |
+
+검증: 지자체 1,430건 / military_n=0 ✅, 군시설 236건 / military_n=151 (m28 +145 + 기존 6).
+
+#### 9.7.3 지자체 Mode A 조건부 활성화 — **불가** 확정
+
+- `lookup_agency_mode` RPC 결과: 지자체 7개 발주사 모두 Mode B 권장
+- 최대 p90_gap = 0.0518 (경기도 고양시 medium confidence n=33) — 마스터플랜 §3 D2 조건 0.10의 절반
+- m26 win_zone_daily 0.2345 측정은 outlier 1건 단독 영향 (정상 분포는 ≤ 0.05)
+- **마스터플랜 §3 D2.1 신규 추가** — 지자체 "B 유지" 명문화 + current-only 측정값 표
+
+#### 9.7.4 Outlier 추적 결과 (`id=348193, pn_no=202603935`)
+
+| 컬럼 | 값 | 판정 |
+|---|---|---|
+| ag | 한국도로공사 서울경기본부 | 공기업 |
+| canonical_ag | NULL | 정규화 미적용 |
+| at | 지자체 | ❌ 잘못된 분류 (m28 패턴 미적중 — 사령부·부대 아님) |
+| bid_records 본체 | br1=100.86, base_ratio=90.09 | 정상 |
+| **bid_details.win_bid_rate** | **66.4059** | ❌ floor 88.745 대비 -22pp, 명백한 입력 오류 |
+| **bid_details.win_adj_rate** | **-23.2272** | ❌ 비현실적 (정상 ±5%) |
+| participants | 3,346 | 비정상적으로 많음 |
+
+→ **이 1건이 m26 win_zone_daily 지자체 0.2345 측정값을 단독으로 끌어올림**
+
+**처리 권고** (별도 commit, m29 가칭):
+- 옵션 A: UPDATE bid_details SET win_bid_rate=NULL, win_adj_rate=NULL WHERE id=...
+- 옵션 B: refresh_win_zone_daily에 sanity check `ABS(d.win_bid_rate - d.floor_rate) <= 5` 추가 (m25 패턴)
+- 옵션 C: bid_records.at + canonical_ag 정규화 추가 (한국도로공사 패턴)
+- 권고: **옵션 B** (구조적 sanity check가 향후 outlier도 자동 차단)
+
+#### 9.7.5 마스터플랜 §3 D2 → §3 D2.1 신규 추가
+
+마스터플랜 §3 D2 표는 작성 시점(2026-05-19) mixed era 추정값. m26 current-only 측정으로 갱신된 §3 D2.1 표 추가:
+
+| 영역 | n (current 90일) | gap p90 | 모드 판정 (재검증) |
+|---|---|---|---|
+| 군시설 | 60 | 0.6070 | A 유지 |
+| 지자체 | 126 | 0.2345 (outlier 영향, 정상 ≤ 0.0518) | **B 유지** (조건부 A 미활성) |
+| 교육청 | 12 | 0.0059 | B 유지 |
+| 한전 | 23 | 0.0060 | B 유지 |
+| 조달청 | 7 | 0.0006 | B + 공격성 교정 유지 |
+| LH | 6 | 0.0013 | B (n 보강 필요) |
+
+#### 9.7.6 잔여 작업 갱신 (§9.4 보강)
+
+- ✅ HANDOFF §9.7 + 마스터플랜 §3 D2.1 — 본 갱신
+- ⚠ m29 (가칭) outlier sanity check — refresh_win_zone_daily에 `ABS(win - floor) ≤ 5` 추가
+- ⚠ legacy era 3,857건 정정 — m28 패턴, 1주 모니터링 후
+- ⚠ 육군교육사령부 7건 처리 (현재 at='교육청', 별도 도메인 판단)
+- ⚠ canonical_ag 정규화 결함 — 한국도로공사·NULL 28%(지자체) 정규화 보강
+- ⚠ 통합 라운드 15 BRIEF — 위 작업 진행 후 m26·m27·m28·m29 + 정책·UI + outlier 처리 통합 의뢰
+
+_§9 최초 추가일: 2026-05-21 / 후속 갱신 (§9.6 포함): 2026-05-21 / 후속 갱신 (§9.7 포함): 2026-05-21 / 작성자: Claude Opus 4.7 / 관련 commit: `8793b4e`, `d2a3361`, `0ad2feb`, `c9c4ed3`, `fe26365`, `c504571`, `7224e83`, `a76d59e` + 본 갱신_
