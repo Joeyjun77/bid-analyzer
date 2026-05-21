@@ -13,7 +13,7 @@
 | 항목 | 처리 |
 |------|------|
 | 보존 | bid_records 63K, bid_details 880, canonical_ag, agency_win_stats, win1st_dist_map, predictions_v2 그릇 |
-| 폐기 | adj_rate 공간 WIN-zone 측정, recommendBid1st 종형 캡, MAE 1차 KPI 지위 |
+| 폐기 | adj_rate 공간 WIN-zone 측정, recommendBid1st 종형 캡, MAE 1차 KPI 지위 (산포 낮은 사정률 영역 예외 — `V2_MEASUREMENT_SPEC.md` §6.1) |
 | 보류 | V6(opt_adj) — dual-run n≥500까지 가동 유지 |
 | 금지 | bid_predictions.opt_adj UPDATE, bid_records DELETE, predictions_v2 UPDATE (A안 INSERT-only) |
 
