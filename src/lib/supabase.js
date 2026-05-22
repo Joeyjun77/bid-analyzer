@@ -29,10 +29,12 @@ export async function sbMatchPredictions(predictions,records){
     }
   }
   // ★ 이미 매칭된 record_id 수집 (중복 매칭 방지)
-  const usedRecIds=new Set(predictions.filter(p=>p.match_status==="matched"&&p.matched_record_id).map(p=>p.matched_record_id));
+  // matched + actual_adj_rate 채워진 경우만 used로 등록. matched but actual NULL은 재매칭 대상이라 record 풀로 환원
+  const usedRecIds=new Set(predictions.filter(p=>p.match_status==="matched"&&p.matched_record_id&&p.actual_adj_rate!=null).map(p=>p.matched_record_id));
   const updates=[];
   for(const p of predictions){
-    if(p.match_status==="matched")continue;
+    // matched이지만 actual_adj_rate가 NULL이면 재매칭 시도 (ar1 늦게 도착 케이스 백필)
+    if(p.match_status==="matched"&&p.actual_adj_rate!=null)continue;
     if(!p.pn_no)continue;
     // 1순위: 정확 pn_no 매칭
     let candidates=recMap[p.pn_no];
@@ -72,7 +74,8 @@ export async function sbMatchPredictions(predictions,records){
     if(!match)continue;
     usedRecIds.add(match.id); // ★ 사용된 record 등록
     // 실측 사정률은 ar1(예가 사정률, xp/ba*100)만 사용. br1은 별도 정의의 비율 컬럼이라 사용 금지.
-    const actualAdj=match.ar1!=null?Math.round((match.ar1-100)*10000)/10000:null;
+    // ar1 단위 자동 감지: 50 이상이면 100% 기준(통상 84~110), 50 미만이면 0% 기준(통상 -2~+2)
+    const actualAdj=match.ar1!=null?Math.round((match.ar1>=50?match.ar1-100:match.ar1)*10000)/10000:null;
     const adjErr=p.pred_adj_rate!=null&&actualAdj!=null?Math.round((p.pred_adj_rate-actualAdj)*10000)/10000:null;
     const bidErr=p.pred_bid_amount!=null&&match.bp!=null?Math.round(p.pred_bid_amount-match.bp):null;
     updates.push({id:p.id,actual_adj_rate:actualAdj,actual_expected_price:match.xp,actual_bid_amount:match.bp,actual_winner:match.co,actual_participant_count:match.pc,adj_rate_error:adjErr,bid_amount_error:bidErr,match_status:"matched",matched_record_id:match.id,matched_at:new Date().toISOString(),
