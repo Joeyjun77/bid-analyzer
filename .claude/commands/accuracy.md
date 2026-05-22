@@ -2,7 +2,7 @@
 description: 예측 시스템 정확도 자동 점검 — 기존 검증 인프라(prediction_quality_daily, weekly_quality_report, phase17_validation, evaluate_model_release)를 표준화된 쿼리로 조회해 회귀·드리프트·핵심영역 악화를 한 번에 리포트.
 ---
 
-당신은 예측 정확도 모니터링 전용 서브에이전트입니다. **코드를 변경하지 말고** 다음 6개 체크를 순서대로 실행하고 결과를 구조화된 리포트로 제출하세요.
+당신은 예측 정확도 모니터링 전용 서브에이전트입니다. **코드를 변경하지 말고** 다음 12개 체크를 순서대로 실행하고 결과를 구조화된 리포트로 제출하세요.
 
 ## 실행 순서 (Supabase MCP 사용)
 
@@ -153,6 +153,35 @@ ORDER BY strategy_type;
 → `use_fallback=true` 전략 → 실측 샘플 부족, recommend_strategies RPC가 기본값 사용 중
 → `actual_rate` 전략 간 편차 15%p 이상 → 전략 라벨링이 실제 난이도와 괴리 가능성
 
+### 체크 10 — at × route별 floor_safe / hit / mae 분해 (코덱스 R15+ 권고 §5)
+```sql
+SELECT at, route, SUM(n) AS n,
+       ROUND((SUM(mae*n)/NULLIF(SUM(n),0))::numeric, 4) AS mae,
+       ROUND((SUM(hit_0_5_pct*n)/NULLIF(SUM(n),0))::numeric, 2) AS hit_05,
+       ROUND((SUM(floor_safe_pct*n)/NULLIF(SUM(n),0))::numeric, 2) AS floor_safe
+FROM prediction_quality_daily
+WHERE measured_on >= CURRENT_DATE - 30
+  AND at IS NOT NULL AND route IS NOT NULL
+GROUP BY at, route
+ORDER BY at, n DESC;
+```
+→ 같은 at의 route 간 floor_safe 격차 20%p 이상 → route 선택 정책 점검
+→ at 전체 floor_safe < 80% → 해당 at의 낙찰하한율 함수 또는 opt_bid 산식 점검
+
+### 체크 11 — 고양시 shadow bias 관측 (production 보정 안 함)
+```sql
+SELECT * FROM v_shadow_bias_goyang;
+```
+→ promotion_status='eligible' (n≥10 + bias≥+0.7) 시 제한적 보정 후보로 승격 검토
+→ 30일 윈도우와 부호 다를 수 있음 (장단기 패턴 다름 — 보고서에 명시)
+
+### 체크 12 — cron 건강 상태 (jobid 14/15/16 신설/갱신 후 모니터링)
+```sql
+SELECT * FROM v_cron_health WHERE jobid IN (14,15,16);
+```
+→ success_pct < 95% → 해당 jobid 실패 패턴 분석
+→ avg_duration_sec 평소 대비 2배 이상 → 함수 성능 회귀 의심
+
 ## 리포트 포맷 (반드시 이 순서)
 
 ```
@@ -199,6 +228,19 @@ ORDER BY strategy_type;
 ### 9. 전략 캘리브레이션 (체크9)
 [표 — strategy_type / sample_n / actual_rate / use_fallback]
 {use_fallback=true인 전략이 있으면 여기서 지적 — 실측 샘플 부족}
+
+### 10. at × route 분해 (체크10)
+[표 — same-at에서 route 간 격차 20%p 이상은 ⚠]
+{낙찰하한율/route 정책 점검 후보 식별}
+
+### 11. 고양시 shadow bias (체크11)
+[표 — canonical_ag / n / bias / mae / promotion_status]
+{eligible 발생 시 보고서 상단 강조 + 코드 fix 후보로 승격 안내}
+{30일 vs 90일 부호 다르면 명시}
+
+### 12. cron 건강 (체크12)
+[표 — jobid / jobname / success_pct / avg_duration_sec / last_run_at]
+{success_pct < 100% 또는 last_run_at가 schedule 대비 누락이면 ⚠}
 
 ### 🔧 개선 제안
 {감지된 문제별로 구체 조치 1~3개}
