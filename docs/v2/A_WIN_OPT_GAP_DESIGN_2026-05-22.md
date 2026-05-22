@@ -20,9 +20,10 @@ bid1st = opt_bid × fr / (fr + gap)
 - gap > 0: bid1st < opt_bid (1위 수준 하향)
 - **암묵 가정: 자사 사정률 > 1위 사정률** (자사가 늘 위)
 
-### 2.3 호출부 (2곳)
-- `src/App.jsx:1822` 1위 목표 투찰금 표시
-- `src/components/NoticesTab.jsx:103` 공고 탭 bid1st 표시
+### 2.3 호출부 (2026-05-22 코덱스 정정 — §9.5 참조)
+- **`calcWin1stBid` 직접 호출**: `src/App.jsx:577`, `src/App.jsx:586`
+- **WIN_OPT_GAP 인라인 재구현**: `src/components/NoticesTab.jsx:103` (함수 호출 아님 — Step 2 시그니처 변경 시 함수 호출로 통합 필요)
+- 표시 라벨: `src/App.jsx:1822` ("WIN_OPT_GAP 보정" 텍스트만, 호출 아님)
 
 ### 2.4 현재 hit 분포 (체크 8, 60일)
 | at | n | gap | hit best | 평가 |
@@ -121,7 +122,7 @@ bid1st = opt_bid × fr / (fr + gap)
 ## 7. 핵심 경고
 - **한전 lock 미적용 시 hit 72.7% 회귀 가능** — Step 1 코드에 명시적 주석 + 게이트 검증 필수
 - **군시설 hit 5~15% 한계** — Step 1·2로 본질 해결 불가, V2 Mode A 결합 필요
-- **시그니처 변경 (Step 2)** — 호출부 2곳 동시 수정 필수
+- **NoticesTab.jsx:103 인라인 재구현** (코덱스 §9.5) — Step 2 시그니처 변경 시 인라인 → `calcWin1stBid` 통합 필수
 - **3안 (agency 실시간) 부적합** — 표본/구조적 한계로 현 단계 진행 금지
 
 ## 8. 관련 문서
@@ -130,5 +131,60 @@ bid1st = opt_bid × fr / (fr + gap)
 - `.claude/commands/evaluate.md` — 4대 게이트
 - `src/lib/constants-tables.js:6-24` — WIN_OPT_GAP 기존 변경 이력 (5/10 0.25→0.05 회귀 기록)
 
+## 9. 코덱스 라운드 16-pre 검증 결과 (2026-05-22 추가)
+
+7개 검증 항목 + 추가 맹점 §8.
+
+### 9.1 Step 1 한정판 적정성 — **합리적**
+- 한전 68.4% + LH 80% 가정 성립 → lock 정당. 지자체·군시설·교육청에만 한정 적용 권고
+- **정정**: 조달청은 n=20 부족이라 보류 유지
+
+### 9.2 p50 vs avg 선택 — **합리적**
+- avg는 음수 이상치(상위 5% bid)에 끌림. p50이 robust
+- 교육청 avg -0.1052 vs p50 +0.1436 부호 다름 → avg 적용 시 방향 오류
+- **Step 2 추가 권고**: trimmed mean(상하 10~20% 절단) 병행 산출, 부호 다르면 보수적 0 fallback
+
+### 9.3 한전 lock 판단 — **합리적**
+- 68.4% + p50 +0.2151 + 60일 hit 72.7%의 압도적 성과로 lock 정당
+- **Step 1 추가 요구**: `/evaluate`에 한전 hit 회귀 감지 항목 별도 추가, 한전 변경은 Step 1 범위 밖 명시
+
+### 9.4 군시설 5~15% 한계 — **합리적**
+- 50.0% 완전 대칭 → gap 0으로도 산식 방향성 문제 해결 안 됨
+- **UX 권고**: Step 3 전까지 군시설 UI 라벨 약화 — "1위 목표" → "참고 목표가" 또는 "WIN-zone 별도 산정 예정"
+
+### 9.5 호출부 영향 범위 — **보완 필요 (정정 반영)**
+- **실제 호출부 정정**: `calcWin1stBid` 직접 호출은 **App.jsx:577, 586** (1822 아님 — 표시 라벨)
+- `NoticesTab.jsx:103`은 **함수 호출 아닌 WIN_OPT_GAP 인라인 재구현**
+- **Step 1**: 상수만 변경하면 App.jsx 자동 반영 + NoticesTab도 자동 반영 (WIN_OPT_GAP 직접 사용)
+- **Step 2 (시그니처 변경)**: NoticesTab.jsx 인라인 → `calcWin1stBid(bid, fr, at, ba)` 통합 필수
+
+### 9.6 /evaluate 4대 게이트 충분성 — **보완 필요**
+- 기존 G-단위/G-A안/G-bias/G-모드표시는 V2 구조 안전장치 — Top-1 hit 변동은 직접 감지 안 함
+- **임시 게이트 추가 권고**: `G-hit` — `at × strategy`별 `top1_hit_rate`, `floor_pass_rate`, `win_zone_rate`, `n`을 30/60일 윈도우 비교
+- WARN/FAIL 조건: 한전 hit 급락 또는 지자체/군시설 floor-pass 악화
+
+### 9.7 24h 재측정 충분성 — **부적절**
+- 일별 표본 n=4~32라 24h 데이터는 기관별 쪼개면 판단 불가
+- **수정**: 24h는 "배포 이상 징후 확인" 용도만, 효과 판정은 **최소 7일, 권장 14일** 누적 윈도우
+- Step 2 진입 조건: "24h 안정" → **"7일 이상 누적 + 핵심 at 회귀 없음 + 지자체 개선 방향 확인"**
+
+### 9.8 추가 맹점 — **보완 필요**
+- Step 1은 gap 줄여 bid1st를 opt_bid에 가깝게 만듦 → Top-1 hit 오를 수 있으나 **낙찰하한 근처 안전성 / 2순위 후보 품질 흔들릴 위험**
+- 지자체 금액대별 부호 갈림 (`<1억 -0.34`, `1-3억 +0.10`, `3-10억 -0.20`, `10억+ -0.19`)으로 at 단일 p50 clamp는 **임시 처방**
+- **Step 1 리포트 필수 포함**: `bid1st` 변화량 분포, 하한 미만/근접 건수 변화
+- **Step 2 조기 포함 검토**: 교육청 n=185 충분 → 금액대별 셀 n 확인 후 2D 후보로 조기 편입 가치
+
+## 10. 코덱스 검증 후 정정된 다음 세션 진입 절차
+
+1. **predict-architect 재호출** — Step 1 구체 수치 확정 + 코덱스 §9.1~§9.4 권고 통합
+2. **`src/lib/constants-tables.js:16-24` 수정** — 지자체 0→0, 교육청 0.533→0.144, 군시설 0.05→0
+3. **NoticesTab.jsx 자동 반영 확인** (인라인이 WIN_OPT_GAP 직접 import)
+4. **`npx vite build`** 통과
+5. **`/evaluate` 4대 게이트 + G-hit 임시 게이트 추가** (코덱스 §9.6) — `at × strategy` top1_hit/floor_pass/win_zone 비교
+6. **deploy-gate** — 한전 hit 회귀 감지 + bid1st 변화량 분포 + 하한 근접 건수 변화 포함 (코덱스 §9.8)
+7. **PASS 시 commit + push**
+8. **24h /accuracy 재측정** — 이상 징후 확인 용도만 (코덱스 §9.7)
+9. **7~14일 누적 후 효과 판정** — Step 2 진입 조건 충족 시 진행
+
 ---
-_처리자: Claude Opus 4.7 / 처리 일자: 2026-05-22 / 다음 세션 진입점: Step 1 한정판 (한전 lock + 그 외 at p50 재추정)_
+_처리자: Claude Opus 4.7 / 처리 일자: 2026-05-22 / 다음 세션 진입점: Step 1 한정판 (한전 lock + 그 외 at p50 재추정, 코덱스 §9 검증 반영)_
