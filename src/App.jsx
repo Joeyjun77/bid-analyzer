@@ -268,11 +268,13 @@ function AgencyFloorTab(){
     };
   },[sigRows]);
 
-  // 요약 통계 (전체 n / matched / 평균 |오차| / 1pp 적중률)
+  // 요약 통계 (전체 n / matched / 데이터대기 / 평균 |오차| / 1pp 적중률)
+  // 데이터대기: matched이나 actual_adj_rate NULL — 사정률 데이터 미수집 (인포21c 별도 파일 업로드 필요)
   const summary=useMemo(()=>{
     if(!preds)return null;
     const n=preds.length;
     const matchedCnt=preds.filter(p=>p.match_status==="matched"&&p.actual_adj_rate!=null).length;
+    const dataWaitCnt=preds.filter(p=>p.match_status==="matched"&&p.actual_adj_rate==null).length;
     const errs=[];let hit1=0;
     for(const p of preds){
       if(p.actual_adj_rate==null)continue;
@@ -287,6 +289,7 @@ function AgencyFloorTab(){
     return{
       n:n,
       matched:matchedCnt,
+      dataWait:dataWaitCnt,
       mae:errs.length?(errs.reduce((a,b)=>a+b,0)/errs.length):null,
       hit1pp:errs.length?((hit1/errs.length)*100):null
     };
@@ -303,6 +306,12 @@ function AgencyFloorTab(){
       <span>예측 대상 <strong>{summary?summary.n:0}건</strong></span>
       <span style={{color:C.bdr}}>·</span>
       <span>매칭 <strong>{summary?summary.matched:0}건</strong></span>
+      {summary&&summary.dataWait>0&&<>
+        <span style={{color:C.bdr}}>·</span>
+        <span title="매칭됐으나 사정률(ar1) 미수집. 인포21c에서 사정률 파일 별도 업로드 필요. 업로드 후 다음 시간 cron(매시간 15분)이 자동 백필.">
+          데이터대기 <strong style={{color:"#8a93a8"}}>{summary.dataWait}건</strong>
+        </span>
+      </>}
       {summary&&summary.mae!=null&&<>
         <span style={{color:C.bdr}}>·</span>
         <span>평균 |오차| <strong>{summary.mae.toFixed(4)}pp</strong></span>
@@ -2728,7 +2737,7 @@ ${baseInfo}
               // 수의계약: is_negotiation 플래그 기준 (복수예가 메커니즘 미적용)
               const isSuui=!isYuchal&&p.is_negotiation===true&&p.actual_adj_rate==null;
               // 데이터대기: 경쟁입찰인데 bid_records에 사정률 미입력된 불완전 레코드
-              const isDataWait=!isYuchal&&!isSuui&&p.match_status==="matched"&&p.actual_adj_rate==null&&p.actual_winner!=null&&p.actual_winner!=="";
+              const isDataWait=!isYuchal&&!isSuui&&p.match_status==="matched"&&p.actual_adj_rate==null;
               // 취소 공고: pn 텍스트 (취소)/[취소] 매치 + 매칭 전 (matched·expired 아님)
               const isCanc=p.match_status!=="matched"&&p.match_status!=="expired"&&isCancelledPred(p);
               // AI 권장은 이제 최종 추천에 영향 없음 (참고용 탭에서만 확인)
