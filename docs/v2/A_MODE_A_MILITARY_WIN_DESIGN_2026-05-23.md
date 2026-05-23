@@ -128,5 +128,38 @@ floorErr (bid_rate 공간)  = (actual_floor_amount − predicted_floor_amount) /
 - `.claude/commands/evaluate.md` — 게이트
 - `src/lib/utils.js:807,842` — `recommendModeA`/`recommendModeB`
 
+## 13. predict-architect 검토 결과 (2026-05-23)
+
+**분류: Generator / 회귀 위험 中.** `recommendModeA`는 dead code 아님 — `bid_predictions.b_pred_mode='A'` 340건 라이브 적재 중. 코드 변경 후 `/evaluate` 필수.
+
+### 13.1 안심 (격리 확인됨)
+- **한전 격리**: 한전 `WIN_OPT_GAP=0.367 LOCK`은 `calcWin1stBid`(App.jsx:577/586) 경로 전용. 한전 mode='B' 고정 → Mode A와 경로 완전 격리. 한전 hit 회귀 직접 경로 없음. (단 WIN_OPT_GAP 객체를 건드리는 구현이면 위험 발생)
+- 고양시(지자체)=Mode B, 무영향. 군부대 표본 충분(341건).
+- 면도날 가설 정식 필터(n=5,019) 재검증: p50 +0.0022%, +0.05 이내 90.3%, +0.50 초과 0.84% → 설계 §2.1과 일치, 전제 견고.
+
+### 13.2 🚨 코드 전 선행 필수 2건 (실데이터로 확정)
+1. **[치명] 군부대 분류 오탐 36%** — `at='군시설'` 341건 중 **124건(36.4%)이 실제 지자체**("가평군"15·"연천군"12·"군포시"8·"양평군"5·"진도군"5 등 행정구역 "OO군"). 원인: `clsAg`(`utils.js:45`)의 `/군|사단|국방.../` 부분일치. **이 오염 모집단으로 floorErr 학습 시 백테스트 alpha sweet spot 판정 무의미.** → 정제(canonical_ag 화이트리스트 또는 정규식 `(사단|군단|여단|...|국군)`)가 floorErr 학습보다 **선행**. `bid_history.canonical_ag` 컬럼 활용 가능.
+2. **[높음] floorErr 분포 소스 부재** — 현존 `agency_gap_distribution`/`lookup_gap_distribution`은 *경쟁자 gap*(설계가 폐기하려는 양). floorErr 전용 분포 테이블/뷰/RPC 없음. **신규 적재 인프라 구축이 코드 변경의 전제** (§8 "floorErr 분포 적재"가 최대 미구현 블록).
+
+### 13.3 ⚠️ 최대 구현 리스크 — 공간 정합 (G-단위 FAIL 회피)
+현재 `recommendModeA`는 `delta_adj`(사정률 공간) 반환 → `recommendV2`가 `ba*(1+adj/100)`(`utils.js:1036`)로 **adj_rate 공간** 투찰금 계산. 설계는 **bid_rate 공간** 요구. **혼용 시 `/evaluate` G-단위 FAIL.** m_star의 adj↔bid_rate 변환 정확성이 핵심 리스크.
+
+### 13.4 추가 리스크
+- current era 표본 빈약 — `agency_gap_distribution` 군시설 current n=31. 낙찰하한율 개정(군시설 cutoff 2026-01-19, 83.495→87.495 대폭 상향) 전후 분포 혼용 위험 → era 필터 명세 필요.
+- 캘리브레이션: `predict_v6(p_pred_id)` 과거시점 재현 비용/정확성 미확정 (§5 재확인).
+- 적격심사 통과 가정: 이룸일렉트릭 비가격점수 미확인 → ownScore 미달 시 P_under 낙관 편향.
+
+### 13.5 시그니처/호출부
+`recommendModeA(gapDist, options)` 입력을 gap 분포 → floorErr 분포로 교체 시 `recommendV2`(utils.js:1082)·`resolveGapDist`(modeResolver.js:49) 동시 수정. 현재 호출부가 `gapDist.gap_p25` 등 필드명 의존 → 전수 수정 필요.
+
+## 14. 구현 단계 재정렬 (predict-architect 반영)
+> alpha 백테스트는 **Phase 0~1 완료 후**라야 신뢰 가능 (오염 모집단·floorErr 부재 시 무의미).
+
+- **Phase 0 — 군부대 분류 정제**: clsAg 오탐(36%) 제거. Mode A 모집단을 canonical_ag 화이트리스트/정규식으로 한정. (선행, 비-Generator 성격이나 모집단 정의 변경)
+- **Phase 1 — floorErr 분포 소스 구축**: era 필터 포함 신규 뷰/RPC 또는 클라이언트 산출. 경쟁자 gap 분포 재사용 불가.
+- **Phase 2 — `recommendModeA` 교체**: floorErr 분위수 + alpha 제약. **adj↔bid_rate 공간 정합** (최대 리스크). 호출부 동시 수정.
+- **Phase 3 — 백테스트 alpha sweep**: 0.10~0.15 시작 → sweet spot → 0.25 방향.
+- **Phase 4 — 게이트**: `/evaluate`(G-단위/G-A안/G-hit) → deploy-gate → 7~14일 누적 효과 판정.
+
 ---
-_처리자: Claude Opus 4.7 / 일자: 2026-05-23 / 다음 단계: predict-architect 영향도 검토 → writing-plans 구현 계획_
+_처리자: Claude Opus 4.7 / 일자: 2026-05-23 / predict-architect 검토 완료(Generator·회귀 中) / 다음 단계: writing-plans (Phase 0부터)_
