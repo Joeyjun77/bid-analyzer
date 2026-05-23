@@ -804,29 +804,54 @@ export function calcFloorPassProb(adj, mean, std) {
 //
 // δ_adj는 자사 사정률 단위 (실제 사정률 단위). bid_rate 공간에서 floor_rate 위의 위치.
 // 실제 추천 사정률 = b_pred_adj_floor + δ_adj (where b_pred_adj_floor는 사정률 분포에서 가져옴)
-export function recommendModeA(gapDist, options) {
-  const opt = Object.assign({ strategy: 'balanced' }, options || {});
-  if (!gapDist || gapDist.n == null || gapDist.n < 5) return null;
+// V2 Mode A 추천 (Phase 2a) — 군시설 floorErr 분포 기반 m_star
+// 근거: docs/v2/A_MODE_A_MILITARY_WIN_DESIGN_2026-05-23 §3~§6, predict-architect Phase2 검토, Codex consult 2026-05-23
+// floorErr = (actual_floor − predicted_floor)/base [분수], predicted_floor = pred_expected_price×pred_floor_rate/100
+// m_star = clamp(p85(α=0.15), lo=max(0,p50), hi=p95)  — floor-pass 1차, 1위는 보너스
+// 입력:
+//   floorErrDist: lookup_floorerr_distribution 결과 { n, confidence, floorerr_mean, floorerr_std, floorerr_p50, floorerr_p85, floorerr_p95, ... }
+//   options: { predExpectedPrice, predFloorRate, ba, alpha=0.15 }
+// 반환: { m_star, recommended_bid_amount, recommended_bid_rate, predicted_floor_amount, floor_pass_prob, sample_status, alpha_used, src_n } | null
+export function recommendModeA(floorErrDist, options) {
+  const opt = Object.assign({ alpha: 0.15 }, options || {});
+  if (!floorErrDist || floorErrDist.n == null || floorErrDist.n < 5) return null;
+  const predEp = Number(opt.predExpectedPrice);
+  const predFr = Number(opt.predFloorRate);
+  const ba = Number(opt.ba);
+  if (!(predEp > 0) || !(predFr > 0) || !(ba > 0)) return null;
 
-  let delta = null;
-  let winProb = null;
-  if (opt.strategy === 'aggressive') {
-    delta = Number(gapDist.gap_p10);
-    winProb = 0.90; // 분포의 p10 이하는 약 90%가 위에 있음
-  } else if (opt.strategy === 'safe') {
-    delta = Number(gapDist.gap_p50);
-    winProb = 0.50;
-  } else {
-    // balanced
-    delta = Number(gapDist.gap_p25);
-    winProb = 0.75;
+  // α=0.15 LOCK → p85 (p90/p95 직접 사용 금지: n<300 꼬리 불안정)
+  const p50 = Number(floorErrDist.floorerr_p50);
+  const p85 = Number(floorErrDist.floorerr_p85);
+  const p95 = Number(floorErrDist.floorerr_p95);
+  if (isNaN(p85)) return null;
+  const lo = isNaN(p50) ? 0 : Math.max(0, p50);   // floor-pass 1차: m_star ≥ 0
+  const hi = isNaN(p95) ? p85 : p95;
+  let mStar = Math.min(Math.max(p85, lo), hi);
+  if (isNaN(mStar)) return null;
+
+  const predictedFloorAmount = predEp * predFr / 100;
+  const recommendedBidAmount = Math.ceil(predictedFloorAmount + ba * mStar);
+  const recommendedBidRate = recommendedBidAmount / ba;
+
+  // floor_pass_prob ≈ P(floorErr ≤ m_star) = Φ((m_star−mean)/std) ≈ 1−α
+  const mean = Number(floorErrDist.floorerr_mean);
+  const std = Number(floorErrDist.floorerr_std);
+  let floorPassProb = 1 - opt.alpha;
+  if (!isNaN(mean) && std > 0) {
+    const p = _phi((mStar - mean) / std);
+    if (p != null && !isNaN(p)) floorPassProb = p;
   }
-  if (delta == null || isNaN(delta) || delta < 0) return null;
 
   return {
-    delta_adj: delta,
-    win_prob_estimate: winProb,
-    strategy_used: opt.strategy
+    m_star: mStar,
+    recommended_bid_amount: recommendedBidAmount,
+    recommended_bid_rate: recommendedBidRate,
+    predicted_floor_amount: predictedFloorAmount,
+    floor_pass_prob: floorPassProb,
+    sample_status: floorErrDist.confidence || null,
+    alpha_used: opt.alpha,
+    src_n: floorErrDist.n,
   };
 }
 
@@ -993,6 +1018,19 @@ export function recommendBid1st(bid,context,options){
   };
 }
 
+// bidC 무손실 역산: 주어진 bid_amount를 만드는 사정률 adj 산출 (b_pred_adj 컬럼 표시용)
+// bidC(adj) = ceil(av + (ba*(1+adj/100) − av)*(effFr/100))  (av>0)
+//           = ceil(ba*(1+adj/100)*(effFr/100))               (av≤0)
+// → adj = ((av + (bid−av)*100/effFr)/ba − 1)*100   (av>0)
+//        = ((bid*100/effFr)/ba − 1)*100             (av≤0)
+function _invertBidCToAdj(bid, ba, av, effFr) {
+  if (!(ba > 0) || !(effFr > 0)) return 0;
+  const xp = (av && av > 0)
+    ? av + (bid - av) * 100 / effFr
+    : bid * 100 / effFr;
+  return (xp / ba - 1) * 100;
+}
+
 // ─── V2 통합 추천 함수 (B2.3) ────────────────────────────────
 // 근거: docs/v2/HANDOFF_V2_MASTER_PLAN §4 B2 + V2_UI_SPEC §3
 // 모드 분기:
@@ -1074,29 +1112,36 @@ export function recommendV2(bid, context, options) {
     };
   }
 
-  // Mode A: 군시설 공략 — B3.4 gap 분포 기반 컨볼루션 (recommendModeA)
-  // gapDist는 context에서 전달 (App.jsx의 lookup_gap_distribution RPC 결과)
-  // 표본 부족(n<5) 또는 미전달 시 기존 종형 fallback
-  const gapDist = context?.gapDist;
-  if (gapDist && gapDist.n >= 5 && gapDist.gap_p25 != null) {
-    const result = recommendModeA(gapDist, { strategy: opt.strategy || 'balanced' });
-    if (result && result.delta_adj != null) {
-      const adj = Number(result.delta_adj);
+  // Mode A: 군시설 공략 — Phase 2a floorErr m_star 기반 (recommendModeA)
+  // floorErrDist는 context에서 전달 (App.jsx의 lookup_floorerr_distribution RPC 결과, era=current)
+  // 표본 부족(n<5)·미전달·predExpectedPrice 부재 시 기존 종형 fallback
+  const floorErrDist = context?.floorErrDist;
+  const predEp = Number(context?.predExpectedPrice);
+  const predFr = Number(fr); // recommendV2 입력 fr = pred_floor_rate (App.jsx에서 전달)
+  if (floorErrDist && floorErrDist.n >= 5 && predEp > 0 && predFr > 0) {
+    const result = recommendModeA(floorErrDist, { predExpectedPrice: predEp, predFloorRate: predFr, ba, alpha: opt.alpha || 0.15 });
+    if (result && result.recommended_bid_amount != null) {
+      const bidAmt = result.recommended_bid_amount;
+      // b_pred_adj 컬럼 의미 보존: bidC 역산으로 사정률 환산 (무손실 — 컬럼 표시용)
+      const adj = _invertBidCToAdj(bidAmt, ba, av, effFr);
       return {
         mode: 'A',
         adj,
-        bid: bidC(adj),
-        floor_pass_prob: null, // Mode A는 통과확률 미산출 (낙찰확률 1차 KPI)
-        win_prob: result.win_prob_estimate,
+        bid: bidAmt,
+        floor_pass_prob: result.floor_pass_prob,
+        win_prob: null, // Mode A 1위는 보너스 — 과신 약속 금지 (insufficient_sample)
         grain,
-        src: `modeA_gap(n=${gapDist.n} · p25=${gapDist.gap_p25?.toFixed?.(4) ?? '?'} · p50=${gapDist.gap_p50?.toFixed?.(4) ?? '?'} · strategy=${result.strategy_used})`,
-        source: 'modeA_gap',
-        floor_safe: floorSafeC(adj)
+        src: `modeA_floorErr(n=${result.src_n} · m*=${result.m_star?.toFixed?.(5) ?? '?'} · α=${result.alpha_used} · ${result.sample_status || '?'})`,
+        source: 'modeA_floorerr',
+        floor_safe: bidAmt >= result.predicted_floor_amount,
+        m_star: result.m_star,
+        sample_status: result.sample_status,
+        recommended_bid_rate: result.recommended_bid_rate,
       };
     }
   }
 
-  // Fallback: 기존 종형 (gapDist 미전달 또는 표본 부족)
+  // Fallback: 기존 종형 (floorErrDist 미전달 또는 표본 부족)
   // V2_DOMAIN_RULES_CHECK #1-b: ownScore도 함께 전달 (recommendBid1st 내부에서 effFr 계산)
   const v1 = recommendBid1st({ at, agName, ba, ep, av, fr }, { distMap: context?.distMap, ownScore: context?.ownScore }, { enableMonteCarlo: false });
   if (!v1 || !v1.auto) return null;
