@@ -156,7 +156,7 @@ floorErr (bid_rate 공간)  = (actual_floor_amount − predicted_floor_amount) /
 > alpha 백테스트는 **Phase 0~1 완료 후**라야 신뢰 가능 (오염 모집단·floorErr 부재 시 무의미).
 
 - **Phase 0 — 군부대 분류 정제**: clsAg 오탐(36%) 제거. Mode A 모집단을 canonical_ag 화이트리스트/정규식으로 한정. (선행, 비-Generator 성격이나 모집단 정의 변경)
-- **Phase 1 — floorErr 분포 소스 구축**: era 필터 포함 신규 뷰/RPC 또는 클라이언트 산출. 경쟁자 gap 분포 재사용 불가.
+- **Phase 1 — floorErr 분포 소스 구축**: era 필터 포함 신규 뷰/RPC 또는 클라이언트 산출. 경쟁자 gap 분포 재사용 불가. **[완료 2026-05-23]** m35(테이블)/m36(refresh+적재)/m37(lookup RPC). 확정 정의: `floorErr=(actual_floor−predicted_floor)/base` [분수], `predicted_floor=pred_expected_price×pred_floor_rate/100`(마진 제거 — pred_bid_amount/opt_bid 금지). 캘리브레이션 소스=매칭 bid_predictions 라이브 출력(설계 §5 동일, 옵션 B). era 분리 필수(current/legacy p50 1.86%p 차이). 적재: **current n=86 / legacy n=139, 둘 다 insufficient_sample**(n<300). 라이브 소비는 `lookup_floorerr_distribution('군시설',NULL,NULL,'current')`. ⚠️ alpha sweet spot(Phase 3) 통계 판정은 표본 누적(~28건/월, 7~14일) 후. G-단위 미니게이트 PASS(분수공간·era NOT NULL·모집단 격리). /evaluate 전체 본판정·deploy-gate는 Phase 2(recommendModeA 교체)에서 강제.
 - **Phase 2 — `recommendModeA` 교체**: floorErr 분위수 + alpha 제약. **adj↔bid_rate 공간 정합** (최대 리스크). 호출부 동시 수정.
 - **Phase 3 — 백테스트 alpha sweep**: 0.10~0.15 시작 → sweet spot → 0.25 방향.
 - **Phase 4 — 게이트**: `/evaluate`(G-단위/G-A안/G-hit) → deploy-gate → 7~14일 누적 효과 판정.
