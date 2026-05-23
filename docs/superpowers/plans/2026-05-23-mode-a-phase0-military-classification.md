@@ -15,11 +15,15 @@
 ## 배경 / 중요 사실 (구현 전 필독)
 
 - **오탐 실측**: 현재 `at='군시설'` 모집단 중 행정구역 "OO군"(가평군·연천군·군포시·양평군·해남군·군산시 등) + 사단법인(한국석면안전협회 등 14기관/53건)이 섞여 있음. `bid_records` 기준 약 **291개 기관 / 4,189건**이 잘못된 군시설.
-- **확정 교정 정규식** (실데이터 검증 완료):
-  - 군시설: `사단|여단|군단|국방|국군|육군|해군|공군|해병|사령부|부대|병참|방위사업`
+- **확정 교정 정규식** (실데이터 검증 완료, 코드리뷰 반영):
+  - 군시설: `사단|여단|군단|국방|국군|육군|해군|공군|해병|사령부|[0-9]부대|군부대|병참|방위사업`
   - **가드**: `사단법인` → `지자체` (군시설 체크보다 먼저)
   - `사단` 유지 필수 — 제8기동사단·제1보병사단·수도기계화보병사단 등 진짜 군.
-- **Generator 영향**: 재분류 기관은 낙찰하한율 테이블이 바뀐다(군시설 86.25% → 지자체 88.25~90.25%). 즉 추천 투찰값 변동 → **Phase 0은 Generator, `/evaluate` 필수**. (predict-architect는 "모집단 정의 변경"으로 봤으나, 낙찰하한율 변동까지 고려하면 Generator로 취급해 게이트 강화.)
+  - **`부대`는 `[0-9]부대|군부대`로 앵커링** — 코드리뷰 지적 + 실데이터 확인: 비앵커 `부대`는 "중부대학교"(대학교)를 군시설로 오분류. 진짜 군 부대는 전부 숫자형(제2136부대·4284부대 등).
+- **Generator 영향 (양방향, 실측)**: 재분류 시 낙찰하한율 테이블이 바뀐다(군시설 86.25% ↔ 지자체 88.25~90.25%).
+  - **DROPPED 291개 기관**: 행정구역("OO군"·산림조합 등) 군시설→지자체
+  - **NEW_CAPTURE 78개 기관**: 기존 bare `군`이 놓치던 진짜 군(수도방위사령부·드론작전사령부·제NNNN부대·기갑여단 등) 지자체→군시설
+  - 양방향 모두 추천 투찰값 변동 → **Phase 0은 Generator, `/evaluate` 필수.**
 - **라이브 반영**: 추론 경로는 `at=clsAg(ag)`를 매번 재계산(App.jsx:595/1015, AgencyPredictorTab.jsx:51) → JS 수정 즉시 신규 예측에 반영. 과거 `bid_records.at` 백필은 선택(§Task 5).
 - **호출부**: `clsAg`는 `utils.js`에서 App.jsx·AgencyPredictorTab.jsx로 export. re-export 유지 시 import 구문 무변경.
 
@@ -49,15 +53,17 @@
 import { clsAg, isMilitaryAgency } from "../src/lib/agencyClass.js";
 
 const cases = [
-  // 군시설 (유지)
+  // 군시설 (유지 + bare 군이 놓치던 신규 포착)
   ["수도방위사령부", "군시설"], ["육군항공사령부", "군시설"], ["제7862부대", "군시설"],
   ["제8기동사단", "군시설"], ["제1보병사단", "군시설"], ["수도기계화보병사단", "군시설"],
   ["제5군단사령부", "군시설"], ["국군재정관리단", "군시설"], ["공군제10전투비행단", "군시설"],
   ["국방부", "군시설"], ["해군본부", "군시설"], ["방위사업청", "군시설"],
+  ["제2136부대", "군시설"], ["4284부대", "군시설"], ["드론작전사령부", "군시설"], ["제2기갑여단", "군시설"],
   // 오탐 교정 → 지자체
   ["경기도 가평군", "지자체"], ["경기도 연천군", "지자체"], ["경기도 군포시", "지자체"],
   ["전라남도 해남군", "지자체"], ["전북특별자치도 군산시", "지자체"], ["가평군청", "지자체"],
   ["사단법인 한국석면안전협회", "지자체"], ["사단법인경기도새마을회", "지자체"],
+  ["중부대학교", "지자체"],   // 대학교 — [0-9]부대 앵커링이 '부대' 단독 매칭 차단
   // 타 유형 회귀 없음
   ["경기도교육청", "교육청"], ["한국전력공사", "한전"], ["조달청", "조달청"],
   ["한국토지주택공사", "LH"], ["한국수자원공사", "수자원공사"], ["고양시", "지자체"],
@@ -67,7 +73,10 @@ for (const [n, exp] of cases) {
   const got = clsAg(n);
   if (got !== exp) { console.error(`XX ${n} -> ${got} (expect ${exp})`); bad++; }
 }
-console.log(bad === 0 ? `OK all ${cases.length} cases` : `FAIL ${bad}/${cases.length}`);
+// isMilitaryAgency 회귀 가드
+if (isMilitaryAgency("수도방위사령부") !== true) { console.error("XX isMilitaryAgency(수도방위사령부) !== true"); bad++; }
+if (isMilitaryAgency("고양시") !== false) { console.error("XX isMilitaryAgency(고양시) !== false"); bad++; }
+console.log(bad === 0 ? `OK all ${cases.length} cases + isMilitaryAgency` : `FAIL ${bad}`);
 process.exit(bad === 0 ? 0 : 1);
 ```
 
@@ -86,7 +95,9 @@ Expected: FAIL — `Cannot find module ... agencyClass.js`
 //   (1) 맨앞 '군' 제거: '가평군/군포시' 등 행정구역 오탐 차단
 //   (2) '사단법인' 가드: 사단법인 OO 협회가 '사단'에 걸려 군시설로 오분류되던 것 차단
 //   '사단' 자체는 유지 (제8기동사단·제1보병사단 등 진짜 군).
-const MIL = /사단|여단|군단|국방|국군|육군|해군|공군|해병|사령부|부대|병참|방위사업/;
+// '부대'는 [0-9]부대|군부대로 앵커링: 진짜 군 부대는 전부 숫자형(제2136부대 등).
+// 비앵커 '부대'는 '중부대학교'(대학교)를 오분류 → 앵커링으로 차단. (실데이터 검증)
+const MIL = /사단|여단|군단|국방|국군|육군|해군|공군|해병|사령부|[0-9]부대|군부대|병참|방위사업/;
 export function clsAg(n){
   if(!n)return"조달청";
   const s=String(n).trim();
@@ -113,7 +124,7 @@ export { clsAg, isMilitaryAgency } from "./agencyClass.js";
 - [ ] **Step 5: 테스트 실행 → 통과 확인**
 
 Run: `node tests/agencyClass.test.mjs`
-Expected: `OK all 25 cases`, exit 0
+Expected: `OK all 31 cases + isMilitaryAgency`, exit 0 (케이스 수 다르면 배열 길이 확인)
 
 - [ ] **Step 6: 빌드 검증**
 
@@ -167,7 +178,7 @@ AS $function$
     WHEN p_ag ~ '한국전력|한전'         THEN '한전'
     WHEN p_ag ~ 'LH|주택공사|토지주택'  THEN 'LH'
     WHEN p_ag ~ '사단법인'              THEN '지자체'
-    WHEN p_ag ~ '사단|여단|군단|국방|국군|육군|해군|공군|해병|사령부|부대|병참|방위사업' THEN '군시설'
+    WHEN p_ag ~ '사단|여단|군단|국방|국군|육군|해군|공군|해병|사령부|[0-9]부대|군부대|병참|방위사업' THEN '군시설'
     WHEN p_ag ~ '수자원'                THEN '수자원공사'
     ELSE '지자체'
   END;
@@ -180,21 +191,26 @@ $function$;
 
 - [ ] **Step 4: 교정 후 검증 — 방향 확인**
 
+교정 함수가 (옛 분류) 대비 양방향으로 어떻게 바뀌는지 전수 검증:
 ```sql
-WITH base AS (
-  SELECT ag, COUNT(*) n FROM bid_records
-  WHERE ag ~ '군|사단|국방|해군|공군|육군|해병'
-    AND ag !~ '조달청' AND ag !~ '교육' AND ag !~ '한국전력|한전' AND ag !~ 'LH|주택공사|토지주택'
-  GROUP BY ag
+WITH dist AS (SELECT DISTINCT ag FROM bid_records WHERE ag IS NOT NULL),
+cls AS (
+  SELECT ag,
+    (ag ~ '군|사단|국방|해군|공군|육군|해병' AND ag !~ '조달청' AND ag !~ '교육'
+      AND ag !~ '한국전력|한전' AND ag !~ 'LH|주택공사|토지주택') AS old_mil,
+    (classify_agency_type(ag) = '군시설') AS new_mil
+  FROM dist
 )
-SELECT classify_agency_type(ag) AS new_at, COUNT(*) distinct_ag, SUM(n) rows,
-       (array_agg(ag ORDER BY n DESC))[1:6] sample
-FROM base GROUP BY 1 ORDER BY rows DESC;
+SELECT CASE WHEN new_mil AND NOT old_mil THEN 'NEW_CAPTURE'
+            WHEN old_mil AND NOT new_mil THEN 'DROPPED'
+            ELSE 'same' END AS change,
+       COUNT(*) distinct_ag, (array_agg(ag ORDER BY ag))[1:15] sample
+FROM cls WHERE new_mil <> old_mil GROUP BY 1 ORDER BY 1;
 ```
 Expected:
-- `군시설`: 약 **75개 기관 / 4,784건** — 전부 진짜 군(제8기동사단·제5군단사령부·국군재정관리단·제7862부대 등)
-- `지자체`: 약 **291개 기관 / 4,189건** — 행정구역(가평군·군산시 등) + 사단법인 14기관
-- 별도 확인: `SELECT classify_agency_type('사단법인 한국석면안전협회');` → `지자체`, `SELECT classify_agency_type('제8기동사단');` → `군시설`.
+- **DROPPED ≈ 291개 기관**: 전부 행정구역(고성군·양구군·가평군 보건소·산림조합 등) → 지자체. 군사 기관이 섞이면 FAIL.
+- **NEW_CAPTURE ≈ 78개 기관**: 전부 진짜 군(수도방위사령부·드론작전사령부·제2136부대·제2기갑여단·3공수특전여단 등). 비군사("중부대학교" 등)가 섞이면 FAIL.
+- 별도 확인: `classify_agency_type('사단법인 한국석면안전협회')`→`지자체`, `classify_agency_type('제8기동사단')`→`군시설`, `classify_agency_type('중부대학교')`→`지자체`.
 
 - [ ] **Step 5: 커밋 (마이그레이션 기록)**
 
