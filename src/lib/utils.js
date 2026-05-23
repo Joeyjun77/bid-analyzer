@@ -41,8 +41,8 @@ export function isLhJongsim(at,ba,pn){
 }
 // Phase 12: 표준 RATE_TABLE만 사용 (여성기업 가산 등 특수 규정 제외)
 export function eraFR(at,ep,od){return getFloorRate(at,ep||0,isNewEra(at,od))}
+export { clsAg, isMilitaryAgency } from "./agencyClass.js";
 // ─── 유틸 ──────────────────────────────────────────────────
-export function clsAg(n){if(!n)return"조달청";const s=n.trim();if(/조달청/.test(s))return"조달청";if(/교육/.test(s))return"교육청";if(/한국전력|한전/.test(s))return"한전";if(/LH|주택공사|토지주택/.test(s))return"LH";if(/군|사단|국방|해군|공군|육군|해병/.test(s))return"군시설";if(/수자원/.test(s))return"수자원공사";return"지자체"}
 // Phase 23-8: agency_predictor 학습 키 정규화 — DB normalize_agency_name 함수와 동일 로직.
 // 경기도교육청 학교명 변형 / 조달청 지방조달청 prefix 등을 canonical_ag 기준으로 통합.
 export function normalizeAgencyName(rawAg){
