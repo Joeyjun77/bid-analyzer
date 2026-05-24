@@ -11,7 +11,7 @@ const JSON_H = { "Content-Type": "application/json" };
 // 드롭: dedup_key,co_no,g2b,reg,excl_reason,joint_contract_type,is_joint_contract,era_v2,is_duplicate,input_date,ar0,br0,raw_cost,has_a (어느 소비처도 미읽음).
 // 주의: PAGE는 1000 고정 — PostgREST max-rows 캡이 1000이라 limit 상향해도 1000만 반환(실측: limit=5000→Content-Range 0-999/*). 올리면 페이지네이션 조기종료로 통계 오염.
 // 주의: 읽기 전용 select — 이 결과를 그대로 sbUpsert에 넘기면 dedup_key 등 누락으로 깨짐. 쓰기 경로엔 쓰지 말 것.
-const BID_RECORDS_COLS="id,pn,pn_no,ag,at,ep,ba,av,xp,floor_price,ar1,co,bp,br1,base_ratio,pc,od,cat,era,fr,created_at,work_cat,canonical_ag,is_excluded,contract_method";
+export const BID_RECORDS_COLS="id,pn,pn_no,ag,at,ep,ba,av,xp,floor_price,ar1,co,bp,br1,base_ratio,pc,od,cat,era,fr,created_at,work_cat,canonical_ag,is_excluded,contract_method";
 // 전송 최적화 2: 순차 66회 → 동시성 제한 병렬 페치 (모바일 벽시계 단축).
 // 완전성 보장: 종료조건은 원본과 동일(페이지<PAGE이면 끝 — 1000캡이라 마지막 페이지만 <1000).
 // 페이지 실패는 1회 재시도 후 throw → 부분 로드(통계 오염) 대신 호출부 에러 처리로 넘김.
@@ -38,6 +38,36 @@ export async function sbFetchAll(){
     const results=await Promise.all(offs.map(fetchPage));
     for(const rows of results){all=all.concat(rows);if(rows.length<PAGE)done=true;}
     batchStart+=CONC;
+  }
+  return all;
+}
+// ─── 증분 캐시: 싼 변경 게이트 + 델타 페치 ───────────────────
+// bid_records_sync_meta() RPC → {count, maxUpdated}. 무변경 판정용(행 페치 0).
+export async function sbFetchSyncMeta(){
+  const res=await authedFetch("/rest/v1/rpc/bid_records_sync_meta",{method:"POST",headers:JSON_H,body:"{}"});
+  if(!res.ok)return null;
+  const rows=await res.json();
+  const r=Array.isArray(rows)?rows[0]:rows;
+  if(!r)return null;
+  return{count:Number(r.cnt),maxUpdated:r.max_updated};
+}
+// updated_at >= since 인 행만 페치 (sbFetchAll과 동일 컬럼셋 → 캐시 행 형태 일관).
+// >= 사용: 경계 timestamp 동시쓰기 레이스 방지, IDB upsert가 idempotent라 중복 무해.
+// offset 페이징: 델타는 작고, 완전성은 호출부 count 게이트가 backstop(불일치 시 reconcile).
+export async function sbFetchRecordsSince(sinceUpdatedAt){
+  const PAGE=1000;
+  const base="/rest/v1/bid_records?select="+BID_RECORDS_COLS
+    +"&updated_at=gte."+encodeURIComponent(sinceUpdatedAt)
+    +"&order=updated_at.asc,id.asc";
+  let all=[],offset=0;
+  while(true){
+    const res=await authedFetch(base+"&offset="+offset+"&limit="+PAGE);
+    if(!res.ok)throw new Error("delta page offset="+offset+" 로드 실패");
+    const rows=await res.json();
+    if(!Array.isArray(rows))throw new Error("delta 비배열 응답");
+    all=all.concat(rows);
+    if(rows.length<PAGE)break;
+    offset+=PAGE;
   }
   return all;
 }
