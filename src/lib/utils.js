@@ -115,6 +115,8 @@ export function parseBidDoc(rows){
     if(h.includes("A값")||h==="A가")col.av=i;
     if(h.includes("설계금액")||h.includes("원가"))col.raw=i;
     if(h.includes("개찰")||h.includes("입찰일"))col.od=i;
+    // 공고일 — era(낙찰하한율 시점) 판정 법적 기준. 개찰일과 별도 캡처 (Codex 결함1).
+    if(h.includes("공고일")&&!col.nd)col.nd=i;
     if(h.includes("업종")||h.includes("종목"))col.cat=i;
   });
   if(col.pn==null)return[];
@@ -127,10 +129,11 @@ export function parseBidDoc(rows){
     const av=col.av!=null?pnv(r[col.av]):0;
     const rawCost=col.raw!=null?sn(r[col.raw]):null;
     const odRaw=col.od!=null?clean(r[col.od]):"";const od=pDt(odRaw);
+    const ndRaw=col.nd!=null?clean(r[col.nd]):"";const nd=pDt(ndRaw);
     const cat=col.cat!=null?clean(r[col.cat]):"";
     const pn_no=col.pn_no!=null?clean(r[col.pn_no]):"";
     if(!ba&&!ep)continue; // 금액 정보 없으면 스킵
-    result.push({pn,pn_no,ag,at,ep:ep||null,ba:ba||ep||null,av:av||0,raw_cost:rawCost,cat,open_date:od,
+    result.push({pn,pn_no,ag,at,ep:ep||null,ba:ba||ep||null,av:av||0,raw_cost:rawCost,cat,open_date:od,notice_date:nd||null,
       dedup_key:md5("pred|"+(pn_no||pn)+"|"+(od||""))})
   }
   return result}
@@ -244,7 +247,7 @@ export function routePrediction({at,agName},ts,as){
   return{route:"tier_fallback",agN:0,tierExists:!!tSt};
 }
 
-export function predictV5({at,agName,ba,ep,av,ownScore},ts,as,details,agencyPred,floorBench){
+export function predictV5({at,agName,ba,ep,av,ownScore,od},ts,as,details,agencyPred,floorBench){
   if(!ba)return null;
   const tKeys=Object.keys(ts||{});
   if(!tKeys.length)return null;
@@ -295,7 +298,8 @@ export function predictV5({at,agName,ba,ep,av,ownScore},ts,as,details,agencyPred
   biasAdj=Math.max(-0.5,Math.min(0.5,biasAdj));
   ref={...ref,med:ref.med+biasAdj,q1:ref.q1+biasAdj,q3:ref.q3+biasAdj,avg:ref.avg+biasAdj};
 
-  const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
+  // era 키: 입력 공고일/개찰일(od) 우선, 누락 시 today fallback (Codex 결함1; old 강제 방지 위해 today 명시).
+  const fr=eraFR(at,ep||ba,od||new Date().toISOString().slice(0,10));
   // V2_DOMAIN_RULES_CHECK #1-b: 자사 유효 낙찰하한율 (ownScore 디폴트 20=만점)
   const effFr=calcEffectiveFloorRate(at,fr,ownScore);
   const calcBid=(adjRate)=>{const xp=ba*(1+adjRate/100);return av>0?Math.ceil(av+(xp-av)*(effFr/100)):Math.ceil(xp*(effFr/100))};
@@ -479,7 +483,7 @@ export function simDraws(preRates){
 // 이전 버전(3,318건 백테스트) 대비 P25 하향 → 실전 낙찰 가능성 2배 향상
 // ASSUMED_ADJ_TABLE / FAIL_RATES 상수는 constants-tables.js에 분리됨.
 
-export function recommendAssumedAdj({at,agName,ba,ep,av,pc,ownScore},ts,as,agAss){
+export function recommendAssumedAdj({at,agName,ba,ep,av,pc,ownScore,od},ts,as,agAss){
   const tbl=ASSUMED_ADJ_TABLE[at]||ASSUMED_ADJ_TABLE["지자체"];
   const tier=(ba||0)<300000000?"under300M":"over300M";
   let base={p25:tbl[tier].p25,p50:tbl[tier].p50,p75:tbl[tier].p75};
@@ -515,7 +519,8 @@ export function recommendAssumedAdj({at,agName,ba,ep,av,pc,ownScore},ts,as,agAss
   }
 
   const r4=v=>Math.round(v*10000)/10000;
-  const fr=eraFR(at,ep||ba,new Date().toISOString().slice(0,10));
+  // era 키: 입력 공고일/개찰일(od) 우선, 누락 시 today fallback (Codex 결함1; old 강제 방지 위해 today 명시).
+  const fr=eraFR(at,ep||ba,od||new Date().toISOString().slice(0,10));
   // V2_DOMAIN_RULES_CHECK #1-b: 자사 유효 낙찰하한율 (ownScore 디폴트 20=만점)
   const effFr=calcEffectiveFloorRate(at,fr,ownScore);
   const calcBid=(adjRate)=>{
