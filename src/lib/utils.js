@@ -54,7 +54,10 @@ export function isLhJongsim(at,ba,pn){
 }
 // Phase 12: 표준 RATE_TABLE만 사용 (여성기업 가산 등 특수 규정 제외)
 export function eraFR(at,ep,od){return getFloorRate(at,ep||0,isNewEra(at,od))}
-export { clsAg, isMilitaryAgency } from "./agencyClass.js";
+// 재export가 아니라 import+export — utils.js 내부(parseBidDoc:126, toRecord:414)에서도
+// clsAg를 호출하므로 로컬 바인딩 필요 (86c6670 회귀: "clsAg is not defined" 수정).
+import { clsAg, isMilitaryAgency } from "./agencyClass.js";
+export { clsAg, isMilitaryAgency };
 // ─── 유틸 ──────────────────────────────────────────────────
 // Phase 23-8: agency_predictor 학습 키 정규화 — DB normalize_agency_name 함수와 동일 로직.
 // 경기도교육청 학교명 변형 / 조달청 지방조달청 prefix 등을 canonical_ag 기준으로 통합.
