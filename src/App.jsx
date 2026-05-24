@@ -16,6 +16,7 @@ import { calcEffectiveFloorRate, formatFloorDual } from "./lib/effectiveFloor.js
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./lib/utils.js";
 import { resolveMode, resolveFloorErrDist } from "./lib/modeResolver.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
+import { sbFetchAllCached } from "./lib/bidCache.js";
 import { useAuth, getSession } from "./auth.js";
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
@@ -749,7 +750,7 @@ ${baseInfo}
     try{const preds=await sbFetchPredictions();setPredictions(preds||[]);return preds}catch(e){return predictions}},[predictions]);
   // ★ 전체 데이터 새로고침 (새로고침 버튼용)
   const refreshAll=useCallback(async()=>{
-    try{const[rows,preds,dets,agStats]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails(),sbFetchAgAssumedStats()]);
+    try{const[rows,preds,dets,agStats]=await Promise.all([sbFetchAllCached(),sbFetchPredictions(),sbFetchDetails(),sbFetchAgAssumedStats()]);
       setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));
       setPredictions(preds||[]);setBidDetails(dets||[]);setAgAss(agStats||{});
       // 자동 매칭 시도
@@ -765,7 +766,7 @@ ${baseInfo}
 
   // DB 로드
   useEffect(()=>{(async()=>{
-    try{const rows=await sbFetchAll();setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));if(rows.length>0)setTab("dash")}catch(e){setMsg({type:"err",text:"DB 로드 실패: "+e.message})}
+    try{const rows=await sbFetchAllCached();setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));if(rows.length>0)setTab("dash")}catch(e){setMsg({type:"err",text:"DB 로드 실패: "+e.message})}
     try{const preds=await sbFetchPredictions();setPredictions(preds||[]);
       const g2bP=(preds||[]).filter(p=>p.source==="g2b_auto"&&p.created_at);
       if(g2bP.length>0){const lat=g2bP.reduce((a,b)=>a.created_at>b.created_at?a:b);setLastG2bAt(lat.created_at)}
@@ -906,7 +907,7 @@ ${baseInfo}
         const catWarn=nonTgtRatio>=50?` ⚠ 비대상 공종 ${nonTgtRatio}% (전기/통신/소방 외, 분석 제외됨)`:catEmpty>=nr.length*0.3?` ⚠ 공종 미기재 ${catEmpty}건`:"";
         logs.push({name:file.name,type:catWarn?"warn":"ok",text:`[${format}] ${nr.length}건 | 신${nc}·구${oc}${catWarn}`});setUploadLog([...logs])
       }catch(e){logs.push({name:file.name,type:"err",text:e.message});setUploadLog([...logs])}}
-    try{const[rows,preds,dets]=await Promise.all([sbFetchAll(),sbFetchPredictions(),sbFetchDetails()]);
+    try{const[rows,preds,dets]=await Promise.all([sbFetchAllCached(),sbFetchPredictions(),sbFetchDetails()]);
       setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));setBidDetails(dets||[]);
       const matched=await sbMatchPredictions(preds,rows);
       // ★ v7 a-R2: 매칭 후 strategy_log outcome 백필 (최근 60일)
