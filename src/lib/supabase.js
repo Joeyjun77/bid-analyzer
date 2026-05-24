@@ -6,7 +6,13 @@ import { authedFetch } from "../auth.js";
 const JSON_H = { "Content-Type": "application/json" };
 
 // ─── Supabase CRUD ─────────────────────────────────────────
-export async function sbFetchAll(){const PAGE=1000;let all=[],offset=0;while(true){const res=await authedFetch("/rest/v1/bid_records?select=*&order=od.desc&offset="+offset+"&limit="+PAGE);const rows=await res.json();if(!Array.isArray(rows))break;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}
+// 전송 최적화: select=* 대신 클라이언트가 실제 읽는 컬럼만 (모바일 초기 로딩 개선).
+// calcStats 입력(br1,is_excluded,bp,xp,at,od,ag) 전부 포함 → 통계·예측 출력 불변.
+// 드롭: dedup_key,co_no,g2b,reg,excl_reason,joint_contract_type,is_joint_contract,era_v2,is_duplicate,input_date,ar0,br0,raw_cost,has_a (어느 소비처도 미읽음).
+// 주의: PAGE는 1000 유지 (PostgREST max-rows 상한 시 페이지네이션 조기종료 → 통계 오염 위험).
+// 주의: 읽기 전용 select — 이 결과를 그대로 sbUpsert에 넘기면 dedup_key 등 누락으로 깨짐. 쓰기 경로엔 쓰지 말 것.
+const BID_RECORDS_COLS="id,pn,pn_no,ag,at,ep,ba,av,xp,floor_price,ar1,co,bp,br1,base_ratio,pc,od,cat,era,fr,created_at,work_cat,canonical_ag,is_excluded,contract_method";
+export async function sbFetchAll(){const PAGE=1000;let all=[],offset=0;while(true){const res=await authedFetch("/rest/v1/bid_records?select="+BID_RECORDS_COLS+"&order=od.desc&offset="+offset+"&limit="+PAGE);const rows=await res.json();if(!Array.isArray(rows))break;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}
 export async function sbUpsert(rows){const BATCH=200;for(let i=0;i<rows.length;i+=BATCH){const batch=rows.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}const body=sanitizeJson(JSON.stringify(unique));const res=await authedFetch("/rest/v1/bid_records?on_conflict=dedup_key",{method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body});if(!res.ok)throw new Error(`Upsert: ${res.status}`)}}
 export async function sbDeleteIds(ids){const BATCH=50;for(let i=0;i<ids.length;i+=BATCH){await authedFetch("/rest/v1/bid_records?id=in.("+ids.slice(i,i+BATCH).join(",")+")",{method:"DELETE"})}}
 export async function sbDeleteAll(){await authedFetch("/rest/v1/bid_records?id=gt.0",{method:"DELETE"})}
