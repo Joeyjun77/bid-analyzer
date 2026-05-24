@@ -1072,6 +1072,8 @@ export function recommendV2(bid, context, options) {
   const opt = Object.assign({ targetProb: 0.95, gridStep: 0.0001, gridRange: 1.5 }, options || {});
   const { at, agName, ba, ep, av, fr } = bid || {};
   if (!at || !ba || !fr) return null;
+  // 표시용 4dp 스냅. bid/floor_safe는 raw adj로 계산해 투찰금 byte-identical 보장 (predict-architect 검토).
+  const r4 = (v) => Math.round(v * 10000) / 10000;
 
   const mode = context?.modeResolution?.mode_recommend || 'B'; // 미조회 시 안전한 안착 모드
   const grain = context?.modeResolution?.matched_grain || null;
@@ -1119,17 +1121,17 @@ export function recommendV2(bid, context, options) {
 
     const result = recommendModeB(distribution, opt);
     if (!result || result.adj == null) return null;
-    const adj = result.adj;
+    const adjRaw = result.adj; // bid/floor_safe는 raw로 계산 — 투찰금/적격 판정 byte-identical 유지
     return {
       mode: 'B',
-      adj,
-      bid: bidC(adj),
+      adj: r4(adjRaw),
+      bid: bidC(adjRaw),
       floor_pass_prob: result.floor_pass_prob,
       win_prob: null, // Mode B는 낙찰 확률 미산출 (안착 모드 거짓 약속 방지)
       grain,
       src: `modeB(${distribution.n||0}건 · μ=${distribution.mean?.toFixed?.(4) ?? '?'} · σ=${distribution.std?.toFixed?.(4) ?? '?'})`,
       source: 'modeB',
-      floor_safe: floorSafeC(adj)
+      floor_safe: floorSafeC(adjRaw)
     };
   }
 
@@ -1143,8 +1145,8 @@ export function recommendV2(bid, context, options) {
     const result = recommendModeA(floorErrDist, { predExpectedPrice: predEp, predFloorRate: predFr, ba, alpha: opt.alpha || 0.15 });
     if (result && result.recommended_bid_amount != null) {
       const bidAmt = result.recommended_bid_amount;
-      // b_pred_adj 컬럼 의미 보존: bidC 역산으로 사정률 환산 (무손실 — 컬럼 표시용)
-      const adj = _invertBidCToAdj(bidAmt, ba, av, effFr);
+      // b_pred_adj 컬럼 의미 보존: bidC 역산으로 사정률 환산 (표시용 — bid=bidAmt와 독립, r4 4dp 스냅)
+      const adj = r4(_invertBidCToAdj(bidAmt, ba, av, effFr));
       return {
         mode: 'A',
         adj,
