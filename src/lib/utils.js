@@ -30,8 +30,21 @@ export function calcWin1stBid(bid, fr, at){
 }
 
 // 낙찰하한율 테이블은 constants-tables.js에 분리됨.
-export function getFloorRate(at,ep,isNew){const tbl=RATE_TABLE[at]||RATE_TABLE["조달청"];const rules=isNew?tbl.new:tbl.old;for(const r of rules){if(ep>=r.min&&ep<r.max)return r.rate}return rules[rules.length-1].rate}
-export function getCutoffDate(at){return(RATE_TABLE[at]||RATE_TABLE["조달청"]).cutoff}
+// 미지 발주유형(at) fallback — 명시 처리 (Codex consult 2026-05-24 결함2: silent wrong-rate risk).
+// 타깃은 조달청 유지: 조달청 new==지자체 new, old도 <1e10 구간 동일 → 현행 숫자 무변화.
+// 단 silent 금지 — 미지 at은 1회 경고해 clsAg 분류 오류를 표면화 (at별 dedup).
+const FLOOR_RATE_FALLBACK_AT="조달청";
+const _warnedUnknownAt=new Set();
+function resolveRateTable(at){
+  if(RATE_TABLE[at])return RATE_TABLE[at];
+  if(at!=null&&!_warnedUnknownAt.has(at)){
+    _warnedUnknownAt.add(at);
+    try{console.warn(`[getFloorRate] 미지 발주유형 at='${at}' → ${FLOOR_RATE_FALLBACK_AT} 낙찰하한율 테이블 fallback (분류 확인 필요)`);}catch(e){/* noop */}
+  }
+  return RATE_TABLE[FLOOR_RATE_FALLBACK_AT];
+}
+export function getFloorRate(at,ep,isNew){const tbl=resolveRateTable(at);const rules=isNew?tbl.new:tbl.old;for(const r of rules){if(ep>=r.min&&ep<r.max)return r.rate}return rules[rules.length-1].rate}
+export function getCutoffDate(at){return resolveRateTable(at).cutoff}
 export function isNewEra(at,od){if(!od)return false;return od>=getCutoffDate(at)}
 // LH 종심제/순심제 대형 공사 감지 — 예측 모델이 -2.941로 수렴하는 구조적 미지원 구간
 export function isLhJongsim(at,ba,pn){
