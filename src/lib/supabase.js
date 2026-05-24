@@ -9,10 +9,38 @@ const JSON_H = { "Content-Type": "application/json" };
 // 전송 최적화: select=* 대신 클라이언트가 실제 읽는 컬럼만 (모바일 초기 로딩 개선).
 // calcStats 입력(br1,is_excluded,bp,xp,at,od,ag) 전부 포함 → 통계·예측 출력 불변.
 // 드롭: dedup_key,co_no,g2b,reg,excl_reason,joint_contract_type,is_joint_contract,era_v2,is_duplicate,input_date,ar0,br0,raw_cost,has_a (어느 소비처도 미읽음).
-// 주의: PAGE는 1000 유지 (PostgREST max-rows 상한 시 페이지네이션 조기종료 → 통계 오염 위험).
+// 주의: PAGE는 1000 고정 — PostgREST max-rows 캡이 1000이라 limit 상향해도 1000만 반환(실측: limit=5000→Content-Range 0-999/*). 올리면 페이지네이션 조기종료로 통계 오염.
 // 주의: 읽기 전용 select — 이 결과를 그대로 sbUpsert에 넘기면 dedup_key 등 누락으로 깨짐. 쓰기 경로엔 쓰지 말 것.
 const BID_RECORDS_COLS="id,pn,pn_no,ag,at,ep,ba,av,xp,floor_price,ar1,co,bp,br1,base_ratio,pc,od,cat,era,fr,created_at,work_cat,canonical_ag,is_excluded,contract_method";
-export async function sbFetchAll(){const PAGE=1000;let all=[],offset=0;while(true){const res=await authedFetch("/rest/v1/bid_records?select="+BID_RECORDS_COLS+"&order=od.desc&offset="+offset+"&limit="+PAGE);const rows=await res.json();if(!Array.isArray(rows))break;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}
+// 전송 최적화 2: 순차 66회 → 동시성 제한 병렬 페치 (모바일 벽시계 단축).
+// 완전성 보장: 종료조건은 원본과 동일(페이지<PAGE이면 끝 — 1000캡이라 마지막 페이지만 <1000).
+// 페이지 실패는 1회 재시도 후 throw → 부분 로드(통계 오염) 대신 호출부 에러 처리로 넘김.
+export async function sbFetchAll(){
+  const PAGE=1000;       // == PostgREST max-rows 캡 (상향 불가)
+  const CONC=6;          // 동시 요청 수 (모바일/연결 한도 고려)
+  const base="/rest/v1/bid_records?select="+BID_RECORDS_COLS+"&order=od.desc";
+  const fetchPage=async(offset)=>{
+    for(let attempt=0;attempt<2;attempt++){
+      try{const res=await authedFetch(base+"&offset="+offset+"&limit="+PAGE);
+        if(res.ok){const rows=await res.json();if(Array.isArray(rows))return rows;}
+      }catch(e){/* 재시도 */}
+    }
+    throw new Error("bid_records page offset="+offset+" 로드 실패");
+  };
+  // 1) 첫 페이지 순차 — 토큰 갱신(401 재시도)을 1회로 수렴시켜 병렬 레이스 방지
+  const first=await fetchPage(0);
+  let all=first.slice();
+  if(first.length<PAGE)return all;
+  // 2) 나머지 페이지를 CONC개씩 병렬 (offset 순서 보존)
+  let done=false,batchStart=1;
+  while(!done){
+    const offs=[];for(let i=0;i<CONC;i++)offs.push((batchStart+i)*PAGE);
+    const results=await Promise.all(offs.map(fetchPage));
+    for(const rows of results){all=all.concat(rows);if(rows.length<PAGE)done=true;}
+    batchStart+=CONC;
+  }
+  return all;
+}
 export async function sbUpsert(rows){const BATCH=200;for(let i=0;i<rows.length;i+=BATCH){const batch=rows.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}const body=sanitizeJson(JSON.stringify(unique));const res=await authedFetch("/rest/v1/bid_records?on_conflict=dedup_key",{method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body});if(!res.ok)throw new Error(`Upsert: ${res.status}`)}}
 export async function sbDeleteIds(ids){const BATCH=50;for(let i=0;i<ids.length;i+=BATCH){await authedFetch("/rest/v1/bid_records?id=in.("+ids.slice(i,i+BATCH).join(",")+")",{method:"DELETE"})}}
 export async function sbDeleteAll(){await authedFetch("/rest/v1/bid_records?id=gt.0",{method:"DELETE"})}
