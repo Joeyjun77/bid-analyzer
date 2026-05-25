@@ -5,6 +5,7 @@
 > 상태: 코덱스 독립검증 (6/10 → 정정 후 85%) 반영 완료
 > 분리 문서: `V2_DDL_SPEC.md` (테이블 명세), `V2_UI_SPEC.md` (화면 명세)
 > 선행 핸드오프: `HANDOFF_V2_PREDICTION_DEFINITION.md`, `HANDOFF_V2_WIN_DEFINITION.md`, `HANDOFF_V2_DIAGNOSIS_RESULT.md`
+> 후속 설계: `CALIBRATION_FIRST_V2_DESIGN.md` (2026-05-25, 정확도 천장 인정 → calibration 우선 방향 전환)
 
 ---
 
