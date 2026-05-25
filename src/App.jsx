@@ -13,7 +13,7 @@ import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
 import OwnScoreInput from "./components/OwnScoreInput.jsx";
 import { calcEffectiveFloorRate, formatFloorDual } from "./lib/effectiveFloor.js";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./lib/utils.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH, predConfidence } from "./lib/utils.js";
 import { resolveMode, resolveFloorErrDist } from "./lib/modeResolver.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
 import { sbFetchAllCached } from "./lib/bidCache.js";
@@ -1682,12 +1682,12 @@ ${baseInfo}
 
           {/* ★★★ 투찰 결정 가이드 ★★★ */}
           {(()=>{
-            // pred_source 파싱: "d:0.50|s:0.25|c:0.20|bc*0.0"
+            // pred_source 신뢰도 분류 (공유 헬퍼: g2b "d:|s:|c:" + file_upload "기관명(N건)" 두 형식)
             const src=d.pred_source||"";
-            const dm=src.match(/d:([\d.]+)/),sm=src.match(/s:([\d.]+)/),cm=src.match(/c:([\d.]+)/),bcm=src.match(/bc\*([\d.]+)/);
-            const dw=dm?Math.round(Number(dm[1])*100):0,sw=sm?Math.round(Number(sm[1])*100):0,cw=cm?Math.round(Number(cm[1])*100):0,bc=bcm?Number(bcm[1]):0;
-            const srcLabel=(dw||sw||cw)?[dw>0&&`발주사통계 ${dw}%`,sw>0&&`유사사례 ${sw}%`,cw>0&&`업체패턴 ${cw}%`].filter(Boolean).join(" + "):"";
-            const dataConf=dw>=50?"high":dw>=30?"med":sw>=40?"med":"low";
+            const bcm=src.match(/bc\*([\d.]+)/);const bc=bcm?Number(bcm[1]):0;
+            const _pc=predConfidence(d.pred_source);
+            const srcLabel=_pc.srcLabel;
+            const dataConf=_pc.level;
             const confColor=dataConf==="high"?"#5dca96":dataConf==="med"?"#d4a834":"#a8b4ff";
             const confLabel=dataConf==="high"?"신뢰 높음":dataConf==="med"?"신뢰 보통":"데이터 부족";
             const winBid=finalBid1st||finalBid;
@@ -1849,7 +1849,7 @@ ${baseInfo}
                   {srcLabel&&<span>예측 근거: <span style={{color:C.txt}}>{srcLabel}</span></span>}
                   {bc>0&&<span style={{color:confColor,marginLeft:6}}>| 편향보정 적용</span>}
                 </div>
-                <span style={{fontSize:10,padding:"2px 8px",borderRadius:10,background:confColor+"22",color:confColor,border:"1px solid "+confColor+"44",fontWeight:600,whiteSpace:"nowrap"}}>{confLabel}</span>
+                <span title="표본 규모 기준 — 실측 정확도(MAE)와 별개" style={{fontSize:10,padding:"2px 8px",borderRadius:10,background:confColor+"22",color:confColor,border:"1px solid "+confColor+"44",fontWeight:600,whiteSpace:"nowrap"}}>{confLabel}</span>
               </div>
               {/* ★ v7.2: 3종 전략 추천 (공격/균형/안전) — 데이터 없으면 v7 참고 패널로 fallback */}
               {(()=>{
@@ -2698,8 +2698,9 @@ ${baseInfo}
         {/* 신뢰도 색상 범례 — 추천 사정률·투찰금 강조 (신뢰 높음만) */}
         <div style={{display:"flex",gap:12,marginBottom:8,padding:"4px 8px",background:C.bg3,borderRadius:6,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:10,color:C.txd}}>추천값 색상:</span>
-          <span style={{fontSize:10}}><span style={{color:"#5dca96",fontWeight:700}}>● 초록</span> <span style={{color:C.txm}}>신뢰 높음 — 발주사 고유 데이터 풍부 (발주사통계 비중 ≥50%)</span></span>
-          <span style={{fontSize:10}}><span style={{color:C.gold,fontWeight:700}}>● 금색</span> <span style={{color:C.txm}}>신뢰 보통/데이터 부족 — 발주유형·유사사례 등 넓은 패턴 기반</span></span>
+          <span style={{fontSize:10}}><span style={{color:"#5dca96",fontWeight:700}}>● 초록</span> <span style={{color:C.txm}}>신뢰 높음 — 발주사 표본 200건 이상</span></span>
+          <span style={{fontSize:10}}><span style={{color:C.gold,fontWeight:700}}>● 금색</span> <span style={{color:C.txm}}>신뢰 보통(50건+)/데이터 부족</span></span>
+          <span style={{fontSize:10,color:C.txd}}>※ 표본 규모 기준 — 실측 정확도와 별개</span>
         </div>
         {compList.length>0?<div style={{overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
@@ -2729,9 +2730,8 @@ ${baseInfo}
               // Phase 5.6: 통합 최종 추천 (모달과 동일 로직: AI > Enhanced > opt_adj > pred)
               const finalRec=getFinalRecommendation(p);
               const finalAdj=finalRec.adj;const finalBid=finalRec.bid;const finalBid1st=finalRec.bid1st;
-              // 신뢰도(모달 confLabel과 동일 로직): pred_source 발주사통계 가중치(d:)≥50% → '신뢰 높음'
-              const _dwMatch=(p.pred_source||"").match(/d:([\d.]+)/);
-              const isHighConf=_dwMatch?Math.round(Number(_dwMatch[1])*100)>=50:false;
+              // 신뢰도: 모달과 동일한 공유 헬퍼(predConfidence) — g2b·file_upload 두 형식 모두 처리
+              const isHighConf=predConfidence(p.pred_source).level==='high';
               // v8 사정률
               const v8Info=v8Map[p.id]||null;
               const v8Rate=v8Info?.rate??null;
