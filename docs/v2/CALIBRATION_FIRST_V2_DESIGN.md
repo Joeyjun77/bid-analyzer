@@ -88,10 +88,20 @@ predict-architect 확인: mode_gate_report(21건)·win_zone_daily(49건)·floor_
 
 ---
 
-## 5. 착수 전 선결조건 (BLOCKER)
+## 5. 선결조건 검증 결과 (2026-05-25 — 해소)
 
-**`recommendModeB`의 `calcFloorPassProb(adj,...)`(`utils.js:899`)가 adj_rate 공간인지 bid_rate 공간인지 `V2_MEASUREMENT_SPEC`와 대조 확인.**
-- 만약 adj 분포 기반이면 **L1은 G-단위 게이트에서 FAIL** → L1 구현의 전제. 이것부터 검증해야 함.
+**판정: L1은 G-단위 게이트에서 FAIL하지 않는다. 진행 가능.**
+
+검증: `calcFloorPassProb`/`recommendModeB`는 **사정률(adj_rate) 공간 산술**이 맞다.
+- `utils.js:794` 정의: `P(자사투찰 ≥ 낙찰하한가) = P(실제 사정률 ≤ X) = Φ((X−mean)/std)`
+- `utils.js:804` `z=(adj−mean)/effStd`, `:801` 노이즈플로어 0.642%(사정률 공간), `recommendV2:1097` `xpC(adj)=ba*(1+adj/100)` → `adj`는 사정률(% 편차).
+
+그럼에도 FAIL 아닌 이유 (3중 근거):
+1. **폐기된 것은 adj_rate WIN-zone(양방향 모순식)** `my_adj < win_adj AND my_adj ≥ adj_rate`(MEASUREMENT_SPEC §2.1). 하한통과는 **단방향**(`my_bid ≥ floor`)이라 모순 없음. 또 floor-pass 사건은 단조변환으로 **공간 불변** — 사정률 분포로 계산해도 동일 확률.
+2. **G-단위 게이트(evaluate.md:91-128)는** 신규 `+`라인에 (win_zone|in_win_zone|pass_top1|pct_win|pct_pass_floor) **AND** (adj_rate|adj_rate_error|opt_adj) 동시 출현, 또는 신규 DB func/view에 win_zone+adj_rate일 때만 FAIL. L1 코드는 변수 `adj`(bare)·`floor_pass_prob`이며 win_zone/opt_adj 토큰 미포함 → 검출 0건 PASS.
+3. **MEASUREMENT_SPEC §6.1** 명시: adj_rate 공간 사정률 추적은 G-단위 FAIL 대상 아님(게이트 목적=신규 WIN-zone/승률 KPI 신설 금지). L1 KPI는 `floor_pass_daily.calibration_gap`(bid_rate) → 준수.
+
+**2차 확인 항목 (BLOCKER 아님, L1 1차 구현 시 점검)**: `agencyDist`/`win1st_dist_map`의 `mean/std`가 실제로 **사정률 분포**인지 확인. MEASUREMENT_SPEC §3.1은 win1st_dist_map을 "1위 투찰률(bid_rate) 분포"로 재해석 의도하나, `calcFloorPassProb`는 사정률 분포를 기대(grid `mean±1.5`가 사정률 ≈0 기준). 입력 분포 공간이 어긋나면 게이트가 아니라 **calibration 정확성**이 틀어진다 → 한전(n=62) 1차에서 실데이터 `mean` 값으로 공간 확인.
 
 ---
 
