@@ -121,3 +121,27 @@ predict-architect 확인: mode_gate_report(21건)·win_zone_daily(49건)·floor_
 ```
 
 각 레버는 Generator → 구현 후 `/evaluate` PASS/WARN 시에만 push, FAIL 시 push 금지 (`CLAUDE.md` Phase 23-3).
+
+---
+
+## 8. Calibration 실측 baseline (2026-05-25, `floor_pass_daily`)
+
+calibration-first 원칙 — 코드 변경 전 현 calibration 측정 결과 (model_version=v2_modeB_canonical, calibration_gap=ABS(pred−actual)):
+
+| at | n | pred_pass | actual_pass | gap | 해석 |
+|---|---|---|---|---|---|
+| 한전 | 16 | 0.950 | 1.000 | 0.050 | 과보수(100% 통과) |
+| 교육청 | 7 | 0.950 | 1.000 | 0.050 | 과보수(저n) |
+| LH | 6 | 0.950 | 1.000 | 0.050 | 과보수(저n) |
+| 지자체 | 109 | 0.950 | 0.908 | 0.041 | **과신** (하한미달 9.2%) |
+| 전체 | 140 | 0.950 | 0.929 | 0.021 | 경미한 과신 |
+
+### 8.1 §3 L1 가정 정정 (데이터 기반)
+설계 초안의 "좁은 WIN-zone 영역(한전 등) targetProb **상향**"은 **데이터와 반대**다.
+- 한전·교육청·LH: 이미 actual=100% 과보수 → targetProb 상향은 낭비(이미 max). ≥90% KPI 헤드룸(10%p) 내에서 **하향**해 낙찰 기회 회복이 오히려 정방향.
+- 지자체: 과신(90.8%<95%) → 분포 보수화/std 확대 방향.
+→ L1은 "일률 상향"이 아니라 **영역별 calibration_gap 부호에 따라 양방향 조정**으로 재정의.
+
+### 8.2 즉시 구현 보류 (calibration-first 규율)
+한전 n=16·교육청 n=7·LH n=6은 단일 일배치라 robust하지 않음. 유일하게 의미 있는 신호는 지자체 과신(n=109)이며 이것도 1일치.
+→ `floor_pass_daily` 일배치 누적(가동 중) **수주~8주 후 재측정**으로 영역별 정정 방향 확정 후 L1 코드 착수. 그 전 Generator 변경은 소표본 과적합 위험.
