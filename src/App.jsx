@@ -2695,6 +2695,12 @@ ${baseInfo}
           <span style={{fontSize:10,color:"#e24b4a"}}>⚠ &gt;5% 이상치</span>
           <span style={{fontSize:10,color:C.txd}}>— 유찰/수의</span>
         </div>
+        {/* 신뢰도 색상 범례 — 추천 사정률·투찰금 강조 (신뢰 높음만) */}
+        <div style={{display:"flex",gap:12,marginBottom:8,padding:"4px 8px",background:C.bg3,borderRadius:6,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:10,color:C.txd}}>추천값 색상:</span>
+          <span style={{fontSize:10}}><span style={{color:"#5dca96",fontWeight:700}}>● 초록</span> <span style={{color:C.txm}}>신뢰 높음 — 발주사 고유 데이터 풍부 (발주사통계 비중 ≥50%)</span></span>
+          <span style={{fontSize:10}}><span style={{color:C.gold,fontWeight:700}}>● 금색</span> <span style={{color:C.txm}}>신뢰 보통/데이터 부족 — 발주유형·유사사례 등 넓은 패턴 기반</span></span>
+        </div>
         {compList.length>0?<div style={{overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
             <colgroup><col style={{width:"4%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
@@ -2723,6 +2729,9 @@ ${baseInfo}
               // Phase 5.6: 통합 최종 추천 (모달과 동일 로직: AI > Enhanced > opt_adj > pred)
               const finalRec=getFinalRecommendation(p);
               const finalAdj=finalRec.adj;const finalBid=finalRec.bid;const finalBid1st=finalRec.bid1st;
+              // 신뢰도(모달 confLabel과 동일 로직): pred_source 발주사통계 가중치(d:)≥50% → '신뢰 높음'
+              const _dwMatch=(p.pred_source||"").match(/d:([\d.]+)/);
+              const isHighConf=_dwMatch?Math.round(Number(_dwMatch[1])*100)>=50:false;
               // v8 사정률
               const v8Info=v8Map[p.id]||null;
               const v8Rate=v8Info?.rate??null;
@@ -2760,7 +2769,7 @@ ${baseInfo}
                 </td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:finalRec.jongsim?"#e24b4a":(finalRec.floorSafe===false?"#e24b4a":C.gold),fontWeight:500}} title={finalRec.jongsim?"LH 종심제·순심제 (예측 미지원)":(finalRec.floorSafe===false?"⚠ 자격 미달 — 그대로 투찰 시 자동 탈락 (av가 큰 입찰)":(finalRec.source?"근거: "+finalRec.source:""))}>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:finalRec.jongsim?"#e24b4a":(finalRec.floorSafe===false?"#e24b4a":(isHighConf?"#5dca96":C.gold)),fontWeight:500}} title={finalRec.jongsim?"LH 종심제·순심제 (예측 미지원)":(finalRec.floorSafe===false?"⚠ 자격 미달 — 그대로 투찰 시 자동 탈락 (av가 큰 입찰)":(finalRec.source?"근거: "+finalRec.source:""))}>
                   {finalRec.jongsim?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.12)"}}>⚠ 종심제</span>:(finalAdj!=null?(
                     <span style={{display:"inline-flex",alignItems:"center",gap:4,justifyContent:"flex-end"}}>
                       <span>{(100+Number(finalAdj)).toFixed(4)+"%"}</span>
@@ -2772,7 +2781,7 @@ ${baseInfo}
                     </span>
                   ):"")}
                 </td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:C.gold,fontWeight:700}}>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:(isHighConf&&!finalRec.jongsim&&finalRec.floorSafe!==false)?"#5dca96":C.gold,fontWeight:700}}>
                   {finalRec.jongsim?<span style={{fontSize:10,color:C.txd}}>—</span>:((finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):"")}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11,whiteSpace:"nowrap"}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":isDataWait?"#8a93a8":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:isDataWait?<span style={{fontSize:10}}>데이터대기</span>:p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
