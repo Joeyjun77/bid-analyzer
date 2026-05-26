@@ -2577,7 +2577,7 @@ ${baseInfo}
           {/* 발주기관 필터: 검색 또는 드랍으로 선택 (디폴트 빈값=전체) */}
           <span style={{marginLeft:8,display:"inline-flex",alignItems:"center",gap:4}}>
             <input list="agFilterOptions" value={agFilter} onChange={e=>{setAgFilter(e.target.value);setPredListShow(50)}} placeholder="발주기관 검색·선택 (전체)" title="발주기관을 입력해 검색하거나 목록에서 선택. 비우면 전체."
-              style={{padding:"4px 8px",fontSize:10,background:C.bg3,border:"1px solid "+(agFilter?C.gold+"66":C.bdr),borderRadius:5,color:C.txt,minWidth:170}}/>
+              style={{padding:"6px 12px",fontSize:12,background:C.bg3,border:"1px solid "+(agFilter?C.gold+"66":C.bdr),borderRadius:5,color:C.txt,minWidth:320,flex:"1 1 320px",maxWidth:480}}/>
             <datalist id="agFilterOptions">{agOptions.map(a=><option key={a} value={a}/>)}</datalist>
             {agFilter&&<button onClick={()=>{setAgFilter("");setPredListShow(50)}} title="전체 보기" style={{padding:"4px 8px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txd,cursor:"pointer"}}>✕</button>}
           </span>
