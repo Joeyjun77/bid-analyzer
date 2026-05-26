@@ -1088,7 +1088,7 @@ ${baseInfo}
     else list=p.filter(x=>x.match_status!=="expired"); // 전체에서 expired 제외 (cancelled는 포함 — 취소 라벨로 표시)
     if(hideYuchal)list=list.filter(x=>!(x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)")));
     if(hideSuui)list=list.filter(x=>!(x.is_negotiation===true&&x.actual_adj_rate==null));
-    if(agFilter){const q=agFilter.trim().toLowerCase();if(q)list=list.filter(x=>(x.ag||"").toLowerCase().includes(q))} // 발주기관 검색/선택 (부분일치)
+    if(agFilter){const q=agFilter.trim().toLowerCase();if(q)list=list.filter(x=>(x.ag||"").trim().toLowerCase()===q)} // 발주기관 정확일치 (각 기관 개별 — 고양시≠고양시 덕양구)
     // Phase 5: 등급 필터
     if(gradeFilter!=="all"){list=list.filter(x=>{const g=scoringMap[x.id]?.roi_grade||"D";if(gradeFilter==="SA")return g==="S"||g==="A";if(gradeFilter==="SAB")return g==="S"||g==="A"||g==="B";if(gradeFilter==="notD")return g!=="D";return true})}
     // Phase 12-C: 발주사별 P5 숨김, 주력만 보기 (pending 건에만 적용)
