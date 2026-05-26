@@ -210,30 +210,8 @@ export function calcStats(recs,filter){const src=filter?recs.filter(filter):recs
 const rnd4=v=>Math.round((v||0)*10000)/10000;
 
 // pred_source 신뢰도 분류 — 두 형식 통합 (모달 배지 + 리스트 강조 공유 진실)
-// g2b_auto 기계형식: "d:0.50|s:0.25|c:0.20|bc*0.0" (가중치 기반)
-// file_upload 사람형식: "한국전력공사 경기본부(531건) + 상세13건 보정" (발주사통계 표본수 기반)
-// 임계값(file_upload): N≥200 높음 / N≥50 보통 — predict-architect 검토(2026-05-25):
-//   실측 MAE가 N과 비단조이고 N≥200부터 의미있게 개선(~0.50). N≥50 일괄 '높음'은 고양시 등 high-bias 기관 오도 위험.
-// 주의: 표본 규모 기준이며 실측 정확도(MAE)와 별개 — UI 툴팁에 단서 표기.
-export function predConfidence(predSource){
-  const src=predSource||"";
-  // g2b_auto 형식 (가중치)
-  const dm=src.match(/d:([\d.]+)/),sm=src.match(/s:([\d.]+)/),cm=src.match(/c:([\d.]+)/);
-  if(dm||sm||cm){
-    const dw=dm?Math.round(Number(dm[1])*100):0,sw=sm?Math.round(Number(sm[1])*100):0,cw=cm?Math.round(Number(cm[1])*100):0;
-    const level=dw>=50?"high":dw>=30?"med":sw>=40?"med":"low";
-    const srcLabel=[dw>0&&`발주사통계 ${dw}%`,sw>0&&`유사사례 ${sw}%`,cw>0&&`업체패턴 ${cw}%`].filter(Boolean).join(" + ");
-    return {level,srcLabel,n:null};
-  }
-  // file_upload 형식: 첫 "(N건)" = 그 예측이 사용한 발주사통계 풀 크기
-  const nm=src.match(/\((\d+)건\)/);
-  if(nm){
-    const n=Number(nm[1]);
-    const level=n>=200?"high":n>=50?"med":"low";
-    return {level,srcLabel:`발주사 표본 ${n}건`,n};
-  }
-  return {level:"low",srcLabel:"",n:null};
-}
+// 신뢰도 분류(predConfidence·predConfidenceV2)는 ./predConfidence.js로 분리 — standalone(import.meta.env 체인 없음)이라 node 단위테스트 가능. App.jsx 호환 위해 re-export.
+export { predConfidence, predConfidenceV2, CONF_HIGH, CONF_MED, CONF_TIER_MIN_N, WIN_ZONE_AREAS } from "./predConfidence.js";
 
 // ─── Phase 23-5: 추천값 방향·크기 힌트 (pred_bias_map 기반 화살표) ──
 // getFinalRecommendation의 lookup 순서(AG×BA → AG → AT×BA → AT)를 재사용.

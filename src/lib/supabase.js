@@ -358,6 +358,26 @@ export async function sbFetchPredBiasMap(){
   }catch(e){return{agBa:{},ag:{},atBa:{},at:{}}}
 }
 
+// agency_accuracy_map VIEW(실측 정확도) → 4단계 grain lookup용 map. 값 = {n,bias,mae,sd}.
+// 신뢰도 V2(predConfidenceV2) 입력. pred_bias_map과 base 1:1 동일(drift 테스트로 고정), mae/sd만 추가.
+export async function sbFetchAccuracyMap(){
+  try{
+    const res=await authedFetch("/rest/v1/agency_accuracy_map?select=grain,key1,key2,n,bias,mae,sd&limit=2000");
+    if(!res.ok)return{agBa:{},ag:{},atBa:{},at:{}};
+    const rows=await res.json();
+    const m={agBa:{},ag:{},atBa:{},at:{}};
+    for(const r of rows){
+      const mae=Number(r.mae);if(!isFinite(mae))continue;
+      const v={n:Number(r.n),bias:Number(r.bias),mae,sd:r.sd==null?null:Number(r.sd)};
+      if(r.grain==='AG_BA')m.agBa[r.key1+'|'+r.key2]=v;
+      else if(r.grain==='AG')m.ag[r.key1]=v;
+      else if(r.grain==='AT_BA')m.atBa[r.key1+'|'+r.key2]=v;
+      else if(r.grain==='AT')m.at[r.key1]=v;
+    }
+    return m;
+  }catch(e){return{agBa:{},ag:{},atBa:{},at:{}}}
+}
+
 // ─── Phase 23-9 + B2.4: V2 신규 컬럼 PATCH (A안 INSERT-only) ─────────────
 // 허용 컬럼: bid1st_v2_* 6개 + b_pred_* 6개 (총 12개)
 // 보호 컬럼: opt_adj, actual_adj_rate, matched_at, opt_bid 등은 PATCH 금지
