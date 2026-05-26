@@ -92,6 +92,23 @@ WIN-zone ⇔  floor_rate  ≤  my_bid_rate  <  win_bid_rate
 
 ---
 
+## 4.5 hit 메트릭 용어 분리 (R16 Q6 확정, 2026-05-26)
+
+`hit01` 약어가 **완전히 다른 두 메트릭**에 혼용되어 baseline 오기(메모리 "한전 30d hit01 16%" vs 실측 단자릿수)를 유발 → 이름 영구 분리. **"hit01" 단독 표기 금지** — 어느 메트릭인지 불명확.
+
+| 정식 명칭 | 정의 | 출처 (공간) | 척도 예 (한전 60d) | 의미 |
+|---|---|---|---|---|
+| **사정률적중** `rate_hit@±k` | `\|opt_adj − actual_adj_rate\| ≤ k` (k=0.01, 0.02) | `bid_predictions.opt_adj` vs `actual_adj_rate` (adj_rate) | `rate_hit@±0.01` ≈ 1.7% | 사정률 점추정이 실제 사정률을 ±k%p 내로 맞춘 비율. 복수예가 추첨 천장(이론 MAE 0.642%)으로 **단자릿수가 정상** |
+| **자사1위적중** `top1_win` | 자사 추천 투찰이 실제 1위였는지 | `prediction_quality_daily.top1_hit_{existing/balanced/aggressive/conservative}` (`/accuracy` 체크7·8) (adj_rate) | `top1_hit` ≈ 74% | 추천 투찰가가 1위를 차지했을 비율. 좁은 WIN-zone 영역(한전·LH)에서 높음, 군시설 ≈0% |
+
+**표기 규칙**:
+- 항상 `사정률적중±0.01`(=`rate_hit@±0.01`) / `자사1위적중`(=`top1_win`)로 명시. 윈도우(30d/60d)와 n 병기 필수.
+- 두 메트릭 모두 **adj_rate 공간 보조 지표** — V2 1차 KPI 아님(§2.2·§3.2). 효과 판정은 §4 KPI 등급표의 1차 KPI(bid_rate 공간: Mode A WIN-zone 진입률 / Mode B 하한통과율)로 한다.
+- `gap_p90<0.05` 영역(§6.1)에서 사정률적중은 사정률 점추정 품질의 보조 신호로만 사용(독립 게이트는 MAE).
+- **폐기**: 메모리 `project_next_session_m33.md`의 "한전 30d hit01 16% / 지자체 10.9%"는 출처·정의 불명으로 **R16에서 폐기**. 실측 기준(사정률적중±0.01)은 한전·지자체 모두 단자릿수.
+
+---
+
 ## 5. 면제 객체 목록 (`/evaluate` G-단위 게이트)
 
 신규 코드/뷰가 `adj_rate`를 WIN-zone 정의에 사용하면 FAIL. 단, 아래는 면제 (기존 MAE 모니터링용):
