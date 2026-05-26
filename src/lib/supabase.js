@@ -77,7 +77,10 @@ export async function sbDeleteAll(){await authedFetch("/rest/v1/bid_records?id=g
 
 // 예측 DB
 export async function sbSavePredictions(preds){const BATCH=50;for(let i=0;i<preds.length;i+=BATCH){const batch=preds.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}const body=sanitizeJson(JSON.stringify(unique));await authedFetch("/rest/v1/bid_predictions?on_conflict=dedup_key",{method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body})}}
-export async function sbFetchPredictions(){try{const PAGE=1000;let all=[],offset=0;while(true){const res=await authedFetch("/rest/v1/bid_predictions?select=*&order=created_at.desc&offset="+offset+"&limit="+PAGE);if(!res.ok)return[];const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}return all}catch(e){return[]}}
+// order에 고유 tiebreaker(id) 필수: created_at 동률(배치 임포트 50건씩)이 offset 페이지 경계에 걸치면
+// created_at.desc 단독 정렬은 비결정적이라 같은 row가 두 페이지에 중복 페치됨 → 예측 리스트 중복 행 버그.
+// id 보조정렬로 전역 결정적 순서 보장 + 마지막에 id dedup(안전망).
+export async function sbFetchPredictions(){try{const PAGE=1000;let all=[],offset=0;while(true){const res=await authedFetch("/rest/v1/bid_predictions?select=*&order=created_at.desc,id.desc&offset="+offset+"&limit="+PAGE);if(!res.ok)return[];const rows=await res.json();if(!Array.isArray(rows))return all;all=all.concat(rows);if(rows.length<PAGE)break;offset+=PAGE}const seen=new Set();return all.filter(p=>seen.has(p.id)?false:(seen.add(p.id),true))}catch(e){return[]}}
 
 // 자동 매칭: bid_predictions.pn_no → bid_records.pn_no (날짜 검증 필수)
 // Phase 21: pn_no prefix fallback 매칭 추가 (지자체 접미사 -000/-001/-002 대응)
