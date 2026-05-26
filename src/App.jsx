@@ -454,6 +454,7 @@ export default function App(){
   const[aiLoadingPredId,setAiLoadingPredId]=useState(null);
   const[gradeFilter,setGradeFilter]=useState("all"); // Phase 5: 등급 필터
   const[compFilter,setCompFilter]=useState("all");
+  const[agFilter,setAgFilter]=useState(""); // 예측 리스트 발주기관 필터 (""=전체)
   const[predListShow,setPredListShow]=useState(50); // 리스트 표시 건수 (더보기)
   const[hideYuchal,setHideYuchal]=useState(true); // 유찰 건 숨김 (기본 ON)
   const[hideSuui,setHideSuui]=useState(true); // 수의계약 건 숨김 (기본 ON)
@@ -1076,6 +1077,8 @@ ${baseInfo}
     const byType={};matched.forEach(p=>{const t=p.at||"기타";if(!byType[t])byType[t]={n:0,errSum:0};byType[t].n++;if(p.adj_rate_error!=null)byType[t].errSum+=Math.abs(p.adj_rate_error)});
     Object.values(byType).forEach(v=>{v.avgErr=v.n?Math.round(v.errSum/v.n*10000)/10000:0});
     return{total:preds.length,matched:matched.length,pending:pending.length,cancelled:cancelled.length,expired:expired.length,avgErr,bias,within05,byType}},[predictions]);
+  // 예측 리스트 발주기관 드랍/검색 옵션 (file_upload 예측의 distinct ag, 가나다순)
+  const agOptions=useMemo(()=>{const s=new Set();(predictions||[]).forEach(x=>{if(x.source==='file_upload'&&x.ag)s.add(x.ag)});return[...s].sort((a,b)=>a.localeCompare(b,'ko'))},[predictions]);
   const compList=useMemo(()=>{const p=(predictions||[]).filter(x=>x.source==='file_upload');let list;
     // 기본: expired 자동 제외 (명시적 expired 필터 선택 시에만 표시)
     if(compFilter==="matched")list=p.filter(x=>x.match_status==="matched");
@@ -1085,6 +1088,7 @@ ${baseInfo}
     else list=p.filter(x=>x.match_status!=="expired"); // 전체에서 expired 제외 (cancelled는 포함 — 취소 라벨로 표시)
     if(hideYuchal)list=list.filter(x=>!(x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)")));
     if(hideSuui)list=list.filter(x=>!(x.is_negotiation===true&&x.actual_adj_rate==null));
+    if(agFilter){const q=agFilter.trim().toLowerCase();if(q)list=list.filter(x=>(x.ag||"").toLowerCase().includes(q))} // 발주기관 검색/선택 (부분일치)
     // Phase 5: 등급 필터
     if(gradeFilter!=="all"){list=list.filter(x=>{const g=scoringMap[x.id]?.roi_grade||"D";if(gradeFilter==="SA")return g==="S"||g==="A";if(gradeFilter==="SAB")return g==="S"||g==="A"||g==="B";if(gradeFilter==="notD")return g!=="D";return true})}
     // Phase 12-C: 발주사별 P5 숨김, 주력만 보기 (pending 건에만 적용)
@@ -1098,7 +1102,7 @@ ${baseInfo}
       const a=assessPrediction(x,agencyStats,agencyPred);
       return a&&a.tier!=null&&a.tier<=2;
     })}
-    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,predSort,hideYuchal,hideSuui,gradeFilter,scoringMap,hideP5,onlyPrimary,agencyStats,agencyPred]);
+    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,agFilter,predSort,hideYuchal,hideSuui,gradeFilter,scoringMap,hideP5,onlyPrimary,agencyStats,agencyPred]);
 
   // Phase 23-9: pending 건 v2 backfill (분포 map 로드 후 NULL 행에 적용)
   // 라운드 11 권고: ref를 scoreSnap으로 변환 — ownScore 변경 시 stale row 재계산
@@ -2570,6 +2574,13 @@ ${baseInfo}
           <button onClick={()=>{setCompFilter("pending");setPredListShow(50)}} style={btnS(compFilter==="pending","#e24b4a")}>대기 ({compStats.pending})</button>
           {compStats.cancelled>0&&<button onClick={()=>{setCompFilter("cancelled");setPredListShow(50)}} style={btnS(compFilter==="cancelled","#c08040")}>취소 ({compStats.cancelled})</button>}
           {compStats.expired>0&&<button onClick={()=>{setCompFilter("expired");setPredListShow(50)}} style={btnS(compFilter==="expired","#666680")}>만료 ({compStats.expired})</button>}
+          {/* 발주기관 필터: 검색 또는 드랍으로 선택 (디폴트 빈값=전체) */}
+          <span style={{marginLeft:8,display:"inline-flex",alignItems:"center",gap:4}}>
+            <input list="agFilterOptions" value={agFilter} onChange={e=>{setAgFilter(e.target.value);setPredListShow(50)}} placeholder="발주기관 검색·선택 (전체)" title="발주기관을 입력해 검색하거나 목록에서 선택. 비우면 전체."
+              style={{padding:"4px 8px",fontSize:10,background:C.bg3,border:"1px solid "+(agFilter?C.gold+"66":C.bdr),borderRadius:5,color:C.txt,minWidth:170}}/>
+            <datalist id="agFilterOptions">{agOptions.map(a=><option key={a} value={a}/>)}</datalist>
+            {agFilter&&<button onClick={()=>{setAgFilter("");setPredListShow(50)}} title="전체 보기" style={{padding:"4px 8px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txd,cursor:"pointer"}}>✕</button>}
+          </span>
           <label style={{display:"flex",alignItems:"center",gap:4,marginLeft:8,cursor:"pointer",fontSize:10,color:hideYuchal?C.txd:"#e24b4a"}}>
             <input type="checkbox" checked={hideYuchal} onChange={e=>{setHideYuchal(e.target.checked);setPredListShow(50)}} style={{accentColor:"#e24b4a",width:12,height:12}}/>
             <span>유찰 숨김 ({predictions.filter(p=>p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)")).length}건)</span>
