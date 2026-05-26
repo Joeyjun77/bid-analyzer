@@ -60,7 +60,7 @@ WITH base AS (
 
 1. **grain lookup — "tier 판정 가능한 grain 선택"** (코덱스 P0-1):
    AG×BA → AG → AT×BA → AT 순회. **첫 히트가 아니라 `n≥30`(tier-reliable)인 가장 fine한 grain**을 tier에 사용. fine grain이 있어도 `n<30`이면 다음(coarser)으로 진행. 이유: 뷰 HAVING 최소(AG_BA≥5/AG≥25/AT_BA≥20/AT≥30)가 30보다 낮아 "첫 히트"는 thin grain(n=5)에 멈춰 우연 강등됨.
-   - `n≥30` grain이 없고 present grain만 있으면 → tier **최대 "보통"**(높음 금지), 가장 fine한 present grain mae/bias를 hint로.
+   - `n≥30` grain이 없고 present grain만 있으면(thin sample) → **높음 불가**. 가장 fine한 present grain의 `mae>0.85` 또는 `|bias|>0.45`이면 **"주의"**, 그 외 **최대 "보통"**(코덱스 재검토 보강 — 교육청/LH n=12~13·|bias| 큼 케이스가 "주의"로 가는 경로 명시).
    - 전 grain 미스(신규 at) → `predConfidence(predSource)` fallback이되 **최대 "보통" cap, "높음" 금지**(코덱스 P0-2). `basis='sample'`.
 2. **전역 임계값 3단계** (사정률 정확도; sd_err로 tail-risk 반영 — 코덱스 P1-4):
    - **높음**: `n≥30` AND `mae≤0.55` AND `|bias|≤0.20` AND `sd_err≤0.65`
@@ -108,6 +108,7 @@ WITH base AS (
   - 한전(높음)/군시설(보통 cap)/지자체(보통)/경기도 고양시(보통) 케이스
   - **grain lookup P0-1**: AG_BA n=5 존재 + AG n=80 존재 → AG로 tier(첫 히트 강등 안 됨)
   - **fallback cap P0-2**: accMap 전 grain 미스 + pred_source N≥200 → 최대 "보통"("높음" 아님)
+  - **thin present grain**: n<30 grain만 존재 + mae>0.85(또는 |bias|>0.45) → "주의" / 그 외 → "보통"(높음 아님)
   - g2b_auto format
 - `npx vite build` 통과.
 - **drift 테스트 (코덱스 P2)**: `agency_accuracy_map`과 `pred_bias_map`의 (grain,key1,key2,n,bias)가 동일한지 SQL FULL JOIN 대조(base 조건 일치 보증). 핵심 기관 mae가 /accuracy 체크3과 일치 확인.
