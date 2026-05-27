@@ -1079,6 +1079,8 @@ ${baseInfo}
     return{total:preds.length,matched:matched.length,pending:pending.length,cancelled:cancelled.length,expired:expired.length,avgErr,bias,within05,byType}},[predictions]);
   // 예측 리스트 발주기관 드랍/검색 옵션 (file_upload 예측의 distinct ag, 가나다순)
   const agOptions=useMemo(()=>{const s=new Set();(predictions||[]).forEach(x=>{if(x.source==='file_upload'&&x.ag)s.add(x.ag)});return[...s].sort((a,b)=>a.localeCompare(b,'ko'))},[predictions]);
+  // br1(1순위사정율) 조회 맵 — 예측 리스트 "실제 1위 사정률" 표시·오차를 ar1 대신 br1 기준으로 (표시 전용; actual_adj_rate/검증 인프라는 ar1 유지)
+  const recBr1=useMemo(()=>{const m=new Map();for(const r of recs){if(r&&r.id!=null&&r.br1!=null)m.set(r.id,Number(r.br1))}return m},[recs]);
   const compList=useMemo(()=>{const p=(predictions||[]).filter(x=>x.source==='file_upload');let list;
     // 기본: expired 자동 제외 (명시적 expired 필터 선택 시에만 표시)
     if(compFilter==="matched")list=p.filter(x=>x.match_status==="matched");
@@ -2531,6 +2533,7 @@ ${baseInfo}
               const data=compList.map(p=>{
                 const finalRec=getFinalRecommendation(p);
                 const finalAdj=finalRec.adj;const finalBid=finalRec.bid;
+                const actBr1=p.matched_record_id!=null?(recBr1.get(p.matched_record_id)??null):null;
                 const optWin=finalBid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(finalBid)<=Number(p.actual_bid_amount)&&Number(finalBid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
                 return{
                   "공고명":p.pn||"",
@@ -2554,8 +2557,8 @@ ${baseInfo}
                   "순수예측 투찰금액":p.pred_bid_amount||"",
                   "예측소스":p.pred_source||"",
                   // 입찰 후 결과
-                  "실제 1위 사정률(100%)":p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4):"",
-                  "오차(추천-실제)":finalAdj!=null&&p.actual_adj_rate!=null?(Number(finalAdj)-Number(p.actual_adj_rate)).toFixed(4):"",
+                  "실제 1위 사정률(100%)":actBr1!=null?actBr1.toFixed(4):"",
+                  "오차(추천-실제)":finalAdj!=null&&actBr1!=null?((100+Number(finalAdj))-actBr1).toFixed(4):"",
                   "실제1위금액":p.actual_bid_amount||"",
                   "실제1위업체":p.actual_winner||"",
                   "참여업체수":p.actual_participant_count||"",
@@ -2731,7 +2734,7 @@ ${baseInfo}
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 사정률(100%)</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 투찰금</th>
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
-              <th style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제 1위 사정률(100%)</th>
+              <th title="1순위사정율(br1) 기준 — 1순위 투찰금에서 역산한 사정률. 예가/기초(ar1) 아님. 오차·v8오차도 br1 기준." style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제 1위 사정률(100%)</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>오차</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:"#5dca96",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}} title="v8 예측 사정률 (발주사→발주유형→전체 fallback)">v8 사정률(100%)</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:"#5dca96",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}} title="v8 사정률 - 실제 1위 사정률">v8 오차</th>
@@ -2748,11 +2751,13 @@ ${baseInfo}
               // v8 사정률
               const v8Info=v8Map[p.id]||null;
               const v8Rate=v8Info?.rate??null;
-              const v8Err=(v8Rate!=null&&p.actual_adj_rate!=null)?v8Rate-Number(p.actual_adj_rate):null;
+              // 실측 1위 사정률 = br1(1순위사정율, 100-base). 표시·오차 산출에 사용 (actual_adj_rate/검증 인프라는 ar1 유지)
+              const actBr1=p.matched_record_id!=null?(recBr1.get(p.matched_record_id)??null):null;
+              const v8Err=(v8Rate!=null&&actBr1!=null)?(100+v8Rate)-actBr1:null;
               const v8ErrColor=v8Err==null?C.txd:(Math.abs(v8Err)<0.3?"#5dca96":Math.abs(v8Err)<1?"#d4a834":"#e24b4a");
               // Phase 23-5: 실측 방향 힌트 (리스트용, 셀 폭 고려해 글리프 축소)
               const biasArrow=getBiasArrow(predBiasMap,{at:p.at,ag:p.ag,ba:p.ba});
-              const optErr=(finalAdj!=null&&p.actual_adj_rate!=null)?Number(finalAdj)-Number(p.actual_adj_rate):null;
+              const optErr=(finalAdj!=null&&actBr1!=null)?(100+Number(finalAdj))-actBr1:null;
               const isAnomaly=optErr!=null&&Math.abs(optErr)>5;
               const errColor=isAnomaly?"#e24b4a":optErr!=null?(Math.abs(optErr)<0.3?"#5dca96":Math.abs(optErr)<1?"#d4a834":"#e24b4a"):C.txd;
               const canWin=!isAnomaly&&finalBid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(finalBid)<=Number(p.actual_bid_amount)&&Number(finalBid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
@@ -2760,7 +2765,7 @@ ${baseInfo}
               // 수의계약: is_negotiation 플래그 기준 (복수예가 메커니즘 미적용)
               const isSuui=!isYuchal&&p.is_negotiation===true&&p.actual_adj_rate==null;
               // 데이터대기: 경쟁입찰인데 bid_records에 사정률 미입력된 불완전 레코드
-              const isDataWait=!isYuchal&&!isSuui&&p.match_status==="matched"&&p.actual_adj_rate==null;
+              const isDataWait=!isYuchal&&!isSuui&&p.match_status==="matched"&&actBr1==null;
               // 취소 공고: pn 텍스트 (취소)/[취소] 매치 + 매칭 전 (matched·expired 아님)
               const isCanc=p.match_status!=="matched"&&p.match_status!=="expired"&&isCancelledPred(p);
               // AI 권장은 이제 최종 추천에 영향 없음 (참고용 탭에서만 확인)
@@ -2797,7 +2802,7 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:(isHighConf&&!finalRec.jongsim&&finalRec.floorSafe!==false)?"#5dca96":C.gold,fontWeight:700}}>
                   {finalRec.jongsim?<span style={{fontSize:10,color:C.txd}}>—</span>:((finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):"")}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11,whiteSpace:"nowrap"}}>{p.open_date||""}</td>
-                <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":isDataWait?"#8a93a8":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:isDataWait?<span style={{fontSize:10}}>데이터대기</span>:p.actual_adj_rate!=null?(100+Number(p.actual_adj_rate)).toFixed(4)+"%":""}</td>
+                <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":isDataWait?"#8a93a8":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:isDataWait?<span style={{fontSize:10}}>데이터대기</span>:actBr1!=null?actBr1.toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui||isDataWait?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:"#5dca96"}} title={v8Info?`소스: ${v8Info.source} · 범위: ${v8Info.scope} · 표본: ${v8Info.sampleSize}건 · 신뢰도: ${v8Info.confidence}`:""}>
                   {v8Rate!=null?(100+v8Rate).toFixed(4)+"%":<span style={{color:C.txd,fontSize:10}}>—</span>}</td>
