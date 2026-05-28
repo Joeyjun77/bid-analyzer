@@ -18,6 +18,7 @@ eq(rateBucket(100.349), '100.3', 'rateBucket 100.349');
 eq(rateBucket(null), null, 'rateBucket null');
 
 // 3. intensityLevel — 점유율 기반 8단계 인덱스(0 최빈~7 희귀) + n<=2 최하 override
+eq(intensityLevel(48, 48), 0, '최빈 대비 100%(48/48, count>2) → 0');
 eq(intensityLevel(50, 100), 0, 'share 0.50 → 0');
 eq(intensityLevel(40, 100), 0, 'share 0.40 → 0');
 eq(intensityLevel(35, 100), 1, 'share 0.35 → 1');
@@ -46,9 +47,11 @@ eq(f.rows.length, 4, '한전 표시행 4(제외행 포함)');
 eq(f.freqBr1.get('100.3'), 2, 'br1 100.3 버킷 2(제외행 미집계)');
 eq(f.freqBr1.get('99.7'), 1, 'br1 99.7 버킷 1');
 eq(f.totalBr1, 3, 'br1 총 집계 3');
+eq(f.maxBr1, 2, 'br1 최빈 버킷 카운트 2');
 eq(f.freqAr1.get('100.3'), 2, 'ar1 100.3 버킷 2');
 eq(f.freqAr1.get('99.7'), 1, 'ar1 99.7 버킷 1');
 eq(f.totalAr1, 3, 'ar1 총 집계 3');
+eq(f.maxAr1, 2, 'ar1 최빈 버킷 카운트 2');
 eq(f.br1Stats.n, 3, 'br1 통계 n=3(제외행 미집계)');
 eq(f.ar1Stats.n, 3, 'ar1 통계 n=3(제외행 미집계)');
 near(f.br1Stats.mean, (100.33+100.34+99.71)/3, 'br1 평균');

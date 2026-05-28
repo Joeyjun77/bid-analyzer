@@ -13,11 +13,11 @@ export function rateBucket(v){
   return (Math.round(Number(v) * 10) / 10).toFixed(1);
 }
 
-// 점유율(count/total) → 강조 단계 인덱스 0(최빈)~7(희귀). n<=2는 점유율 무관 최하(7).
-// 상위 구간(0~3)은 임계 간격을 촘촘히 둬 색·크기 변화를 크게, 중간 이하(4~7)는 거의 수렴.
-export function intensityLevel(count, total){
-  if (!count || count <= 2 || !total) return 7;
-  const s = count / total;
+// (count/denom) → 강조 단계 인덱스 0(최강)~7(약). denom=그 발주처 최빈 버킷 카운트 → 최빈값은 1.0=인덱스0.
+// count<=2는 비율 무관 최하(7). 상위(0~3)는 임계를 촘촘히 둬 색·크기 변화 크게, 중간 이하(4~7)는 수렴.
+export function intensityLevel(count, denom){
+  if (!count || count <= 2 || !denom) return 7;
+  const s = count / denom;
   if (s >= 0.40) return 0;
   if (s >= 0.30) return 1;
   if (s >= 0.22) return 2;
@@ -78,10 +78,13 @@ export function buildG2BFrequency(recs, opts){
   }
   const totalBr1 = [...freqBr1.values()].reduce((a, b) => a + b, 0);
   const totalAr1 = [...freqAr1.values()].reduce((a, b) => a + b, 0);
+  const maxBr1 = freqBr1.size ? Math.max(...freqBr1.values()) : 0; // 최빈 버킷 카운트 (강조 분모)
+  const maxAr1 = freqAr1.size ? Math.max(...freqAr1.values()) : 0;
   return {
     rows,
     freqBr1, freqAr1,
     totalBr1, totalAr1,
+    maxBr1, maxAr1,
     br1Stats: stat(nB, sB, sqB),
     ar1Stats: stat(nA, sA, sqA),
   };

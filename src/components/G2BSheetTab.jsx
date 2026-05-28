@@ -30,7 +30,7 @@ const matchAgency = (name, query) => {
 
 // 빈도 강조 8단계 점유율 구간 (INTENSITY_STYLE 인덱스와 1:1 대응). 정보 모달용.
 const LEGEND_ROWS = [
-  { name: "최빈", range: "점유율 ≥ 40%" },
+  { name: "최빈", range: "최빈 대비 ≥ 40%" },
   { name: "",     range: "30 ~ 40%" },
   { name: "",     range: "22 ~ 30%" },
   { name: "",     range: "15 ~ 22%" },
@@ -141,8 +141,8 @@ export default function G2BSheetTab({ recs }){
     if (raw == null || !freq) return null;
     const key = rateBucket(raw);
     const count = (hl === "br1" ? freq.freqBr1 : freq.freqAr1).get(key) || 0;
-    const total = hl === "br1" ? freq.totalBr1 : freq.totalAr1;
-    return { count, st: INTENSITY_STYLE[intensityLevel(count, total)] };
+    const denom = hl === "br1" ? freq.maxBr1 : freq.maxAr1; // 그 발주처 최빈 버킷 카운트 대비
+    return { count, st: INTENSITY_STYLE[intensityLevel(count, denom)] };
   };
 
   const listCell = (col, r) => {
@@ -298,13 +298,13 @@ export default function G2BSheetTab({ recs }){
               <button onClick={() => setShowLegend(false)} style={btnStyle}>닫기 ✕</button>
             </div>
             <div style={{ fontSize: 11, color: C.txm, marginBottom: 10, lineHeight: 1.6 }}>
-              1위사정율·발주처사정율 값(0.1% 버킷)이 그 발주처에서 나온 <b style={{ color: C.txt }}>점유율</b>(출현 횟수 ÷ 발주처 전체 집계 건수)에 따라 8단계로 글씨 크기·색을 다르게 표시합니다. 최빈에 가까울수록 크고 색이 강합니다.
+              1위사정율·발주처사정율 값(0.1% 버킷)을 그 발주처에서 <b style={{ color: C.txt }}>가장 많이 나온 값(최빈) 대비 출현 횟수 비율</b>로 8단계 표시합니다. 즉 그 발주처의 최빈 사정율이 가장 크고 강한 색이며, 적게 나올수록 작고 회색으로 수렴합니다. 셀 옆 (N)은 그 값의 실제 출현 횟수입니다.
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ color: C.txd }}>
                   <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600 }}>단계</th>
-                  <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600 }}>점유율</th>
+                  <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600 }}>최빈 대비</th>
                   <th style={{ textAlign: "right", padding: "4px 6px", fontWeight: 600 }}>표시 예시</th>
                 </tr>
               </thead>
