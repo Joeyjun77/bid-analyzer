@@ -10,6 +10,8 @@
 
 설계 문서: `docs/superpowers/specs/2026-05-28-g2b-sheet-frequency-highlight-design.md`
 
+> **정정 (2026-05-28, 구현 후):** "투찰하한율" 컬럼은 `fr`(법정 하한율)이 아니라 **1위사정율 `br1`** 로 확정. 강조 대상 = `br1`·`ar1` 두 사정율, 둘 다 0.1% 버킷(`rateBucket`)으로 빈도 집계. 아래 Task 1 코드의 `frKey`/`freqFr`/`fr` 서술은 `rateBucket`/`freqBr1`/`br1`로 대체됨. 최종 구현 기준은 `src/lib/g2bFrequency.js`·`src/components/G2BSheetTab.jsx`.
+
 ---
 
 ## File Structure
