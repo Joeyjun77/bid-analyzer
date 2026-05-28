@@ -34,7 +34,6 @@ const LIST_COLS = [
   { label: "입찰공고번호", get: r => r.pn_no, fmt: v => v || "—" },
   { label: "공고명",      get: r => r.pn,    fmt: v => v || "—", ellipsis: 260 },
   { label: "발주처",      get: r => r.ag,    fmt: v => v || "—", ellipsis: 160 },
-  { label: "업종",        get: r => r.cat,   fmt: v => v || "—" },
   { label: "예비기초금액", get: r => r.ba,    fmt: fmtNum, num: true },
   { label: "A값",         get: r => r.av,    fmt: fmtNum, num: true },
   { label: "1위사정율",   get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1" },
