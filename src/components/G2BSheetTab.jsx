@@ -150,21 +150,27 @@ export default function G2BSheetTab({ recs }){
         <input value={agSearch} onChange={e => setAgSearch(e.target.value)} placeholder="발주처 검색" style={{ ...selectStyle, minWidth: 220 }} />
       </div>
 
-      {!agency && (
-        <div style={{ padding: 16, background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 8 }}>
-          <div style={{ color: C.txm, fontSize: 12, marginBottom: 10 }}>발주처를 선택하세요. (전체 {agencyList.length.toLocaleString()}개 기관 · 빈출 상위 표시)</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {agencyList.filter(([k]) => !agSearch || k.includes(agSearch)).slice(0, 40).map(([k, n]) => (
-              <button key={k} onClick={() => { setAgency(k); setAgSearch(""); setPage(0); }}
-                style={{ padding: "4px 10px", fontSize: 11, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 12, cursor: "pointer" }}>
-                {k} <span style={{ color: C.txd }}>({n})</span>
-              </button>
-            ))}
+      {(!agency || agSearch) && (() => {
+        const matches = agencyList.filter(([k]) => !agSearch || k.includes(agSearch));
+        return (
+          <div style={{ padding: 16, background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 8 }}>
+            <div style={{ color: C.txm, fontSize: 12, marginBottom: 10 }}>
+              발주처를 선택하세요. (전체 {agencyList.length.toLocaleString()}개 기관 · {agSearch ? `검색 결과 ${matches.length}개` : "빈출 상위 표시"})
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {matches.slice(0, 40).map(([k, n]) => (
+                <button key={k} onClick={() => { setAgency(k); setAgSearch(""); setPage(0); }}
+                  style={{ padding: "4px 10px", fontSize: 11, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 12, cursor: "pointer" }}>
+                  {k} <span style={{ color: C.txd }}>({n})</span>
+                </button>
+              ))}
+            </div>
+            {agSearch && matches.length === 0 && <div style={{ color: C.txd, fontSize: 12, marginTop: 8 }}>검색 결과 없음 — 정식 기관명 일부로 검색하세요 (예: "한국전력", "경기").</div>}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {agency && freq && (
+      {agency && !agSearch && freq && (
         <div>
           {/* 요약 패널 */}
           <div style={{ padding: "10px 12px", background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 8, marginBottom: 10, fontSize: 12 }}>
