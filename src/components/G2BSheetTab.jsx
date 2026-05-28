@@ -1,12 +1,12 @@
 import React, { useState, useMemo } from "react";
 import { C, PAGE } from "../lib/constants.js";
-import { buildG2BFrequency, intensityLevel, INTENSITY_STYLE, frKey, ar1Bucket, baSegment, topN } from "../lib/g2bFrequency.js";
+import { buildG2BFrequency, intensityLevel, INTENSITY_STYLE, rateBucket, baSegment, topN } from "../lib/g2bFrequency.js";
 
 const fmtNum  = (v) => (v == null || v === "") ? "—" : Number(v).toLocaleString("ko-KR");
 const fmtRate = (v, d = 3) => (v == null || !isFinite(Number(v))) ? "—" : Number(v).toFixed(d);
-const AR1_CAVEAT = "추첨 결과 관측값(복수예비가 C(15,4)) — 발주처의 의도적 선택 아님";
+const RATE_CAVEAT = "추첨 결과 관측값(복수예비가 C(15,4)) — 발주처의 의도적 선택 아님";
 
-// G2B 25컬럼 (순서 유지). hl: 'fr'|'ar1' 인 컬럼만 빈도 강조. 없는 값은 "—".
+// G2B 25컬럼 (순서 유지). hl: 'br1'(1위사정율)·'ar1'(발주처사정율) 컬럼만 발주처별 빈도 강조. 없는 값은 "—".
 const COLS = [
   { label: "번호",            get: (r, i) => i + 1,  fmt: v => v },
   { label: "입찰공고번호",     get: r => r.pn_no,     fmt: v => v || "—" },
@@ -18,7 +18,7 @@ const COLS = [
   { label: "A값",             get: r => r.av,        fmt: fmtNum, num: true },
   { label: "예정가격",         get: r => r.xp,        fmt: fmtNum, num: true },
   { label: "순공사원가",       get: r => r.raw_cost,  fmt: fmtNum, num: true },
-  { label: "투찰하한율",       get: r => r.fr,        fmt: v => fmtRate(v, 3), num: true, hl: "fr" },
+  { label: "투찰하한율(1위사정율)", get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1" },
   { label: "발주처사정율",     get: r => r.ar1,       fmt: v => fmtRate(v, 4), num: true, hl: "ar1" },
   { label: "발주가로값",       get: () => null,       fmt: () => "—" },
   { label: "(자사)사정율",     get: () => null,       fmt: () => "—" },
@@ -94,11 +94,11 @@ export default function G2BSheetTab({ recs }){
     if (!col.hl || raw == null || !freq){
       return <td key={col.label} style={{ padding: "4px 6px", textAlign: col.num ? "right" : "left", whiteSpace: "nowrap", color: C.txt, fontSize: 12 }}>{text}</td>;
     }
-    const key = col.hl === "fr" ? frKey(raw) : ar1Bucket(raw);
-    const count = (col.hl === "fr" ? freq.freqFr : freq.freqAr1).get(key) || 0;
-    const total = col.hl === "fr" ? freq.totalFr : freq.totalAr1;
+    const key = rateBucket(raw);
+    const count = (col.hl === "br1" ? freq.freqBr1 : freq.freqAr1).get(key) || 0;
+    const total = col.hl === "br1" ? freq.totalBr1 : freq.totalAr1;
     const st = INTENSITY_STYLE[intensityLevel(count, total)];
-    const tip = (col.hl === "ar1" ? AR1_CAVEAT + " · " : "") + `이 발주처에서 ${count}회 출현`;
+    const tip = RATE_CAVEAT + " · " + `이 발주처에서 ${count}회 출현`;
     return (
       <td key={col.label} title={tip} style={{ padding: "4px 6px", textAlign: "right", whiteSpace: "nowrap", ...st }}>
         {text} <span style={{ fontSize: 10, color: C.txd, fontWeight: 400 }}>({count})</span>
@@ -142,11 +142,16 @@ export default function G2BSheetTab({ recs }){
               <span style={{ color: C.txm }}>표시 {freq.rows.length.toLocaleString()}행</span>
             </div>
             <div style={{ color: C.txm, marginBottom: 4 }}>
-              자주 나온 낙찰하한율:&nbsp;
-              {topN(freq.freqFr).map(([v, n]) => <span key={v} style={{ color: C.gold, marginRight: 10 }}>{v}% ({n})</span>)}
+              자주 나온 1위사정율 <span title={RATE_CAVEAT} style={{ color: C.txd, cursor: "help" }}>ⓘ</span>:&nbsp;
+              {topN(freq.freqBr1).map(([v, n]) => <span key={v} style={{ color: C.gold, marginRight: 10 }}>{v}% ({n})</span>)}
+              {freq.br1Stats.mean != null && (
+                <span style={{ color: C.txd, marginLeft: 8 }}>
+                  · 평균 {freq.br1Stats.mean.toFixed(3)}% ±σ {freq.br1Stats.sd != null ? freq.br1Stats.sd.toFixed(3) : "—"} (n={freq.br1Stats.n})
+                </span>
+              )}
             </div>
             <div style={{ color: C.txm }}>
-              자주 나온 사정율 <span title={AR1_CAVEAT} style={{ color: C.txd, cursor: "help" }}>ⓘ</span>:&nbsp;
+              자주 나온 발주처사정율 <span title={RATE_CAVEAT} style={{ color: C.txd, cursor: "help" }}>ⓘ</span>:&nbsp;
               {topN(freq.freqAr1).map(([v, n]) => <span key={v} style={{ color: "#5dca96", marginRight: 10 }}>{v}% ({n})</span>)}
               {freq.ar1Stats.mean != null && (
                 <span style={{ color: C.txd, marginLeft: 8 }}>
