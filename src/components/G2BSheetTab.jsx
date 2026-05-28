@@ -179,7 +179,6 @@ export default function G2BSheetTab({ recs }){
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <span style={{ fontWeight: 700, color: C.gold, fontSize: 13 }}>G2B 양식 — 발주처별 빈도</span>
-        <button onClick={() => setShowLegend(true)} title="사정율 빈도 강조 단계 설명" style={{ width: 20, height: 20, borderRadius: 10, background: C.bg3, color: C.gold, border: "1px solid " + C.bdr, cursor: "pointer", fontSize: 12, fontWeight: 700, padding: 0, lineHeight: 1 }}>?</button>
         <span style={{ color: C.bdr }}>|</span>
         <input value={agSearch} onChange={e => setAgSearch(e.target.value)} placeholder="발주처 검색" style={{ ...selectStyle, minWidth: 220 }} />
       </div>
@@ -255,6 +254,7 @@ export default function G2BSheetTab({ recs }){
                 </select>
               </span>
             ))}
+            <button onClick={() => setShowLegend(true)} title="사정율 빈도 강조 단계 설명" style={{ marginLeft: "auto", width: 22, height: 22, borderRadius: 11, background: C.bg3, color: C.gold, border: "1px solid " + C.bdr, cursor: "pointer", fontSize: 13, fontWeight: 700, padding: 0, lineHeight: 1 }}>?</button>
           </div>
 
           {/* 테이블 */}
