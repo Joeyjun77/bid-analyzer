@@ -28,16 +28,17 @@ export function intensityLevel(count, denom){
   return 7;
 }
 
-// 8단계 강조 스타일 (인덱스 0~7). 최빈에 가까울수록 색 변화 大·글씨 大,
-// 중간(4)부터는 크기·색이 거의 같아지도록 수렴.
+// 8단계 강조 스타일 (인덱스 0~7). 엑셀(G2B) 규칙 차용 — 빈도 높을수록 글씨 大 + 밝은 파랑.
+// 엑셀은 셀 배경색으로 표현했으나 여기선 다크 테마라 글자색(color)으로 적용(배경 채움 미사용).
+// 상위(0~4)는 파랑 채도 변화 크게(엑셀 95B3D7→DCE6F2 계열 차용), 중간 이하(5~7)는 회색으로 수렴.
 export const INTENSITY_STYLE = [
-  { fontWeight: 800, fontSize: 19, color: '#ff4d4d' }, // 0 최빈 (가장 강한 강조)
-  { fontWeight: 800, fontSize: 17, color: '#ff8c2b' }, // 1
-  { fontWeight: 700, fontSize: 16, color: '#ffc233' }, // 2
-  { fontWeight: 700, fontSize: 14, color: '#d4a834' }, // 3
-  { fontWeight: 500, fontSize: 13, color: '#8fb89a' }, // 4 수렴 시작
-  { fontWeight: 400, fontSize: 12, color: '#79798f' }, // 5
-  { fontWeight: 400, fontSize: 12, color: '#6f6f86' }, // 6 (5·6·7 거의 동일)
+  { fontWeight: 800, fontSize: 22, color: '#3d8bff' }, // 0 최빈 (가장 크고 선명한 파랑)
+  { fontWeight: 800, fontSize: 19, color: '#5fa0fa' }, // 1
+  { fontWeight: 700, fontSize: 17, color: '#84b8f2' }, // 2
+  { fontWeight: 700, fontSize: 15, color: '#aacef0' }, // 3
+  { fontWeight: 600, fontSize: 14, color: '#cfe0f3' }, // 4 (엑셀 DCE6F2) — 수렴 시작
+  { fontWeight: 400, fontSize: 12, color: '#9298ac' }, // 5
+  { fontWeight: 400, fontSize: 12, color: '#7c8194' }, // 6 (5·6·7 거의 동일)
   { fontWeight: 400, fontSize: 12, color: '#666680' }, // 7 희귀
 ];
 
