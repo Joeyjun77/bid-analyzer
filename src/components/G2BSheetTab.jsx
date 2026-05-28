@@ -50,7 +50,7 @@ export default function G2BSheetTab({ recs }){
   const [era, setEra] = useState("");
   const [seg, setSeg] = useState("");
   const [page, setPage] = useState(0);
-  const [sortDesc, setSortDesc] = useState(true); // 최근 개찰일 기본 정렬
+  const [sort, setSort] = useState("od_desc"); // 정렬: od_desc(기본)·od_asc·br1_freq·ar1_freq
   const [detailRow, setDetailRow] = useState(null);
 
   // 발주처 목록 (canonical_ag, 건수 desc)
@@ -84,14 +84,19 @@ export default function G2BSheetTab({ recs }){
 
   const sortedRows = useMemo(() => {
     if (!freq) return [];
-    const rs = [...freq.rows];
-    rs.sort((a, b) => {
+    const byOd = (a, b, desc) => {
       const x = a.od || "", y = b.od || "";
-      if (x !== y) return sortDesc ? (y < x ? -1 : 1) : (x < y ? -1 : 1);
-      return sortDesc ? (b.id || 0) - (a.id || 0) : (a.id || 0) - (b.id || 0); // 동일 개찰일 id tiebreaker
-    });
+      if (x !== y) return desc ? (y < x ? -1 : 1) : (x < y ? -1 : 1);
+      return desc ? (b.id || 0) - (a.id || 0) : (a.id || 0) - (b.id || 0); // 동일 개찰일 id tiebreaker
+    };
+    const cnt = (map, v) => { const k = rateBucket(v); return k != null ? (map.get(k) || 0) : -1; };
+    const rs = [...freq.rows];
+    if (sort === "od_asc") rs.sort((a, b) => byOd(a, b, false));
+    else if (sort === "br1_freq") rs.sort((a, b) => { const d = cnt(freq.freqBr1, b.br1) - cnt(freq.freqBr1, a.br1); return d !== 0 ? d : byOd(a, b, true); });
+    else if (sort === "ar1_freq") rs.sort((a, b) => { const d = cnt(freq.freqAr1, b.ar1) - cnt(freq.freqAr1, a.ar1); return d !== 0 ? d : byOd(a, b, true); });
+    else rs.sort((a, b) => byOd(a, b, true)); // od_desc 기본
     return rs;
-  }, [freq, sortDesc]);
+  }, [freq, sort]);
 
   const pageSize = PAGE || 50;
   const pageCount = Math.ceil(sortedRows.length / pageSize);
@@ -152,7 +157,7 @@ export default function G2BSheetTab({ recs }){
           <div style={{ padding: "10px 12px", background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 8, marginBottom: 10, fontSize: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <span style={{ fontWeight: 700, color: C.txt }}>{agency}</span>
-              <button onClick={() => { setAgency(""); setCat(""); setEra(""); setSeg(""); setPage(0); }} style={{ padding: "2px 8px", fontSize: 10, background: "transparent", color: C.txd, border: "1px solid " + C.bdr, borderRadius: 5, cursor: "pointer" }}>발주처 변경</button>
+              <button onClick={() => { setAgency(""); setCat(""); setEra(""); setSeg(""); setSort("od_desc"); setPage(0); }} style={{ padding: "2px 8px", fontSize: 10, background: "transparent", color: C.txd, border: "1px solid " + C.bdr, borderRadius: 5, cursor: "pointer" }}>발주처 변경</button>
               <span style={{ color: C.txm }}>표시 {freq.rows.length.toLocaleString()}행</span>
             </div>
             <div style={{ color: C.txm, marginBottom: 4 }}>
@@ -185,7 +190,12 @@ export default function G2BSheetTab({ recs }){
               <option value="">금액대 전체</option>
               {filterOpts.segs.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <button onClick={() => setSortDesc(d => !d)} style={btnStyle}>개찰일 {sortDesc ? "최신순 ↓" : "오래된순 ↑"}</button>
+            <select value={sort} onChange={e => { setSort(e.target.value); setPage(0); }} style={selectStyle} title="정렬 기준">
+              <option value="od_desc">개찰일 최신순</option>
+              <option value="od_asc">개찰일 오래된순</option>
+              <option value="br1_freq">1위사정율 빈도 많은순</option>
+              <option value="ar1_freq">발주처사정율 빈도 많은순</option>
+            </select>
           </div>
 
           {/* 테이블 */}
