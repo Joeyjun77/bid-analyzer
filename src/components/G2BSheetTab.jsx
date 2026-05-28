@@ -90,6 +90,7 @@ export default function G2BSheetTab({ recs }){
   const agencyList = useMemo(() => {
     const m = new Map();
     for (const r of (recs || [])){
+      if (r.ar1 == null) continue; // 발주처사정율 있는 완전 건만 집계 (리스트 표시와 일치)
       const k = r.canonical_ag || r.ag;
       if (!k) continue;
       m.set(k, (m.get(k) || 0) + 1);
@@ -103,6 +104,7 @@ export default function G2BSheetTab({ recs }){
     const cats = new Set(), segs = new Set();
     for (const r of (recs || [])){
       if ((r.canonical_ag || r.ag) !== agency) continue;
+      if (r.ar1 == null) continue; // 완전 건만 (리스트 표시와 일치)
       if (r.cat) cats.add(r.cat);
       segs.add(baSegment(r.ba));
     }

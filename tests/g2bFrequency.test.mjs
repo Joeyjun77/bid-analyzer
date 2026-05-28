@@ -40,10 +40,12 @@ const recs = [
   { canonical_ag:'한전', ag:'한전 경기', cat:'전기', ba:2e8, br1:100.34, ar1:100.34 }, // br1·ar1 둘 다 100.3 버킷
   { canonical_ag:'한전', ag:'한전 경기', cat:'통신', ba:2e8, br1:99.71,  ar1:99.71 },
   { canonical_ag:'한전', ag:'한전 경기', cat:'전기', ba:2e8, br1:100.90, ar1:100.91, is_excluded:true }, // 표시O 빈도X
+  { canonical_ag:'한전', ag:'한전 경기', cat:'전기', ba:null, av:0, br1:90.5, ar1:null }, // ar1 없는 불완전 건 → 표시·빈도 모두 제외
   { canonical_ag:'고양시', ag:'고양시', cat:'전기', ba:2e8, br1:100.10, ar1:100.10 }, // 다른 발주처
 ];
 const f = buildG2BFrequency(recs, { agencyKey:'한전' });
-eq(f.rows.length, 4, '한전 표시행 4(제외행 포함)');
+eq(f.rows.length, 4, '한전 표시행 4(is_excluded 포함, ar1 없는 불완전 건 제외)');
+eq(f.freqBr1.get('90.5'), undefined, 'ar1 없는 행의 br1(90.5) 빈도 미집계');
 eq(f.freqBr1.get('100.3'), 2, 'br1 100.3 버킷 2(제외행 미집계)');
 eq(f.freqBr1.get('99.7'), 1, 'br1 99.7 버킷 1');
 eq(f.totalBr1, 3, 'br1 총 집계 3');

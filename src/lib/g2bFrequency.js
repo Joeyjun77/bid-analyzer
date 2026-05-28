@@ -49,7 +49,8 @@ const stat = (n, sum, sumSq) => {
 
 // 선택 발주처 행 추출 + br1/ar1 0.1% 버킷 빈도맵 + 각 평균/표준편차.
 // recs: 전체 bid_records 배열. opts: { agencyKey, cat?, era?, seg? }
-// 표시행(rows)은 제외행 포함, 빈도/통계 집계만 is_excluded 제외.
+// ar1(발주처사정율) 없는 불완전 건은 표시·빈도 모두 제외(g2b_auto 자동수집 등은 기초금액·사정율 미수집,
+//   br1이 낙찰가율이라 사정율 뷰를 오염시킴). 빈도/통계 집계는 추가로 is_excluded 제외.
 export function buildG2BFrequency(recs, opts){
   const { agencyKey, cat = null, era = null, seg = null } = opts || {};
   const rows = [];
@@ -63,6 +64,7 @@ export function buildG2BFrequency(recs, opts){
     if (cat && r.cat !== cat) continue;
     if (era && (r.era_v2 || r.era) !== era) continue;
     if (seg && baSegment(r.ba) !== seg) continue;
+    if (r.ar1 == null) continue; // 발주처사정율 없는 불완전 건 제외 (자동수집 낙찰결과 등 — 기초금액·사정율 미수집)
     rows.push(r);
     if (r.is_excluded === true) continue; // 비정상 건(is_excluded) 빈도/통계 제외
     const bk = rateBucket(r.br1);
