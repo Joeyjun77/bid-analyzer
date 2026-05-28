@@ -1,4 +1,4 @@
-import { baSegment, rateBucket, intensityLevel, buildG2BFrequency } from "../src/lib/g2bFrequency.js";
+import { baSegment, rateBucket, intensityLevel, INTENSITY_STYLE, buildG2BFrequency } from "../src/lib/g2bFrequency.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${JSON.stringify(got)} expect ${JSON.stringify(exp)}`); bad++; } };
@@ -17,14 +17,21 @@ eq(rateBucket(99.671), '99.7', 'rateBucket 반올림 99.7');
 eq(rateBucket(100.349), '100.3', 'rateBucket 100.349');
 eq(rateBucket(null), null, 'rateBucket null');
 
-// 3. intensityLevel — 점유율 기반 + n<=2 희귀 override
-eq(intensityLevel(50, 100), 'top', 'share 0.50 → top');
-eq(intensityLevel(40, 100), 'top', 'share 0.40 → top');
-eq(intensityLevel(20, 100), 'high', 'share 0.20 → high');
-eq(intensityLevel(10, 100), 'mid', 'share 0.10 → mid');
-eq(intensityLevel(4, 100), 'rare', 'share 0.04 → rare');
-eq(intensityLevel(2, 4), 'rare', 'n<=2 override → rare');
-eq(intensityLevel(0, 100), 'rare', 'count 0 → rare');
+// 3. intensityLevel — 점유율 기반 8단계 인덱스(0 최빈~7 희귀) + n<=2 최하 override
+eq(intensityLevel(50, 100), 0, 'share 0.50 → 0');
+eq(intensityLevel(40, 100), 0, 'share 0.40 → 0');
+eq(intensityLevel(35, 100), 1, 'share 0.35 → 1');
+eq(intensityLevel(25, 100), 2, 'share 0.25 → 2');
+eq(intensityLevel(20, 100), 3, 'share 0.20 → 3');
+eq(intensityLevel(12, 100), 4, 'share 0.12 → 4');
+eq(intensityLevel(10, 100), 4, 'share 0.10 → 4');
+eq(intensityLevel(8, 100), 5, 'share 0.08 → 5');
+eq(intensityLevel(4, 100), 6, 'share 0.04 → 6');
+eq(intensityLevel(3, 200), 7, 'share 0.015 → 7');
+eq(intensityLevel(2, 4), 7, 'n<=2 override → 7');
+eq(intensityLevel(0, 100), 7, 'count 0 → 7');
+eq(INTENSITY_STYLE.length, 8, 'INTENSITY_STYLE 8단계 배열');
+eq(typeof INTENSITY_STYLE[0].color, 'string', 'INTENSITY_STYLE[0] 스타일 객체');
 
 // 4. buildG2BFrequency — 발주처 필터 + br1/ar1 빈도 집계 + 제외행 처리
 const recs = [

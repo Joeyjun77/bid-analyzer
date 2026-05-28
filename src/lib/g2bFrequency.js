@@ -13,23 +13,33 @@ export function rateBucket(v){
   return (Math.round(Number(v) * 10) / 10).toFixed(1);
 }
 
-// 점유율(count/total) → 강조 단계. n<=2는 점유율 무관 희귀.
+// 점유율(count/total) → 강조 단계 인덱스 0(최빈)~7(희귀). n<=2는 점유율 무관 최하(7).
+// 상위 구간(0~3)은 임계 간격을 촘촘히 둬 색·크기 변화를 크게, 중간 이하(4~7)는 거의 수렴.
 export function intensityLevel(count, total){
-  if (!count || count <= 2 || !total) return 'rare';
-  const share = count / total;
-  if (share >= 0.40) return 'top';
-  if (share >= 0.15) return 'high';
-  if (share >= 0.05) return 'mid';
-  return 'rare';
+  if (!count || count <= 2 || !total) return 7;
+  const s = count / total;
+  if (s >= 0.40) return 0;
+  if (s >= 0.30) return 1;
+  if (s >= 0.22) return 2;
+  if (s >= 0.15) return 3;
+  if (s >= 0.10) return 4;
+  if (s >= 0.06) return 5;
+  if (s >= 0.03) return 6;
+  return 7;
 }
 
-// 강조 단계 → 스타일 (글씨크기 + 색). 색은 C 팔레트 값과 정렬. 출현 多 → 大·진한색.
-export const INTENSITY_STYLE = {
-  top:  { fontWeight: 700, fontSize: 15, color: '#d4a834' },
-  high: { fontWeight: 600, fontSize: 13, color: '#5dca96' },
-  mid:  { fontWeight: 400, fontSize: 12, color: '#e8e8ef' },
-  rare: { fontWeight: 400, fontSize: 12, color: '#666680' },
-};
+// 8단계 강조 스타일 (인덱스 0~7). 최빈에 가까울수록 색 변화 大·글씨 大,
+// 중간(4)부터는 크기·색이 거의 같아지도록 수렴.
+export const INTENSITY_STYLE = [
+  { fontWeight: 800, fontSize: 19, color: '#ff4d4d' }, // 0 최빈 (가장 강한 강조)
+  { fontWeight: 800, fontSize: 17, color: '#ff8c2b' }, // 1
+  { fontWeight: 700, fontSize: 16, color: '#ffc233' }, // 2
+  { fontWeight: 700, fontSize: 14, color: '#d4a834' }, // 3
+  { fontWeight: 500, fontSize: 13, color: '#8fb89a' }, // 4 수렴 시작
+  { fontWeight: 400, fontSize: 12, color: '#79798f' }, // 5
+  { fontWeight: 400, fontSize: 12, color: '#6f6f86' }, // 6 (5·6·7 거의 동일)
+  { fontWeight: 400, fontSize: 12, color: '#666680' }, // 7 희귀
+];
 
 const stat = (n, sum, sumSq) => {
   const mean = n ? sum / n : null;
