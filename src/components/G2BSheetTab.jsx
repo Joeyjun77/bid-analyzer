@@ -47,7 +47,6 @@ export default function G2BSheetTab({ recs }){
   const [agency, setAgency] = useState("");
   const [agSearch, setAgSearch] = useState("");
   const [cat, setCat] = useState("");
-  const [era, setEra] = useState("");
   const [seg, setSeg] = useState("");
   const [page, setPage] = useState(0);
   const [sortChain, setSortChain] = useState([{ key: "od", dir: "desc" }]); // 다중 정렬(활성화 순=우선순위). key: od·ar1·br1, dir: desc·asc
@@ -66,21 +65,20 @@ export default function G2BSheetTab({ recs }){
 
   // 선택 발주처 기준 필터 옵션 (distinct)
   const filterOpts = useMemo(() => {
-    if (!agency) return { cats: [], eras: [], segs: [] };
-    const cats = new Set(), eras = new Set(), segs = new Set();
+    if (!agency) return { cats: [], segs: [] };
+    const cats = new Set(), segs = new Set();
     for (const r of (recs || [])){
       if ((r.canonical_ag || r.ag) !== agency) continue;
       if (r.cat) cats.add(r.cat);
-      const e = r.era_v2 || r.era; if (e) eras.add(e);
       segs.add(baSegment(r.ba));
     }
-    return { cats: [...cats].sort(), eras: [...eras].sort(), segs: [...segs].sort() };
+    return { cats: [...cats].sort(), segs: [...segs].sort() };
   }, [recs, agency]);
 
   const freq = useMemo(() => {
     if (!agency) return null;
-    return buildG2BFrequency(recs, { agencyKey: agency, cat: cat || null, era: era || null, seg: seg || null });
-  }, [recs, agency, cat, era, seg]);
+    return buildG2BFrequency(recs, { agencyKey: agency, cat: cat || null, seg: seg || null });
+  }, [recs, agency, cat, seg]);
 
   const sortedRows = useMemo(() => {
     if (!freq) return [];
@@ -172,7 +170,7 @@ export default function G2BSheetTab({ recs }){
           <div style={{ padding: "10px 12px", background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 8, marginBottom: 10, fontSize: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <span style={{ fontWeight: 700, color: C.txt }}>{agency}</span>
-              <button onClick={() => { setAgency(""); setCat(""); setEra(""); setSeg(""); setSortChain([{ key: "od", dir: "desc" }]); setPage(0); }} style={{ padding: "2px 8px", fontSize: 10, background: "transparent", color: C.txd, border: "1px solid " + C.bdr, borderRadius: 5, cursor: "pointer" }}>발주처 변경</button>
+              <button onClick={() => { setAgency(""); setCat(""); setSeg(""); setSortChain([{ key: "od", dir: "desc" }]); setPage(0); }} style={{ padding: "2px 8px", fontSize: 10, background: "transparent", color: C.txd, border: "1px solid " + C.bdr, borderRadius: 5, cursor: "pointer" }}>발주처 변경</button>
               <span style={{ color: C.txm }}>표시 {freq.rows.length.toLocaleString()}행</span>
             </div>
             <div style={{ color: C.txm, marginBottom: 4 }}>
@@ -196,10 +194,6 @@ export default function G2BSheetTab({ recs }){
             <select value={cat} onChange={e => { setCat(e.target.value); setPage(0); }} style={selectStyle}>
               <option value="">업종 전체</option>
               {filterOpts.cats.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select value={era} onChange={e => { setEra(e.target.value); setPage(0); }} style={selectStyle}>
-              <option value="">era 전체</option>
-              {filterOpts.eras.map(e => <option key={e} value={e}>{e}</option>)}
             </select>
             <select value={seg} onChange={e => { setSeg(e.target.value); setPage(0); }} style={selectStyle}>
               <option value="">금액대 전체</option>
