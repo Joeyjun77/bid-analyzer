@@ -6,16 +6,17 @@ const fmtNum  = (v) => (v == null || v === "") ? "—" : Number(v).toLocaleStrin
 const fmtRate = (v, d = 3) => (v == null || !isFinite(Number(v))) ? "—" : Number(v).toFixed(d);
 const RATE_CAVEAT = "추첨 결과 관측값(복수예비가 C(15,4)) — 발주처의 의도적 선택 아님";
 
-// 리스트 표시 컬럼 (가로 스크롤 방지 — 10개만). 1위사정율·발주처사정율을 좌측 prominent 위치에. hl=빈도 강조.
+// 리스트 표시 컬럼 (가로 스크롤 최소화). 개찰일 첫 컬럼, 1위사정율·발주처사정율은 A값과 1순위업체 사이. hl=빈도 강조.
 const LIST_COLS = [
+  { label: "개찰일",      get: r => r.od,    fmt: v => v || "—" },
   { label: "입찰공고번호", get: r => r.pn_no, fmt: v => v || "—" },
-  { label: "1위사정율",   get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1" },
-  { label: "발주처사정율", get: r => r.ar1,   fmt: v => fmtRate(v, 4), num: true, hl: "ar1" },
   { label: "공고명",      get: r => r.pn,    fmt: v => v || "—", ellipsis: 260 },
   { label: "발주처",      get: r => r.ag,    fmt: v => v || "—", ellipsis: 160 },
   { label: "업종",        get: r => r.cat,   fmt: v => v || "—" },
   { label: "예비기초금액", get: r => r.ba,    fmt: fmtNum, num: true },
   { label: "A값",         get: r => r.av,    fmt: fmtNum, num: true },
+  { label: "1위사정율",   get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1" },
+  { label: "발주처사정율", get: r => r.ar1,   fmt: v => fmtRate(v, 4), num: true, hl: "ar1" },
   { label: "1순위업체",   get: r => r.co,    fmt: v => v || "—", ellipsis: 140 },
   { label: "1순위업체 사업자번호", get: r => r.co_no, fmt: v => v || "—" },
 ];
