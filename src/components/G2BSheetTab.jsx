@@ -78,14 +78,15 @@ export default function G2BSheetTab({ recs }){
     const rs = [...freq.rows];
     rs.sort((a, b) => {
       const x = a.od || "", y = b.od || "";
-      return sortDesc ? (y < x ? -1 : y > x ? 1 : 0) : (x < y ? -1 : x > y ? 1 : 0);
+      if (x !== y) return sortDesc ? (y < x ? -1 : 1) : (x < y ? -1 : 1);
+      return sortDesc ? (b.id || 0) - (a.id || 0) : (a.id || 0) - (b.id || 0); // 동일 개찰일 id tiebreaker (배치 임포트 동률 비결정성 방지)
     });
     return rs;
   }, [freq, sortDesc]);
 
   const pageSize = PAGE || 50;
-  const pageRows = sortedRows.slice(page * pageSize, (page + 1) * pageSize);
   const pageCount = Math.ceil(sortedRows.length / pageSize);
+  const pageRows = useMemo(() => sortedRows.slice(page * pageSize, (page + 1) * pageSize), [sortedRows, page, pageSize]);
 
   const cell = (col, r, i) => {
     const raw = col.get(r, page * pageSize + i);
@@ -121,7 +122,7 @@ export default function G2BSheetTab({ recs }){
           <div style={{ color: C.txm, fontSize: 12, marginBottom: 10 }}>발주처를 선택하세요. (전체 {agencyList.length.toLocaleString()}개 기관 · 빈출 상위 표시)</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {agencyList.filter(([k]) => !agSearch || k.includes(agSearch)).slice(0, 40).map(([k, n]) => (
-              <button key={k} onClick={() => { setAgency(k); setPage(0); }}
+              <button key={k} onClick={() => { setAgency(k); setAgSearch(""); setPage(0); }}
                 style={{ padding: "4px 10px", fontSize: 11, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 12, cursor: "pointer" }}>
                 {k} <span style={{ color: C.txd }}>({n})</span>
               </button>
