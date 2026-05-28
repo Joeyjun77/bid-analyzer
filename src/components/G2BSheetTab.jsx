@@ -18,7 +18,7 @@ const COLS = [
   { label: "A값",             get: r => r.av,        fmt: fmtNum, num: true },
   { label: "예정가격",         get: r => r.xp,        fmt: fmtNum, num: true },
   { label: "순공사원가",       get: r => r.raw_cost,  fmt: fmtNum, num: true },
-  { label: "투찰하한율(1위사정율)", get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1" },
+  { label: "1위사정율",        get: r => r.br1,       fmt: v => fmtRate(v, 4), num: true, hl: "br1" },
   { label: "발주처사정율",     get: r => r.ar1,       fmt: v => fmtRate(v, 4), num: true, hl: "ar1" },
   { label: "발주가로값",       get: () => null,       fmt: () => "—" },
   { label: "(자사)사정율",     get: () => null,       fmt: () => "—" },
