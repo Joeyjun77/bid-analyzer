@@ -6,6 +6,28 @@ const fmtNum  = (v) => (v == null || v === "") ? "—" : Number(v).toLocaleStrin
 const fmtRate = (v, d = 3) => (v == null || !isFinite(Number(v))) ? "—" : Number(v).toFixed(d);
 const RATE_CAVEAT = "추첨 결과 관측값(복수예비가 C(15,4)) — 발주처의 의도적 선택 아님";
 
+// 발주처 검색 약칭 → 정식명 부분문자열. 입력이 정식명에 직접 포함되지 않아도 약칭으로 매칭. 키는 normAg(소문자·공백제거) 기준.
+const AGENCY_ALIASES = {
+  "한전": ["한국전력"],
+  "엘에이치": ["한국토지주택공사"], "lh": ["한국토지주택공사"], "토지주택": ["한국토지주택공사"],
+  "농어촌": ["한국농어촌공사"],
+  "코레일": ["한국철도공사"], "철도공사": ["한국철도공사"],
+  "수공": ["한국수자원공사"], "수자원": ["한국수자원공사"],
+  "도로공사": ["한국도로공사"],
+  "군부대": ["육군", "해군", "공군", "국군", "군단", "사령부", "비행단", "함대", "해병"],
+  "군시설": ["육군", "해군", "공군", "국군", "군단", "사령부", "비행단", "함대", "해병"],
+};
+const normAg = (s) => String(s || "").toLowerCase().replace(/\s+/g, "");
+// name이 query(또는 약칭 확장)에 매칭되는지. 빈 query는 전부 매칭.
+const matchAgency = (name, query) => {
+  const q = normAg(query);
+  if (!q) return true;
+  const n = normAg(name);
+  if (n.includes(q)) return true;
+  const exps = AGENCY_ALIASES[q];
+  return exps ? exps.some(e => n.includes(normAg(e))) : false;
+};
+
 // 리스트 표시 컬럼 (가로 스크롤 최소화). 개찰일 첫 컬럼, 1위사정율·발주처사정율은 A값과 1순위업체 사이. hl=빈도 강조.
 const LIST_COLS = [
   { label: "개찰일",      get: r => r.od,    fmt: v => v || "—" },
@@ -151,7 +173,7 @@ export default function G2BSheetTab({ recs }){
       </div>
 
       {(!agency || agSearch) && (() => {
-        const matches = agencyList.filter(([k]) => !agSearch || k.includes(agSearch));
+        const matches = agencyList.filter(([k]) => matchAgency(k, agSearch));
         return (
           <div style={{ padding: 16, background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 8 }}>
             <div style={{ color: C.txm, fontSize: 12, marginBottom: 10 }}>
@@ -165,7 +187,7 @@ export default function G2BSheetTab({ recs }){
                 </button>
               ))}
             </div>
-            {agSearch && matches.length === 0 && <div style={{ color: C.txd, fontSize: 12, marginTop: 8 }}>검색 결과 없음 — 정식 기관명 일부로 검색하세요 (예: "한국전력", "경기").</div>}
+            {agSearch && matches.length === 0 && <div style={{ color: C.txd, fontSize: 12, marginTop: 8 }}>검색 결과 없음 — 정식명 일부 또는 약칭(예: 한전, LH, 농어촌, 코레일, 군부대)으로 검색하세요.</div>}
           </div>
         );
       })()}
