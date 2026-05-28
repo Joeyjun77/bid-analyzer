@@ -70,7 +70,7 @@ export default function G2BSheetTab({ recs }){
   const [agSearch, setAgSearch] = useState("");
   const [cat, setCat] = useState("");
   const [seg, setSeg] = useState("");
-  const [page, setPage] = useState(0);
+  const [listShow, setListShow] = useState(PAGE || 50); // 더보기 표시 건수
   const [sortChain, setSortChain] = useState([{ key: "od", dir: "desc" }]); // 다중 정렬(활성화 순=우선순위). key: od·ar1·br1, dir: desc·asc
   const [detailRow, setDetailRow] = useState(null);
 
@@ -121,9 +121,8 @@ export default function G2BSheetTab({ recs }){
     return rs;
   }, [freq, sortChain]);
 
-  const pageSize = PAGE || 50;
-  const pageCount = Math.ceil(sortedRows.length / pageSize);
-  const pageRows = useMemo(() => sortedRows.slice(page * pageSize, (page + 1) * pageSize), [sortedRows, page, pageSize]);
+  const step = PAGE || 50;
+  const shownRows = useMemo(() => sortedRows.slice(0, listShow), [sortedRows, listShow]);
 
   // 사정율 셀 빈도 강조 정보 (count + style). raw 없거나 freq 없으면 null.
   const rateInfo = (hl, raw) => {
@@ -158,7 +157,7 @@ export default function G2BSheetTab({ recs }){
       if (prev.some(s => s.key === key)) return prev.map(s => s.key === key ? { key, dir } : s);
       return [...prev, { key, dir }];
     });
-    setPage(0);
+    setListShow(step);
   };
 
   const selectStyle = { padding: "4px 8px", fontSize: 12, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 5 };
@@ -181,7 +180,7 @@ export default function G2BSheetTab({ recs }){
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {matches.slice(0, 40).map(([k, n]) => (
-                <button key={k} onClick={() => { setAgency(k); setAgSearch(""); setPage(0); }}
+                <button key={k} onClick={() => { setAgency(k); setAgSearch(""); setListShow(step); }}
                   style={{ padding: "4px 10px", fontSize: 11, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 12, cursor: "pointer" }}>
                   {k} <span style={{ color: C.txd }}>({n})</span>
                 </button>
@@ -198,7 +197,7 @@ export default function G2BSheetTab({ recs }){
           <div style={{ padding: "10px 12px", background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 8, marginBottom: 10, fontSize: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <span style={{ fontWeight: 700, color: C.txt }}>{agency}</span>
-              <button onClick={() => { setAgency(""); setCat(""); setSeg(""); setSortChain([{ key: "od", dir: "desc" }]); setPage(0); }} style={{ padding: "2px 8px", fontSize: 10, background: "transparent", color: C.txd, border: "1px solid " + C.bdr, borderRadius: 5, cursor: "pointer" }}>발주처 변경</button>
+              <button onClick={() => { setAgency(""); setCat(""); setSeg(""); setSortChain([{ key: "od", dir: "desc" }]); setListShow(step); }} style={{ padding: "2px 8px", fontSize: 10, background: "transparent", color: C.txd, border: "1px solid " + C.bdr, borderRadius: 5, cursor: "pointer" }}>발주처 변경</button>
               <span style={{ color: C.txm }}>표시 {freq.rows.length.toLocaleString()}행</span>
             </div>
             <div style={{ color: C.txm, marginBottom: 4 }}>
@@ -219,11 +218,11 @@ export default function G2BSheetTab({ recs }){
 
           {/* 필터바 */}
           <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <select value={cat} onChange={e => { setCat(e.target.value); setPage(0); }} style={selectStyle}>
+            <select value={cat} onChange={e => { setCat(e.target.value); setListShow(step); }} style={selectStyle}>
               <option value="">업종 전체</option>
               {filterOpts.cats.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <select value={seg} onChange={e => { setSeg(e.target.value); setPage(0); }} style={selectStyle}>
+            <select value={seg} onChange={e => { setSeg(e.target.value); setListShow(step); }} style={selectStyle}>
               <option value="">금액대 전체</option>
               {filterOpts.segs.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -255,7 +254,7 @@ export default function G2BSheetTab({ recs }){
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((r, i) => (
+                {shownRows.map((r, i) => (
                   <tr key={r.id || i} style={{ borderTop: "1px solid " + C.bdr, background: i % 2 ? C.bg2 : "transparent" }}>
                     {LIST_COLS.map(c => listCell(c, r))}
                     <td style={{ padding: "4px 8px", textAlign: "center" }}>
@@ -267,14 +266,13 @@ export default function G2BSheetTab({ recs }){
             </table>
           </div>
 
-          {/* 페이지네이션 */}
-          {pageCount > 1 && (
-            <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8, fontSize: 12, color: C.txm }}>
-              <button disabled={page === 0} onClick={() => setPage(p => Math.max(0, p - 1))} style={{ ...btnStyle, cursor: page === 0 ? "default" : "pointer", opacity: page === 0 ? 0.4 : 1 }}>이전</button>
-              <span>{page + 1} / {pageCount}</span>
-              <button disabled={page >= pageCount - 1} onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} style={{ ...btnStyle, cursor: page >= pageCount - 1 ? "default" : "pointer", opacity: page >= pageCount - 1 ? 0.4 : 1 }}>다음</button>
-            </div>
-          )}
+          {/* 더보기 + 건수 표시 */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", fontSize: 11 }}>
+            <span style={{ color: C.txd }}>{Math.min(listShow, sortedRows.length).toLocaleString()} / {sortedRows.length.toLocaleString()}건 표시</span>
+            {listShow < sortedRows.length
+              ? <button onClick={() => setListShow(n => n + step)} style={{ padding: "6px 20px", fontSize: 11, background: C.bg3, border: "1px solid " + C.bdr, borderRadius: 6, color: C.gold, cursor: "pointer", fontWeight: 500 }}>더보기 (+{step}건)</button>
+              : <span style={{ color: C.txd }}>전체 표시 완료</span>}
+          </div>
         </div>
       )}
 
