@@ -11,6 +11,7 @@ import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
+import G2BSheetTab from "./components/G2BSheetTab.jsx";
 import OwnScoreInput from "./components/OwnScoreInput.jsx";
 import { calcEffectiveFloorRate, formatFloorDual } from "./lib/effectiveFloor.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH, predConfidence, predConfidenceV2 } from "./lib/utils.js";
@@ -1325,7 +1326,7 @@ ${baseInfo}
         })()}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="quality" ch="🔬 검증"/><Tb id="agency_predict_v6" ch="💎 발주처 예측 V6"/><Tb id="agency_floor" ch="🎯 발주사 하한"/><Tb id="v2_preview" ch="🧪 V2 미리보기"/><Tb id="chat" ch="AI 상담"/>{isAdmin&&<Tb id="admin" ch="👤 관리자"/>}</div>
+        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="quality" ch="🔬 검증"/><Tb id="agency_predict_v6" ch="💎 발주처 예측 V6"/><Tb id="agency_floor" ch="🎯 발주사 하한"/><Tb id="g2b_sheet" ch="G2B 양식"/><Tb id="v2_preview" ch="🧪 V2 미리보기"/><Tb id="chat" ch="AI 상담"/>{isAdmin&&<Tb id="admin" ch="👤 관리자"/>}</div>
         <UserBadge/>
       </div>
     </div>
@@ -3211,6 +3212,9 @@ ${baseInfo}
 
     {/* ═══ 발주사 하한 예측 탭 (V1, 2026-05-13) ═══ */}
     {tab==="agency_floor"&&<AgencyFloorTab/>}
+
+    {/* ═══ G2B 양식 탭 ═══ */}
+    {tab==="g2b_sheet"&&<G2BSheetTab recs={recs}/>}
 
     {/* ═══ AI 상담 탭 ═══ */}
     {tab==="chat"&&(()=>{
