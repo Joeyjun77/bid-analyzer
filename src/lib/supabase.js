@@ -8,10 +8,11 @@ const JSON_H = { "Content-Type": "application/json" };
 // ─── Supabase CRUD ─────────────────────────────────────────
 // 전송 최적화: select=* 대신 클라이언트가 실제 읽는 컬럼만 (모바일 초기 로딩 개선).
 // calcStats 입력(br1,is_excluded,bp,xp,at,od,ag) 전부 포함 → 통계·예측 출력 불변.
-// 드롭: dedup_key,co_no,g2b,reg,excl_reason,joint_contract_type,is_joint_contract,era_v2,is_duplicate,input_date,ar0,br0,raw_cost,has_a (어느 소비처도 미읽음).
+// 드롭: dedup_key,g2b,reg,excl_reason,joint_contract_type,is_joint_contract,era_v2,is_duplicate,input_date,ar0,br0,raw_cost,has_a (어느 소비처도 미읽음).
+// co_no(1순위업체 사업자번호): G2B 양식 탭이 표시에 사용 → 포함. (cols 변경 시 bidCache가 자동 full 재동기화)
 // 주의: PAGE는 1000 고정 — PostgREST max-rows 캡이 1000이라 limit 상향해도 1000만 반환(실측: limit=5000→Content-Range 0-999/*). 올리면 페이지네이션 조기종료로 통계 오염.
 // 주의: 읽기 전용 select — 이 결과를 그대로 sbUpsert에 넘기면 dedup_key 등 누락으로 깨짐. 쓰기 경로엔 쓰지 말 것.
-export const BID_RECORDS_COLS="id,pn,pn_no,ag,at,ep,ba,av,xp,floor_price,ar1,co,bp,br1,base_ratio,pc,od,cat,era,fr,created_at,work_cat,canonical_ag,is_excluded,contract_method";
+export const BID_RECORDS_COLS="id,pn,pn_no,ag,at,ep,ba,av,xp,floor_price,ar1,co,co_no,bp,br1,base_ratio,pc,od,cat,era,fr,created_at,work_cat,canonical_ag,is_excluded,contract_method";
 // 전송 최적화 2: 순차 66회 → 동시성 제한 병렬 페치 (모바일 벽시계 단축).
 // 완전성 보장: 종료조건은 원본과 동일(페이지<PAGE이면 끝 — 1000캡이라 마지막 페이지만 <1000).
 // 페이지 실패는 1회 재시도 후 throw → 부분 로드(통계 오염) 대신 호출부 에러 처리로 넘김.
