@@ -93,6 +93,20 @@ export function buildG2BFrequency(recs, opts){
   };
 }
 
+// 전체 데이터 기준 br1/ar1 0.1% 버킷 빈도 — 엑셀(G2B)과 동일하게 강조를 "전역 빈도"로 산출.
+// (검증: 글씨크기 vs 전체빈도 r=0.56 ≫ 발주사빈도 r=0.18). ar1 없는 불완전 건·is_excluded 제외.
+export function buildGlobalRateFreq(recs){
+  const freqBr1 = new Map(), freqAr1 = new Map();
+  for (const r of (recs || [])){
+    if (r.ar1 == null || r.is_excluded === true) continue;
+    const bk = rateBucket(r.br1); if (bk != null) freqBr1.set(bk, (freqBr1.get(bk) || 0) + 1);
+    const ak = rateBucket(r.ar1); if (ak != null) freqAr1.set(ak, (freqAr1.get(ak) || 0) + 1);
+  }
+  const maxBr1 = freqBr1.size ? Math.max(...freqBr1.values()) : 0;
+  const maxAr1 = freqAr1.size ? Math.max(...freqAr1.values()) : 0;
+  return { freqBr1, freqAr1, maxBr1, maxAr1 };
+}
+
 // 빈도맵 → 상위 N개 [value, count] (count desc).
 export function topN(freqMap, n = 3){
   return [...freqMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);

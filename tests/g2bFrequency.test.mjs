@@ -1,4 +1,4 @@
-import { baSegment, rateBucket, intensityLevel, INTENSITY_STYLE, buildG2BFrequency } from "../src/lib/g2bFrequency.js";
+import { baSegment, rateBucket, intensityLevel, INTENSITY_STYLE, buildG2BFrequency, buildGlobalRateFreq } from "../src/lib/g2bFrequency.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${JSON.stringify(got)} expect ${JSON.stringify(exp)}`); bad++; } };
@@ -83,6 +83,17 @@ eq(fc.freqAr1.get('99.7'), 1, 'cat 필터 후 ar1 99.7');
   eq(f1.ar1Stats.sd, null, 'ar1 n<2 → sd null');
   near(f1.br1Stats.mean, 100.4, 'n=1 br1 mean');
   near(f1.ar1Stats.mean, 100.5, 'n=1 ar1 mean');
+}
+
+// 8. buildGlobalRateFreq — 전체 데이터(발주사 무관) 기준, ar1 없는·제외 건 제거
+{
+  const g = buildGlobalRateFreq(recs);
+  eq(g.freqBr1.get('100.3'), 2, '전역 br1 100.3 = 2 (한전 2건)');
+  eq(g.freqBr1.get('100.1'), 1, '전역 br1 100.1 = 1 (고양시 포함)');
+  eq(g.freqAr1.get('100.1'), 1, '전역 ar1 100.1 = 1');
+  eq(g.maxBr1, 2, '전역 br1 최빈 카운트 2');
+  eq(g.maxAr1, 2, '전역 ar1 최빈 카운트 2');
+  eq(g.freqBr1.get('90.5'), undefined, '전역도 ar1 없는 행 미집계');
 }
 
 console.log(bad===0 ? 'OK g2bFrequency (모든 케이스 통과)' : `FAIL: ${bad}건`);

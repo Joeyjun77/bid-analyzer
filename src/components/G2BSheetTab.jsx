@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { C, PAGE } from "../lib/constants.js";
-import { buildG2BFrequency, intensityLevel, INTENSITY_STYLE, rateBucket, baSegment, topN } from "../lib/g2bFrequency.js";
+import { buildG2BFrequency, buildGlobalRateFreq, intensityLevel, INTENSITY_STYLE, rateBucket, baSegment, topN } from "../lib/g2bFrequency.js";
 
 const fmtNum  = (v) => (v == null || v === "") ? "—" : Number(v).toLocaleString("ko-KR");
 const fmtRate = (v, d = 3) => (v == null || !isFinite(Number(v))) ? "—" : Number(v).toFixed(d);
@@ -116,6 +116,9 @@ export default function G2BSheetTab({ recs }){
     return buildG2BFrequency(recs, { agencyKey: agency, cat: cat || null, seg: seg || null });
   }, [recs, agency, cat, seg]);
 
+  // 셀 강조는 엑셀과 동일하게 "전체 데이터" 빈도 기준 (발주사 무관, recs 전체 1회 산출).
+  const globalFreq = useMemo(() => buildGlobalRateFreq(recs), [recs]);
+
   const sortedRows = useMemo(() => {
     if (!freq) return [];
     const cnt = (map, v) => { const k = rateBucket(v); return k != null ? (map.get(k) || 0) : -1; };
@@ -140,10 +143,10 @@ export default function G2BSheetTab({ recs }){
 
   // 사정율 셀 빈도 강조 정보 (count + style). raw 없거나 freq 없으면 null.
   const rateInfo = (hl, raw) => {
-    if (raw == null || !freq) return null;
+    if (raw == null || !globalFreq) return null;
     const key = rateBucket(raw);
-    const count = (hl === "br1" ? freq.freqBr1 : freq.freqAr1).get(key) || 0;
-    const denom = hl === "br1" ? freq.maxBr1 : freq.maxAr1; // 그 발주처 최빈 버킷 카운트 대비
+    const count = (hl === "br1" ? globalFreq.freqBr1 : globalFreq.freqAr1).get(key) || 0;
+    const denom = hl === "br1" ? globalFreq.maxBr1 : globalFreq.maxAr1; // 전체 데이터 최빈 버킷 카운트 대비
     return { count, st: INTENSITY_STYLE[intensityLevel(count, denom)] };
   };
 
@@ -155,7 +158,7 @@ export default function G2BSheetTab({ recs }){
     if (col.hl){
       const info = rateInfo(col.hl, raw);
       if (info){
-        const tip = RATE_CAVEAT + " · " + `이 발주처에서 ${info.count}회 출현`;
+        const tip = RATE_CAVEAT + " · " + `전체 데이터에서 ${info.count}회 출현`;
         return <td key={col.label} title={tip} style={{ ...base, ...info.st }}>{text} <span style={{ fontSize: 10, color: C.txd, fontWeight: 400 }}>({info.count})</span></td>;
       }
     }
@@ -300,7 +303,7 @@ export default function G2BSheetTab({ recs }){
               <button onClick={() => setShowLegend(false)} style={btnStyle}>닫기 ✕</button>
             </div>
             <div style={{ fontSize: 11, color: C.txm, marginBottom: 10, lineHeight: 1.6 }}>
-              1위사정율·발주처사정율 값(0.1% 버킷)을 그 발주처에서 <b style={{ color: C.txt }}>가장 많이 나온 값(최빈) 대비 출현 횟수 비율</b>로 8단계 표시합니다. 즉 그 발주처의 최빈 사정율이 가장 크고 강한 색이며, 적게 나올수록 작고 회색으로 수렴합니다. 셀 옆 (N)은 그 값의 실제 출현 횟수입니다.
+1위사정율·발주처사정율 값(0.1% 버킷)을 <b style={{ color: C.txt }}>전체 데이터에서 가장 많이 나온 값(최빈) 대비 출현 횟수 비율</b>로 8단계 표시합니다(엑셀 G2B와 동일하게 발주사 무관·전체 기준). 즉 전체에서 흔한 사정율일수록 크고 밝은 파랑, 드물수록 작고 회색으로 수렴합니다. 셀 옆 (N)은 전체 데이터에서의 출현 횟수입니다.
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
