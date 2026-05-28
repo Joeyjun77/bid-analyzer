@@ -39,7 +39,7 @@ export const INTENSITY_STYLE = {
 
 // 선택 발주처 행 추출 + fr/ar1 빈도맵 + ar1 평균/표준편차.
 // recs: 전체 bid_records 배열. opts: { agencyKey, cat?, era?, seg? }
-// 표시행(rows)은 제외행 포함, 빈도/통계 집계만 is_excluded·is_duplicate 제외.
+// 표시행(rows)은 제외행 포함, 빈도/통계 집계만 is_excluded 제외.
 export function buildG2BFrequency(recs, opts){
   const { agencyKey, cat = null, era = null, seg = null } = opts || {};
   const rows = [];
@@ -53,7 +53,7 @@ export function buildG2BFrequency(recs, opts){
     if (era && (r.era_v2 || r.era) !== era) continue;
     if (seg && baSegment(r.ba) !== seg) continue;
     rows.push(r);
-    if (r.is_excluded === true || r.is_duplicate === true) continue; // 빈도/통계 제외
+    if (r.is_excluded === true) continue; // 비정상 건(is_excluded) 빈도/통계 제외
     const fk = frKey(r.fr);
     if (fk != null) freqFr.set(fk, (freqFr.get(fk) || 0) + 1);
     const ak = ar1Bucket(r.ar1);

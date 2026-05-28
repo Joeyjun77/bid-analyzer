@@ -54,5 +54,21 @@ const fc = buildG2BFrequency(recs, { agencyKey:'한전', cat:'통신' });
 eq(fc.rows.length, 1, 'cat=통신 표시행 1');
 eq(fc.freqFr.get('88.000'), 1, 'cat 필터 후 fr 88.0');
 
+// 7. ar1Stats.sd — 샘플표준편차(n-1) 검증
+{
+  const vals = [100.32, 100.34, 99.71];
+  const m = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const expSd = Math.sqrt(vals.reduce((s, x) => s + (x - m) ** 2, 0) / (vals.length - 1));
+  near(f.ar1Stats.sd, expSd, 'ar1 sd 샘플표준편차(n-1)');
+}
+
+// 8. n<2 → sd null, mean 존재 (0으로 나누기 가드)
+{
+  const f1 = buildG2BFrequency([{ canonical_ag:'X', ag:'X', ba:2e8, fr:90, ar1:100.5 }], { agencyKey:'X' });
+  eq(f1.ar1Stats.n, 1, 'n=1');
+  eq(f1.ar1Stats.sd, null, 'n<2 → sd null');
+  near(f1.ar1Stats.mean, 100.5, 'n=1 mean');
+}
+
 console.log(bad===0 ? 'OK g2bFrequency (모든 케이스 통과)' : `FAIL: ${bad}건`);
 process.exit(bad===0 ? 0 : 1);
