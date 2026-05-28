@@ -28,6 +28,18 @@ const matchAgency = (name, query) => {
   return exps ? exps.some(e => n.includes(normAg(e))) : false;
 };
 
+// 빈도 강조 8단계 점유율 구간 (INTENSITY_STYLE 인덱스와 1:1 대응). 정보 모달용.
+const LEGEND_ROWS = [
+  { name: "최빈", range: "점유율 ≥ 40%" },
+  { name: "",     range: "30 ~ 40%" },
+  { name: "",     range: "22 ~ 30%" },
+  { name: "",     range: "15 ~ 22%" },
+  { name: "중간", range: "10 ~ 15%" },
+  { name: "",     range: "6 ~ 10%" },
+  { name: "",     range: "3 ~ 6%" },
+  { name: "희귀", range: "< 3% (또는 2회 이하)" },
+];
+
 // 리스트 표시 컬럼 (가로 스크롤 최소화). 개찰일 첫 컬럼, 1위사정율·발주처사정율은 A값과 1순위업체 사이. hl=빈도 강조.
 const LIST_COLS = [
   { label: "개찰일",      get: r => r.od,    fmt: v => v || "—" },
@@ -72,6 +84,7 @@ export default function G2BSheetTab({ recs }){
   const [listShow, setListShow] = useState(PAGE || 50); // 더보기 표시 건수
   const [sortChain, setSortChain] = useState([{ key: "od", dir: "desc" }]); // 다중 정렬(활성화 순=우선순위). key: od·ar1·br1, dir: desc·asc
   const [detailRow, setDetailRow] = useState(null);
+  const [showLegend, setShowLegend] = useState(false);
 
   // 발주처 목록 (canonical_ag, 건수 desc)
   const agencyList = useMemo(() => {
@@ -166,6 +179,7 @@ export default function G2BSheetTab({ recs }){
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <span style={{ fontWeight: 700, color: C.gold, fontSize: 13 }}>G2B 양식 — 발주처별 빈도</span>
+        <button onClick={() => setShowLegend(true)} title="사정율 빈도 강조 단계 설명" style={{ width: 20, height: 20, borderRadius: 10, background: C.bg3, color: C.gold, border: "1px solid " + C.bdr, cursor: "pointer", fontSize: 12, fontWeight: 700, padding: 0, lineHeight: 1 }}>?</button>
         <span style={{ color: C.bdr }}>|</span>
         <input value={agSearch} onChange={e => setAgSearch(e.target.value)} placeholder="발주처 검색" style={{ ...selectStyle, minWidth: 220 }} />
       </div>
@@ -271,6 +285,40 @@ export default function G2BSheetTab({ recs }){
             {listShow < sortedRows.length
               ? <button onClick={() => setListShow(n => n + step)} style={{ padding: "6px 20px", fontSize: 11, background: C.bg3, border: "1px solid " + C.bdr, borderRadius: 6, color: C.gold, cursor: "pointer", fontWeight: 500 }}>더보기 (+{step}건)</button>
               : <span style={{ color: C.txd }}>전체 표시 완료</span>}
+          </div>
+        </div>
+      )}
+
+      {/* 강조 단계 정보 모달 */}
+      {showLegend && (
+        <div onClick={() => setShowLegend(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 10, padding: 16, maxWidth: 440, width: "100%", maxHeight: "85vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <span style={{ fontWeight: 700, color: C.gold, fontSize: 13 }}>사정율 빈도 강조 단계 (8단계)</span>
+              <button onClick={() => setShowLegend(false)} style={btnStyle}>닫기 ✕</button>
+            </div>
+            <div style={{ fontSize: 11, color: C.txm, marginBottom: 10, lineHeight: 1.6 }}>
+              1위사정율·발주처사정율 값(0.1% 버킷)이 그 발주처에서 나온 <b style={{ color: C.txt }}>점유율</b>(출현 횟수 ÷ 발주처 전체 집계 건수)에 따라 8단계로 글씨 크기·색을 다르게 표시합니다. 최빈에 가까울수록 크고 색이 강합니다.
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ color: C.txd }}>
+                  <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600 }}>단계</th>
+                  <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600 }}>점유율</th>
+                  <th style={{ textAlign: "right", padding: "4px 6px", fontWeight: 600 }}>표시 예시</th>
+                </tr>
+              </thead>
+              <tbody>
+                {INTENSITY_STYLE.map((st, i) => (
+                  <tr key={i} style={{ borderTop: "1px solid " + C.bdr }}>
+                    <td style={{ padding: "5px 6px", color: C.txm, whiteSpace: "nowrap" }}>{i}{LEGEND_ROWS[i].name ? ` · ${LEGEND_ROWS[i].name}` : ""}</td>
+                    <td style={{ padding: "5px 6px", color: C.txm, whiteSpace: "nowrap" }}>{LEGEND_ROWS[i].range}</td>
+                    <td style={{ padding: "5px 6px", textAlign: "right", ...st }}>100.3 <span style={{ fontSize: 10, color: C.txd, fontWeight: 400 }}>(예)</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ fontSize: 10, color: C.txd, marginTop: 10, lineHeight: 1.5 }}>{RATE_CAVEAT}</div>
           </div>
         </div>
       )}
