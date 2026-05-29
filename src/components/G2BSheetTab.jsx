@@ -51,7 +51,7 @@ const LIST_COLS = [
   { label: "1위사정율",   get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1" },
   { label: "발주처사정율", get: r => r.ar1,   fmt: v => fmtRate(v, 4), num: true, hl: "ar1" },
   { label: "1순위업체",   get: r => r.co,    fmt: v => v || "—", ellipsis: 140 },
-  { label: "1순위업체 사업자번호", get: r => r.co_no, fmt: v => v || "—" },
+  { label: "사업자번호",   get: r => r.co_no, fmt: v => v || "—" },
 ];
 
 // 상세 모달용 전체 G2B 항목 (순서 유지). hl: 'br1'·'ar1' 만 빈도 강조. 없는 값은 "—".
