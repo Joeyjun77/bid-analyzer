@@ -41,17 +41,18 @@ const LEGEND_ROWS = [
 ];
 
 // 리스트 표시 컬럼 (가로 스크롤 최소화). 개찰일 첫 컬럼, 1위사정율·발주처사정율은 A값과 1순위업체 사이. hl=빈도 강조.
+// w: table-layout:fixed 컬럼 폭(%). 데이터 95% + 상세 5% = 100% → 컨테이너 폭에 맞춰 가로 스크롤 제거. 텍스트는 셀 안에서 말줄임.
 const LIST_COLS = [
-  { label: "개찰일",      get: r => r.od,    fmt: v => v || "—" },
-  { label: "입찰공고번호", get: r => r.pn_no, fmt: v => v || "—" },
-  { label: "공고명",      get: r => r.pn,    fmt: v => v || "—", ellipsis: 260 },
-  { label: "발주처",      get: r => r.ag,    fmt: v => v || "—", ellipsis: 160 },
-  { label: "예비기초금액", get: r => r.ba,    fmt: fmtNum, num: true },
-  { label: "A값",         get: r => r.av,    fmt: fmtNum, num: true },
-  { label: "1위사정율",   get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1" },
-  { label: "발주처사정율", get: r => r.ar1,   fmt: v => fmtRate(v, 4), num: true, hl: "ar1" },
-  { label: "1순위업체",   get: r => r.co,    fmt: v => v || "—", ellipsis: 140 },
-  { label: "사업자번호",   get: r => r.co_no, fmt: v => v || "—" },
+  { label: "개찰일",      get: r => r.od,    fmt: v => v || "—", w: "8%" },
+  { label: "입찰공고번호", get: r => r.pn_no, fmt: v => v || "—", w: "10%" },
+  { label: "공고명",      get: r => r.pn,    fmt: v => v || "—", w: "13%" },
+  { label: "발주처",      get: r => r.ag,    fmt: v => v || "—", w: "10%" },
+  { label: "예비기초금액", get: r => r.ba,    fmt: fmtNum, num: true, w: "10%" },
+  { label: "A값",         get: r => r.av,    fmt: fmtNum, num: true, w: "8%" },
+  { label: "1위사정율",   get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1", w: "9%" },
+  { label: "발주처사정율", get: r => r.ar1,   fmt: v => fmtRate(v, 4), num: true, hl: "ar1", w: "9%" },
+  { label: "1순위업체",   get: r => r.co,    fmt: v => v || "—", w: "9%" },
+  { label: "사업자번호",   get: r => r.co_no, fmt: v => v || "—", w: "9%" },
 ];
 
 // 상세 모달용 전체 G2B 항목 (순서 유지). hl: 'br1'·'ar1' 만 빈도 강조. 없는 값은 "—".
@@ -153,8 +154,7 @@ export default function G2BSheetTab({ recs }){
   const listCell = (col, r) => {
     const raw = col.get(r);
     const text = col.fmt(raw, r);
-    const base = { padding: "4px 8px", textAlign: col.num ? "right" : "left", whiteSpace: "nowrap" };
-    if (col.ellipsis){ base.maxWidth = col.ellipsis; base.overflow = "hidden"; base.textOverflow = "ellipsis"; }
+    const base = { padding: "4px 8px", textAlign: col.num ? "right" : "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
     if (col.hl){
       const info = rateInfo(col.hl, raw);
       if (info){
@@ -162,7 +162,7 @@ export default function G2BSheetTab({ recs }){
         return <td key={col.label} title={tip} style={{ ...base, ...info.st }}>{text} <span style={{ fontSize: 10, color: C.txd, fontWeight: 400 }}>({info.count})</span></td>;
       }
     }
-    return <td key={col.label} title={col.ellipsis ? String(raw ?? "") : undefined} style={{ ...base, color: C.txt, fontSize: 12 }}>{text}</td>;
+    return <td key={col.label} title={String(raw ?? "")} style={{ ...base, color: C.txt, fontSize: 12 }}>{text}</td>;
   };
 
   // 다중 정렬 컨트롤 — 각 키 독립 on/off·방향, 활성화 순서대로 우선순위 누적.
@@ -263,11 +263,15 @@ export default function G2BSheetTab({ recs }){
           </div>
 
           {/* 테이블 */}
-          <div style={{ overflowX: "auto", border: "1px solid " + C.bdr, borderRadius: 6 }}>
-            <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}>
+          <div style={{ overflowX: "hidden", border: "1px solid " + C.bdr, borderRadius: 6 }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%", tableLayout: "fixed" }}>
+              <colgroup>
+                {LIST_COLS.map(c => <col key={c.label} style={{ width: c.w }} />)}
+                <col style={{ width: "5%" }} />
+              </colgroup>
               <thead>
                 <tr style={{ background: C.bg3, color: C.txd }}>
-                  {LIST_COLS.map(c => <th key={c.label} style={{ padding: "6px 8px", textAlign: c.num ? "right" : "left", whiteSpace: "nowrap", borderBottom: "1px solid " + C.bdr, fontWeight: 600 }}>{c.label}</th>)}
+                  {LIST_COLS.map(c => <th key={c.label} title={c.label} style={{ padding: "6px 8px", textAlign: c.num ? "right" : "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", borderBottom: "1px solid " + C.bdr, fontWeight: 600 }}>{c.label}</th>)}
                   <th style={{ padding: "6px 8px", textAlign: "center", borderBottom: "1px solid " + C.bdr, fontWeight: 600 }}>상세</th>
                 </tr>
               </thead>
