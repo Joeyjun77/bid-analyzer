@@ -1,4 +1,4 @@
-import { baSegment, rateBucket, intensityLevel, INTENSITY_STYLE, buildG2BFrequency, buildGlobalRateFreq } from "../src/lib/g2bFrequency.js";
+import { baSegment, rateBucket, intensityLevel, INTENSITY_STYLE, buildG2BFrequency, buildGlobalRateFreq, buildYearRateFreq } from "../src/lib/g2bFrequency.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${JSON.stringify(got)} expect ${JSON.stringify(exp)}`); bad++; } };
@@ -94,6 +94,35 @@ eq(fc.freqAr1.get('99.7'), 1, 'cat 필터 후 ar1 99.7');
   eq(g.maxBr1, 2, '전역 br1 최빈 카운트 2');
   eq(g.maxAr1, 2, '전역 ar1 최빈 카운트 2');
   eq(g.freqBr1.get('90.5'), undefined, '전역도 ar1 없는 행 미집계');
+}
+
+// 9. buildYearRateFreq — 전체 발주처 기준 년도(od 앞 4자리)별 빈도. ar1 없는·제외·od 결측 제거.
+{
+  const yrecs = [
+    { canonical_ag:'한전', ag:'한전', od:'2024-03-01', br1:100.33, ar1:100.32 },
+    { canonical_ag:'고양시', ag:'고양시', od:'2024-09-10', br1:100.34, ar1:100.10 }, // 같은 2024, br1 100.3 버킷
+    { canonical_ag:'LH', ag:'LH', od:'2025-01-20', br1:99.71, ar1:99.71 },           // 2025
+    { canonical_ag:'한전', ag:'한전', od:'2025-06-06', br1:100.30, ar1:100.31, is_excluded:true }, // 제외
+    { canonical_ag:'한전', ag:'한전', od:null, br1:100.30, ar1:100.30 },              // od 결측 제외
+    { canonical_ag:'한전', ag:'한전', od:'2025-08-08', br1:88.0, ar1:null },          // ar1 없음 제외
+  ];
+  const ym = buildYearRateFreq(yrecs);
+  eq(ym.size, 2, '년도 2개(2024·2025)');
+  eq(ym.get('2024').freqBr1.get('100.3'), 2, '2024 br1 100.3 = 2 (발주처 무관 합산)');
+  eq(ym.get('2024').maxBr1, 2, '2024 br1 최빈 카운트 2');
+  eq(ym.get('2024').freqAr1.get('100.3'), 1, '2024 ar1 100.3 = 1 (한전)');
+  eq(ym.get('2024').freqAr1.get('100.1'), 1, '2024 ar1 100.1 = 1 (고양시)');
+  eq(ym.get('2025').freqBr1.get('99.7'), 1, '2025 br1 99.7 = 1');
+  eq(ym.get('2025').freqBr1.get('100.3'), undefined, '2025 제외행 br1 미집계');
+  eq(ym.get('2024').br1Stats.n, 2, '2024 br1 통계 n=2');
+  near(ym.get('2024').br1Stats.mean, (100.33+100.34)/2, '2024 br1 평균');
+}
+
+// 10. buildGlobalRateFreq 통계 보강 — stats 동반 반환 검증
+{
+  const g = buildGlobalRateFreq(recs);
+  eq(g.br1Stats.n, 4, '전역 br1 통계 n=4(한전3·고양시1, ar1없는·제외 제거)');
+  eq(g.ar1Stats.n, 4, '전역 ar1 통계 n=4');
 }
 
 console.log(bad===0 ? 'OK g2bFrequency (모든 케이스 통과)' : `FAIL: ${bad}건`);

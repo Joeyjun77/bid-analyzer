@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { C, PAGE } from "../lib/constants.js";
-import { buildG2BFrequency, buildGlobalRateFreq, intensityLevel, INTENSITY_STYLE, rateBucket, baSegment, topN } from "../lib/g2bFrequency.js";
+import { buildG2BFrequency, buildGlobalRateFreq, buildYearRateFreq, intensityLevel, INTENSITY_STYLE, rateBucket, baSegment, topN } from "../lib/g2bFrequency.js";
 
 const fmtNum  = (v) => (v == null || v === "") ? "—" : Number(v).toLocaleString("ko-KR");
 const fmtRate = (v, d = 3) => (v == null || !isFinite(Number(v))) ? "—" : Number(v).toFixed(d);
@@ -38,6 +38,14 @@ const LEGEND_ROWS = [
   { name: "",     range: "6 ~ 10%" },
   { name: "",     range: "3 ~ 6%" },
   { name: "희귀", range: "< 3% (또는 2회 이하)" },
+];
+
+// 빈도 기준(basis) 토글 — 셀 강조 글씨크기·색상·(N)횟수 + 요약 topN 의 집계 모집단을 전환.
+// all=전체 데이터(발주사 무관·전 기간) · year=전체 발주처+행의 od 년도 · agency=선택 발주처(현 업종/금액대 필터 반영).
+const BASIS_OPTS = [
+  { key: "all",    label: "전체",    long: "전체 데이터",            short: "전체 데이터" },
+  { key: "year",   label: "년도별",  long: "해당 행의 년도(전체 발주처)", short: "그 년도 전체 발주처" },
+  { key: "agency", label: "발주사별", long: "이 발주처",              short: "이 발주처" },
 ];
 
 // 리스트 표시 컬럼 (가로 스크롤 최소화). 개찰일 첫 컬럼, 1위사정율·발주처사정율은 A값과 1순위업체 사이. hl=빈도 강조.
@@ -86,6 +94,7 @@ export default function G2BSheetTab({ recs }){
   const [sortChain, setSortChain] = useState([{ key: "od", dir: "desc" }]); // 다중 정렬(활성화 순=우선순위). key: od·ar1·br1, dir: desc·asc
   const [detailRow, setDetailRow] = useState(null);
   const [showLegend, setShowLegend] = useState(false);
+  const [basis, setBasis] = useState("all"); // 빈도 기준: all·year·agency (셀 강조 + 요약 topN 공통 적용)
 
   // 발주처 목록 (canonical_ag, 건수 desc)
   const agencyList = useMemo(() => {
@@ -117,17 +126,39 @@ export default function G2BSheetTab({ recs }){
     return buildG2BFrequency(recs, { agencyKey: agency, cat: cat || null, seg: seg || null });
   }, [recs, agency, cat, seg]);
 
-  // 셀 강조는 엑셀과 동일하게 "전체 데이터" 빈도 기준 (발주사 무관, recs 전체 1회 산출).
+  // 빈도 기준 소스 — recs 전체 1회 산출 (발주사·필터 무관). all=globalFreq, year=yearFreq(Map<년도,…>).
   const globalFreq = useMemo(() => buildGlobalRateFreq(recs), [recs]);
+  const yearFreq = useMemo(() => buildYearRateFreq(recs), [recs]);
+
+  // 활성 basis + (hl, row) → 빈도맵·분모·년도. agency=선택 발주처(freq), year=행 od 년도, all=전역.
+  const freqMapFor = (hl, r) => {
+    if (basis === "agency"){
+      if (!freq) return null;
+      return { map: hl === "br1" ? freq.freqBr1 : freq.freqAr1, denom: hl === "br1" ? freq.maxBr1 : freq.maxAr1, year: null };
+    }
+    if (basis === "year"){
+      const y = (r && r.od) ? String(r.od).slice(0, 4) : null;
+      const e = y ? yearFreq.get(y) : null;
+      if (!e) return null;
+      return { map: hl === "br1" ? e.freqBr1 : e.freqAr1, denom: hl === "br1" ? e.maxBr1 : e.maxAr1, year: y };
+    }
+    return { map: hl === "br1" ? globalFreq.freqBr1 : globalFreq.freqAr1, denom: hl === "br1" ? globalFreq.maxBr1 : globalFreq.maxAr1, year: null };
+  };
 
   const sortedRows = useMemo(() => {
     if (!freq) return [];
-    const cnt = (map, v) => { const k = rateBucket(v); return k != null ? (map.get(k) || 0) : -1; };
+    // 빈도 정렬도 활성 basis 카운트를 따름 (셀 표시 N과 일치).
+    const mapFor = (hl, r) => {
+      if (basis === "agency") return hl === "br1" ? freq.freqBr1 : freq.freqAr1;
+      if (basis === "year"){ const y = r.od ? String(r.od).slice(0, 4) : null; const e = y ? yearFreq.get(y) : null; return e ? (hl === "br1" ? e.freqBr1 : e.freqAr1) : null; }
+      return hl === "br1" ? globalFreq.freqBr1 : globalFreq.freqAr1;
+    };
+    const cnt = (hl, r) => { const raw = hl === "br1" ? r.br1 : r.ar1; const m = mapFor(hl, r); if (!m || raw == null) return -1; const k = rateBucket(raw); return k != null ? (m.get(k) || 0) : -1; };
     const cmp = (a, b, key, dir) => {
       let d = 0;
       if (key === "od") { const x = a.od || "", y = b.od || ""; d = x < y ? -1 : x > y ? 1 : 0; }
-      else if (key === "br1") d = cnt(freq.freqBr1, a.br1) - cnt(freq.freqBr1, b.br1);
-      else if (key === "ar1") d = cnt(freq.freqAr1, a.ar1) - cnt(freq.freqAr1, b.ar1);
+      else if (key === "br1") d = cnt("br1", a) - cnt("br1", b);
+      else if (key === "ar1") d = cnt("ar1", a) - cnt("ar1", b);
       return dir === "desc" ? -d : d;
     };
     const chain = sortChain.length ? sortChain : [{ key: "od", dir: "desc" }];
@@ -137,29 +168,40 @@ export default function G2BSheetTab({ recs }){
       return (b.id || 0) - (a.id || 0); // 최종 tiebreaker (동일 개찰일·동일 빈도)
     });
     return rs;
-  }, [freq, sortChain]);
+  }, [freq, sortChain, basis, globalFreq, yearFreq]);
 
   const step = PAGE || 50;
   const shownRows = useMemo(() => sortedRows.slice(0, listShow), [sortedRows, listShow]);
 
-  // 사정율 셀 빈도 강조 정보 (count + style). raw 없거나 freq 없으면 null.
-  const rateInfo = (hl, raw) => {
-    if (raw == null || !globalFreq) return null;
-    const key = rateBucket(raw);
-    const count = (hl === "br1" ? globalFreq.freqBr1 : globalFreq.freqAr1).get(key) || 0;
-    const denom = hl === "br1" ? globalFreq.maxBr1 : globalFreq.maxAr1; // 전체 데이터 최빈 버킷 카운트 대비
-    return { count, st: INTENSITY_STYLE[intensityLevel(count, denom)] };
+  // 년도별 요약용 — 현재 표시 행(선택 발주처)이 걸친 년도 목록 (최신순).
+  const yearsInView = useMemo(() => {
+    if (basis !== "year" || !freq) return [];
+    const ys = new Set();
+    for (const r of freq.rows){ if (r.od) ys.add(String(r.od).slice(0, 4)); }
+    return [...ys].sort((a, b) => a < b ? 1 : a > b ? -1 : 0);
+  }, [basis, freq]);
+
+  // 사정율 셀 빈도 강조 정보 (count + style + 년도). 활성 basis 기준. raw 없거나 맵 없으면 null.
+  const rateInfo = (hl, r) => {
+    const raw = hl === "br1" ? r.br1 : r.ar1;
+    if (raw == null) return null;
+    const fm = freqMapFor(hl, r);
+    if (!fm) return null;
+    const count = fm.map.get(rateBucket(raw)) || 0;
+    return { count, year: fm.year, st: INTENSITY_STYLE[intensityLevel(count, fm.denom)] };
   };
+
+  // 셀 강조 횟수(N) 툴팁 — 활성 basis(+년도)를 명시.
+  const countTip = (info) => RATE_CAVEAT + " · " + (info.year ? `${info.year}년 전체 발주처` : (basis === "agency" ? "이 발주처" : "전체 데이터")) + `에서 ${info.count}회 출현`;
 
   const listCell = (col, r) => {
     const raw = col.get(r);
     const text = col.fmt(raw, r);
     const base = { padding: "4px 8px", textAlign: col.num ? "right" : "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
     if (col.hl){
-      const info = rateInfo(col.hl, raw);
+      const info = rateInfo(col.hl, r);
       if (info){
-        const tip = RATE_CAVEAT + " · " + `전체 데이터에서 ${info.count}회 출현`;
-        return <td key={col.label} title={tip} style={{ ...base, ...info.st }}>{text} <span style={{ fontSize: 10, color: C.txd, fontWeight: 400 }}>({info.count})</span></td>;
+        return <td key={col.label} title={countTip(info)} style={{ ...base, ...info.st }}>{text} <span style={{ fontSize: 10, color: C.txd, fontWeight: 400 }}>({info.count})</span></td>;
       }
     }
     return <td key={col.label} title={String(raw ?? "")} style={{ ...base, color: C.txt, fontSize: 12 }}>{text}</td>;
@@ -216,21 +258,60 @@ export default function G2BSheetTab({ recs }){
               <span style={{ fontWeight: 700, color: C.txt }}>{agency}</span>
               <button onClick={() => { setAgency(""); setCat(""); setSeg(""); setSortChain([{ key: "od", dir: "desc" }]); setListShow(step); }} style={{ padding: "2px 8px", fontSize: 10, background: "transparent", color: C.txd, border: "1px solid " + C.bdr, borderRadius: 5, cursor: "pointer" }}>발주처 변경</button>
               <span style={{ color: C.txm }}>표시 {freq.rows.length.toLocaleString()}행</span>
+              <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ color: C.txd, fontSize: 11 }}>빈도 기준</span>
+                <span style={{ display: "inline-flex", border: "1px solid " + C.bdr, borderRadius: 6, overflow: "hidden" }}>
+                  {BASIS_OPTS.map(o => (
+                    <button key={o.key} onClick={() => setBasis(o.key)} title={`${o.label} 기준 — ${o.long}에서의 출현 횟수로 강조`}
+                      style={{ padding: "3px 10px", fontSize: 11, border: "none", cursor: "pointer", background: basis === o.key ? C.gold : C.bg3, color: basis === o.key ? C.bg : C.txm, fontWeight: basis === o.key ? 700 : 400 }}>
+                      {o.label}
+                    </button>
+                  ))}
+                </span>
+              </span>
             </div>
-            <div style={{ color: C.txm, marginBottom: 4 }}>
-              자주 나온 1위사정율 <span title={RATE_CAVEAT} style={{ color: C.txd, cursor: "help" }}>ⓘ</span>:&nbsp;
-              {topN(freq.freqBr1).map(([v, n]) => <span key={v} style={{ color: C.gold, marginRight: 10 }}>{v}% ({n})</span>)}
-              {freq.br1Stats.mean != null && (
-                <span style={{ color: C.txd, marginLeft: 8 }}>· 평균 {freq.br1Stats.mean.toFixed(3)}% ±σ {freq.br1Stats.sd != null ? freq.br1Stats.sd.toFixed(3) : "—"} (n={freq.br1Stats.n})</span>
-              )}
-            </div>
-            <div style={{ color: C.txm }}>
-              자주 나온 발주처사정율 <span title={RATE_CAVEAT} style={{ color: C.txd, cursor: "help" }}>ⓘ</span>:&nbsp;
-              {topN(freq.freqAr1).map(([v, n]) => <span key={v} style={{ color: "#5dca96", marginRight: 10 }}>{v}% ({n})</span>)}
-              {freq.ar1Stats.mean != null && (
-                <span style={{ color: C.txd, marginLeft: 8 }}>· 평균 {freq.ar1Stats.mean.toFixed(3)}% ±σ {freq.ar1Stats.sd != null ? freq.ar1Stats.sd.toFixed(3) : "—"} (n={freq.ar1Stats.n})</span>
-              )}
-            </div>
+            {basis === "year" ? (
+              <div>
+                <div style={{ color: C.txd, fontSize: 11, marginBottom: 6 }}>
+                  년도별 자주 나온 사정율 <span title={RATE_CAVEAT} style={{ cursor: "help" }}>ⓘ</span> — 전체 발주처 기준, 이 발주처가 표시된 년도
+                </div>
+                {yearsInView.map(y => {
+                  const e = yearFreq.get(y);
+                  if (!e) return null;
+                  return (
+                    <div key={y} style={{ color: C.txm, marginBottom: 3, fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <span style={{ color: C.txt, fontWeight: 700, marginRight: 8 }}>{y}</span>
+                      <span style={{ color: C.txd }}>1위</span>&nbsp;
+                      {topN(e.freqBr1).map(([v, n]) => <span key={v} style={{ color: C.gold, marginRight: 8 }}>{v}%({n})</span>)}
+                      <span style={{ color: C.txd, marginLeft: 4 }}>발주처</span>&nbsp;
+                      {topN(e.freqAr1).map(([v, n]) => <span key={v} style={{ color: "#5dca96", marginRight: 8 }}>{v}%({n})</span>)}
+                    </div>
+                  );
+                })}
+                {yearsInView.length === 0 && <div style={{ color: C.txd, fontSize: 11 }}>표시할 년도 없음</div>}
+              </div>
+            ) : (() => {
+              const src = basis === "all" ? globalFreq : freq;
+              const tag = basis === "all" ? "(전체 데이터)" : "(이 발주처)";
+              return (
+                <>
+                  <div style={{ color: C.txm, marginBottom: 4 }}>
+                    자주 나온 1위사정율 <span title={RATE_CAVEAT} style={{ color: C.txd, cursor: "help" }}>ⓘ</span> <span style={{ color: C.txd, fontSize: 11 }}>{tag}</span>:&nbsp;
+                    {topN(src.freqBr1).map(([v, n]) => <span key={v} style={{ color: C.gold, marginRight: 10 }}>{v}% ({n})</span>)}
+                    {src.br1Stats && src.br1Stats.mean != null && (
+                      <span style={{ color: C.txd, marginLeft: 8 }}>· 평균 {src.br1Stats.mean.toFixed(3)}% ±σ {src.br1Stats.sd != null ? src.br1Stats.sd.toFixed(3) : "—"} (n={src.br1Stats.n})</span>
+                    )}
+                  </div>
+                  <div style={{ color: C.txm }}>
+                    자주 나온 발주처사정율 <span title={RATE_CAVEAT} style={{ color: C.txd, cursor: "help" }}>ⓘ</span> <span style={{ color: C.txd, fontSize: 11 }}>{tag}</span>:&nbsp;
+                    {topN(src.freqAr1).map(([v, n]) => <span key={v} style={{ color: "#5dca96", marginRight: 10 }}>{v}% ({n})</span>)}
+                    {src.ar1Stats && src.ar1Stats.mean != null && (
+                      <span style={{ color: C.txd, marginLeft: 8 }}>· 평균 {src.ar1Stats.mean.toFixed(3)}% ±σ {src.ar1Stats.sd != null ? src.ar1Stats.sd.toFixed(3) : "—"} (n={src.ar1Stats.n})</span>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           {/* 필터바 */}
@@ -307,7 +388,7 @@ export default function G2BSheetTab({ recs }){
               <button onClick={() => setShowLegend(false)} style={btnStyle}>닫기 ✕</button>
             </div>
             <div style={{ fontSize: 11, color: C.txm, marginBottom: 10, lineHeight: 1.6 }}>
-1위사정율·발주처사정율 값(0.1% 버킷)을 <b style={{ color: C.txt }}>전체 데이터에서 가장 많이 나온 값(최빈) 대비 출현 횟수 비율</b>로 8단계 표시합니다(엑셀 G2B와 동일하게 발주사 무관·전체 기준). 즉 전체에서 흔한 사정율일수록 크고 밝은 파랑, 드물수록 작고 회색으로 수렴합니다. 셀 옆 (N)은 전체 데이터에서의 출현 횟수입니다.
+1위사정율·발주처사정율 값(0.1% 버킷)을 <b style={{ color: C.txt }}>{BASIS_OPTS.find(o => o.key === basis).long}에서 가장 많이 나온 값(최빈) 대비 출현 횟수 비율</b>로 8단계 표시합니다(엑셀 G2B 규칙 차용). 즉 해당 기준에서 흔한 사정율일수록 크고 밝은 파랑, 드물수록 작고 회색으로 수렴합니다. 셀 옆 (N)은 {BASIS_OPTS.find(o => o.key === basis).short}에서의 출현 횟수입니다. <span style={{ color: C.txd }}>빈도 기준(전체·년도별·발주사별)은 요약 패널 우측 토글로 전환합니다.</span>
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
@@ -348,8 +429,8 @@ export default function G2BSheetTab({ recs }){
                   let valStyle = { color: C.txt };
                   let badge = null;
                   if (col.hl){
-                    const info = rateInfo(col.hl, raw);
-                    if (info){ valStyle = info.st; badge = <span style={{ fontSize: 10, color: C.txd, marginLeft: 4, fontWeight: 400 }}>({info.count}회)</span>; }
+                    const info = rateInfo(col.hl, detailRow);
+                    if (info){ valStyle = info.st; badge = <span title={countTip(info)} style={{ fontSize: 10, color: C.txd, marginLeft: 4, fontWeight: 400 }}>({info.count}회)</span>; }
                   }
                   return (
                     <tr key={col.label} style={{ borderTop: "1px solid " + C.bdr }}>

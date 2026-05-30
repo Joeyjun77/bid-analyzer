@@ -95,16 +95,45 @@ export function buildG2BFrequency(recs, opts){
 
 // 전체 데이터 기준 br1/ar1 0.1% 버킷 빈도 — 엑셀(G2B)과 동일하게 강조를 "전역 빈도"로 산출.
 // (검증: 글씨크기 vs 전체빈도 r=0.56 ≫ 발주사빈도 r=0.18). ar1 없는 불완전 건·is_excluded 제외.
+// 빈도 기준 토글 '전체' 모드의 소스. br1Stats/ar1Stats(평균·σ)도 함께 반환(요약 패널용).
 export function buildGlobalRateFreq(recs){
   const freqBr1 = new Map(), freqAr1 = new Map();
+  let sB = 0, sqB = 0, nB = 0, sA = 0, sqA = 0, nA = 0;
   for (const r of (recs || [])){
     if (r.ar1 == null || r.is_excluded === true) continue;
-    const bk = rateBucket(r.br1); if (bk != null) freqBr1.set(bk, (freqBr1.get(bk) || 0) + 1);
-    const ak = rateBucket(r.ar1); if (ak != null) freqAr1.set(ak, (freqAr1.get(ak) || 0) + 1);
+    const bk = rateBucket(r.br1); if (bk != null){ freqBr1.set(bk, (freqBr1.get(bk) || 0) + 1); const v = Number(r.br1); sB += v; sqB += v * v; nB++; }
+    const ak = rateBucket(r.ar1); if (ak != null){ freqAr1.set(ak, (freqAr1.get(ak) || 0) + 1); const v = Number(r.ar1); sA += v; sqA += v * v; nA++; }
   }
   const maxBr1 = freqBr1.size ? Math.max(...freqBr1.values()) : 0;
   const maxAr1 = freqAr1.size ? Math.max(...freqAr1.values()) : 0;
-  return { freqBr1, freqAr1, maxBr1, maxAr1 };
+  return { freqBr1, freqAr1, maxBr1, maxAr1, br1Stats: stat(nB, sB, sqB), ar1Stats: stat(nA, sA, sqA) };
+}
+
+// 년도(od 앞 4자리)별 br1/ar1 0.1% 버킷 빈도 — 빈도 기준 토글 '년도별' 모드의 소스.
+// 사용자 결정(2026-05-30): 년도별 강조 모집단 = 전체 발주처 + 같은 년도(발주처 무관).
+// 반환: Map<year, { freqBr1, freqAr1, maxBr1, maxAr1, br1Stats, ar1Stats }>. ar1 없는 불완전 건·is_excluded·od 결측 제외.
+export function buildYearRateFreq(recs){
+  const acc = new Map(); // year -> 누적 상태
+  for (const r of (recs || [])){
+    if (r.ar1 == null || r.is_excluded === true) continue;
+    const od = r.od ? String(r.od) : "";
+    if (od.length < 4) continue;
+    const y = od.slice(0, 4);
+    let e = acc.get(y);
+    if (!e){ e = { freqBr1: new Map(), freqAr1: new Map(), sB: 0, sqB: 0, nB: 0, sA: 0, sqA: 0, nA: 0 }; acc.set(y, e); }
+    const bk = rateBucket(r.br1); if (bk != null){ e.freqBr1.set(bk, (e.freqBr1.get(bk) || 0) + 1); const v = Number(r.br1); e.sB += v; e.sqB += v * v; e.nB++; }
+    const ak = rateBucket(r.ar1); if (ak != null){ e.freqAr1.set(ak, (e.freqAr1.get(ak) || 0) + 1); const v = Number(r.ar1); e.sA += v; e.sqA += v * v; e.nA++; }
+  }
+  const out = new Map();
+  for (const [y, e] of acc){
+    out.set(y, {
+      freqBr1: e.freqBr1, freqAr1: e.freqAr1,
+      maxBr1: e.freqBr1.size ? Math.max(...e.freqBr1.values()) : 0,
+      maxAr1: e.freqAr1.size ? Math.max(...e.freqAr1.values()) : 0,
+      br1Stats: stat(e.nB, e.sB, e.sqB), ar1Stats: stat(e.nA, e.sA, e.sqA),
+    });
+  }
+  return out;
 }
 
 // 빈도맵 → 상위 N개 [value, count] (count desc).
