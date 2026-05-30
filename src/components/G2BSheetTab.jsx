@@ -50,17 +50,18 @@ const BASIS_OPTS = [
 ];
 
 // 리스트 표시 컬럼 (가로 스크롤 최소화). 개찰일 첫 컬럼, 1위사정율·발주처사정율은 A값과 1순위업체 사이. hl=빈도 강조.
-// w: table-layout:fixed 컬럼 폭(%). 데이터 95% + 상세 5% = 100% → 컨테이너 폭에 맞춰 가로 스크롤 제거. 텍스트는 셀 안에서 말줄임.
+// w: table-layout:fixed 컬럼 폭(%). 데이터 93% + 상세 7% = 100% → 컨테이너 폭에 맞춰 가로 스크롤 제거. 텍스트는 셀 안에서 말줄임.
+// 사정율 2컬럼은 소수4자리+(N)횟수+큰글씨(최대 22px)라 13%로 확대(말줄임 방지). 폭은 말줄임+툴팁 있는 텍스트 컬럼에서 회수.
 const LIST_COLS = [
-  { label: "개찰일",      get: r => r.od,    fmt: v => v || "—", w: "8%" },
-  { label: "입찰공고번호", get: r => r.pn_no, fmt: v => v || "—", w: "10%" },
-  { label: "공고명",      get: r => r.pn,    fmt: v => v || "—", w: "13%" },
-  { label: "발주처",      get: r => r.ag,    fmt: v => v || "—", w: "10%" },
+  { label: "개찰일",      get: r => r.od,    fmt: v => v || "—", w: "7%" },
+  { label: "입찰공고번호", get: r => r.pn_no, fmt: v => v || "—", w: "8%" },
+  { label: "공고명",      get: r => r.pn,    fmt: v => v || "—", w: "9%" },
+  { label: "발주처",      get: r => r.ag,    fmt: v => v || "—", w: "9%" },
   { label: "예비기초금액", get: r => r.ba,    fmt: fmtNum, num: true, w: "10%" },
-  { label: "A값",         get: r => r.av,    fmt: fmtNum, num: true, w: "8%" },
-  { label: "1위사정율",   get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1", w: "9%" },
-  { label: "발주처사정율", get: r => r.ar1,   fmt: v => fmtRate(v, 4), num: true, hl: "ar1", w: "9%" },
-  { label: "1순위업체",   get: r => r.co,    fmt: v => v || "—", w: "9%" },
+  { label: "A값",         get: r => r.av,    fmt: fmtNum, num: true, w: "7%" },
+  { label: "1위사정율",   get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1", w: "13%" },
+  { label: "발주처사정율", get: r => r.ar1,   fmt: v => fmtRate(v, 4), num: true, hl: "ar1", w: "13%" },
+  { label: "1순위업체",   get: r => r.co,    fmt: v => v || "—", w: "8%" },
   { label: "사업자번호",   get: r => r.co_no, fmt: v => v || "—", w: "9%" },
 ];
 
@@ -198,7 +199,7 @@ export default function G2BSheetTab({ recs }){
   const listCell = (col, r) => {
     const raw = col.get(r);
     const text = col.fmt(raw, r);
-    const base = { padding: "4px 8px", textAlign: col.num ? "right" : "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+    const base = { padding: col.hl ? "4px 5px" : "4px 8px", textAlign: col.num ? "right" : "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
     if (col.hl){
       const info = rateInfo(col.hl, r);
       if (info){
@@ -349,7 +350,7 @@ export default function G2BSheetTab({ recs }){
             <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%", tableLayout: "fixed" }}>
               <colgroup>
                 {LIST_COLS.map(c => <col key={c.label} style={{ width: c.w }} />)}
-                <col style={{ width: "5%" }} />
+                <col style={{ width: "7%" }} />
               </colgroup>
               <thead>
                 <tr style={{ background: C.bg3, color: C.txd }}>
