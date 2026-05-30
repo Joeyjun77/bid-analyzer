@@ -13,20 +13,27 @@ export function rateBucket(v){
   return (Math.round(Number(v) * 10) / 10).toFixed(1);
 }
 
-// (count/denom) → 강조 단계 인덱스 0(최강)~7(약). denom=그 발주처 최빈 버킷 카운트 → 최빈값은 1.0=인덱스0.
-// count<=2는 비율 무관 최하(7). 상위(0~3)는 임계를 촘촘히 둬 색·크기 변화 크게, 중간 이하(4~7)는 수렴.
-export function intensityLevel(count, denom){
-  if (!count || count <= 2 || !denom) return 7;
-  const s = count / denom;
-  if (s >= 0.40) return 0;
-  if (s >= 0.30) return 1;
-  if (s >= 0.22) return 2;
-  if (s >= 0.15) return 3;
-  if (s >= 0.10) return 4;
-  if (s >= 0.06) return 5;
-  if (s >= 0.03) return 6;
+// 절대 출현 횟수(count) → 강조 단계 인덱스 0(최강)~7(약). thresholds=내림차순 7개 경계(count>=t[i] → i).
+// count<=2는 무조건 최하(7) — 1~2회는 어떤 기준에서도 주목 대상 아님(노이즈 가드).
+// 기준(전체/년도별/발주사별)마다 데이터 스케일이 10~100배 달라 임계값을 분리한다(COUNT_THRESHOLDS).
+export function intensityLevel(count, thresholds){
+  if (!count || count <= 2) return 7;
+  const t = thresholds || COUNT_THRESHOLDS.all;
+  for (let i = 0; i < t.length; i++){ if (count >= t[i]) return i; }
   return 7;
 }
+
+// 기준별 절대 횟수 임계값 (단계 0~6 경계, 내림차순). 단계 7 = t[6] 미만(또는 ≤2회).
+// 2026-05-30 실측 분포 기반(전체 max~2800 / 년도별 max~300 / 발주사별 max~195, p50 2~48):
+//   - all:    한 버킷 수백~수천 회 → 큰 경계. br1·ar1 공통 적용(둘 다 절대 횟수 의미 동일).
+//   - year:   년도 내 전체 발주처, 수십~수백 회.
+//   - agency: 발주처 내, 대부분 한 자릿수(p50=2) → 작은 경계. 반복된 사정율만 부각.
+// 데이터 누적에 따라 튜닝 가능한 단일 소스.
+export const COUNT_THRESHOLDS = {
+  all:    [1000, 500, 200, 80, 30, 12, 4],
+  year:   [220, 150, 90, 45, 20, 9, 3],
+  agency: [36, 20, 12, 7, 5, 4, 3],
+};
 
 // 8단계 강조 스타일 (인덱스 0~7). 엑셀(G2B) 규칙 차용 — 빈도 높을수록 글씨 大 + 밝은 파랑.
 // 엑셀은 셀 배경색으로 표현했으나 여기선 다크 테마라 글자색(color)으로 적용(배경 채움 미사용).

@@ -1,4 +1,4 @@
-import { baSegment, rateBucket, intensityLevel, INTENSITY_STYLE, buildG2BFrequency, buildGlobalRateFreq, buildYearRateFreq } from "../src/lib/g2bFrequency.js";
+import { baSegment, rateBucket, intensityLevel, INTENSITY_STYLE, COUNT_THRESHOLDS, buildG2BFrequency, buildGlobalRateFreq, buildYearRateFreq } from "../src/lib/g2bFrequency.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${JSON.stringify(got)} expect ${JSON.stringify(exp)}`); bad++; } };
@@ -17,20 +17,33 @@ eq(rateBucket(99.671), '99.7', 'rateBucket 반올림 99.7');
 eq(rateBucket(100.349), '100.3', 'rateBucket 100.349');
 eq(rateBucket(null), null, 'rateBucket null');
 
-// 3. intensityLevel — 점유율 기반 8단계 인덱스(0 최빈~7 희귀) + n<=2 최하 override
-eq(intensityLevel(48, 48), 0, '최빈 대비 100%(48/48, count>2) → 0');
-eq(intensityLevel(50, 100), 0, 'share 0.50 → 0');
-eq(intensityLevel(40, 100), 0, 'share 0.40 → 0');
-eq(intensityLevel(35, 100), 1, 'share 0.35 → 1');
-eq(intensityLevel(25, 100), 2, 'share 0.25 → 2');
-eq(intensityLevel(20, 100), 3, 'share 0.20 → 3');
-eq(intensityLevel(12, 100), 4, 'share 0.12 → 4');
-eq(intensityLevel(10, 100), 4, 'share 0.10 → 4');
-eq(intensityLevel(8, 100), 5, 'share 0.08 → 5');
-eq(intensityLevel(4, 100), 6, 'share 0.04 → 6');
-eq(intensityLevel(3, 200), 7, 'share 0.015 → 7');
-eq(intensityLevel(2, 4), 7, 'n<=2 override → 7');
-eq(intensityLevel(0, 100), 7, 'count 0 → 7');
+// 3. intensityLevel — 절대 횟수 기반 8단계(0 최다~7 희귀) + count<=2 최하 override
+{
+  const T = [1000, 500, 200, 80, 30, 12, 4]; // all 기준 임계값
+  eq(intensityLevel(1000, T), 0, '>=1000 → 0');
+  eq(intensityLevel(2794, T), 0, '최대치 → 0');
+  eq(intensityLevel(999, T), 1, '999 → 1');
+  eq(intensityLevel(500, T), 1, '>=500 → 1');
+  eq(intensityLevel(200, T), 2, '>=200 → 2');
+  eq(intensityLevel(80, T), 3, '>=80 → 3');
+  eq(intensityLevel(30, T), 4, '>=30 → 4');
+  eq(intensityLevel(12, T), 5, '>=12 → 5');
+  eq(intensityLevel(4, T), 6, '>=4 → 6');
+  eq(intensityLevel(3, T), 7, '3 < t[6]=4 → 7');
+  eq(intensityLevel(2, T), 7, 'count<=2 override → 7');
+  eq(intensityLevel(0, T), 7, 'count 0 → 7');
+  // thresholds 미지정 시 all 기본값 사용
+  eq(intensityLevel(1000), 0, 'thresholds 생략 → all 기본값으로 0');
+  eq(intensityLevel(36, COUNT_THRESHOLDS.agency), 0, 'agency 36 → 0');
+  eq(intensityLevel(13, COUNT_THRESHOLDS.agency), 2, 'agency 13(>=12) → 2');
+}
+// COUNT_THRESHOLDS — 3개 기준, 각 7경계, 내림차순
+for (const k of ['all', 'year', 'agency']){
+  eq(COUNT_THRESHOLDS[k].length, 7, `${k} 임계값 7개`);
+  const t = COUNT_THRESHOLDS[k];
+  let mono = true; for (let i = 1; i < t.length; i++){ if (t[i] >= t[i-1]) mono = false; }
+  eq(mono, true, `${k} 임계값 내림차순`);
+}
 eq(INTENSITY_STYLE.length, 8, 'INTENSITY_STYLE 8단계 배열');
 eq(typeof INTENSITY_STYLE[0].color, 'string', 'INTENSITY_STYLE[0] 스타일 객체');
 

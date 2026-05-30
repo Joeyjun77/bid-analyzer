@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { C, PAGE } from "../lib/constants.js";
-import { buildG2BFrequency, buildGlobalRateFreq, buildYearRateFreq, intensityLevel, INTENSITY_STYLE, rateBucket, baSegment, topN } from "../lib/g2bFrequency.js";
+import { buildG2BFrequency, buildGlobalRateFreq, buildYearRateFreq, intensityLevel, INTENSITY_STYLE, COUNT_THRESHOLDS, rateBucket, baSegment, topN } from "../lib/g2bFrequency.js";
 
 const fmtNum  = (v) => (v == null || v === "") ? "—" : Number(v).toLocaleString("ko-KR");
 const fmtRate = (v, d = 3) => (v == null || !isFinite(Number(v))) ? "—" : Number(v).toFixed(d);
@@ -28,17 +28,18 @@ const matchAgency = (name, query) => {
   return exps ? exps.some(e => n.includes(normAg(e))) : false;
 };
 
-// 빈도 강조 8단계 점유율 구간 (INTENSITY_STYLE 인덱스와 1:1 대응). 정보 모달용.
-const LEGEND_ROWS = [
-  { name: "최빈", range: "최빈 대비 ≥ 40%" },
-  { name: "",     range: "30 ~ 40%" },
-  { name: "",     range: "22 ~ 30%" },
-  { name: "",     range: "15 ~ 22%" },
-  { name: "중간", range: "10 ~ 15%" },
-  { name: "",     range: "6 ~ 10%" },
-  { name: "",     range: "3 ~ 6%" },
-  { name: "희귀", range: "< 3% (또는 2회 이하)" },
-];
+// 빈도 강조 8단계 구간 라벨 (INTENSITY_STYLE 인덱스와 1:1). 절대 횟수 기준이라 basis별 임계값으로 동적 생성.
+function legendRows(basis){
+  const t = COUNT_THRESHOLDS[basis] || COUNT_THRESHOLDS.all;
+  const name = (i) => i === 0 ? "최다" : i === 4 ? "중간" : i === 7 ? "희귀" : "";
+  const rows = [];
+  for (let i = 0; i < 7; i++){
+    const range = i === 0 ? `≥ ${t[0]}회` : `${t[i]} ~ ${t[i - 1] - 1}회`;
+    rows.push({ name: name(i), range });
+  }
+  rows.push({ name: name(7), range: `< ${t[6]}회 (또는 ≤2회)` });
+  return rows;
+}
 
 // 빈도 기준(basis) 토글 — 셀 강조 글씨크기·색상·(N)횟수 + 요약 topN 의 집계 모집단을 전환.
 // all=전체 데이터(발주사 무관·전 기간) · year=전체 발주처+행의 od 년도 · agency=선택 발주처(현 업종/금액대 필터 반영).
@@ -188,7 +189,7 @@ export default function G2BSheetTab({ recs }){
     const fm = freqMapFor(hl, r);
     if (!fm) return null;
     const count = fm.map.get(rateBucket(raw)) || 0;
-    return { count, year: fm.year, st: INTENSITY_STYLE[intensityLevel(count, fm.denom)] };
+    return { count, year: fm.year, st: INTENSITY_STYLE[intensityLevel(count, COUNT_THRESHOLDS[basis])] };
   };
 
   // 셀 강조 횟수(N) 툴팁 — 활성 basis(+년도)를 명시.
@@ -388,24 +389,24 @@ export default function G2BSheetTab({ recs }){
               <button onClick={() => setShowLegend(false)} style={btnStyle}>닫기 ✕</button>
             </div>
             <div style={{ fontSize: 11, color: C.txm, marginBottom: 10, lineHeight: 1.6 }}>
-1위사정율·발주처사정율 값(0.1% 버킷)을 <b style={{ color: C.txt }}>{BASIS_OPTS.find(o => o.key === basis).long}에서 가장 많이 나온 값(최빈) 대비 출현 횟수 비율</b>로 8단계 표시합니다(엑셀 G2B 규칙 차용). 즉 해당 기준에서 흔한 사정율일수록 크고 밝은 파랑, 드물수록 작고 회색으로 수렴합니다. 셀 옆 (N)은 {BASIS_OPTS.find(o => o.key === basis).short}에서의 출현 횟수입니다. <span style={{ color: C.txd }}>빈도 기준(전체·년도별·발주사별)은 요약 패널 우측 토글로 전환합니다.</span>
+1위사정율·발주처사정율 값(0.1% 버킷)을 <b style={{ color: C.txt }}>{BASIS_OPTS.find(o => o.key === basis).short}에서의 절대 출현 횟수</b>로 8단계 표시합니다. 많이 나온 사정율일수록 크고 밝은 파랑, 적게 나온 값일수록 작고 회색으로 수렴합니다. 셀 옆 (N)이 그 출현 횟수입니다. 횟수 스케일이 기준마다 달라 임계값도 기준별로 다릅니다(현재 <b style={{ color: C.txt }}>{BASIS_OPTS.find(o => o.key === basis).label}</b> 기준). <span style={{ color: C.txd }}>빈도 기준은 요약 패널 우측 토글로 전환합니다.</span>
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ color: C.txd }}>
                   <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600 }}>단계</th>
-                  <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600 }}>최빈 대비</th>
+                  <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600 }}>출현 횟수</th>
                   <th style={{ textAlign: "right", padding: "4px 6px", fontWeight: 600 }}>표시 예시</th>
                 </tr>
               </thead>
               <tbody>
-                {INTENSITY_STYLE.map((st, i) => (
+                {(() => { const lr = legendRows(basis); return INTENSITY_STYLE.map((st, i) => (
                   <tr key={i} style={{ borderTop: "1px solid " + C.bdr }}>
-                    <td style={{ padding: "5px 6px", color: C.txm, whiteSpace: "nowrap" }}>{i}{LEGEND_ROWS[i].name ? ` · ${LEGEND_ROWS[i].name}` : ""}</td>
-                    <td style={{ padding: "5px 6px", color: C.txm, whiteSpace: "nowrap" }}>{LEGEND_ROWS[i].range}</td>
+                    <td style={{ padding: "5px 6px", color: C.txm, whiteSpace: "nowrap" }}>{i}{lr[i].name ? ` · ${lr[i].name}` : ""}</td>
+                    <td style={{ padding: "5px 6px", color: C.txm, whiteSpace: "nowrap" }}>{lr[i].range}</td>
                     <td style={{ padding: "5px 6px", textAlign: "right", ...st }}>100.3 <span style={{ fontSize: 10, color: C.txd, fontWeight: 400 }}>(예)</span></td>
                   </tr>
-                ))}
+                )); })()}
               </tbody>
             </table>
             <div style={{ fontSize: 10, color: C.txd, marginTop: 10, lineHeight: 1.5 }}>{RATE_CAVEAT}</div>
