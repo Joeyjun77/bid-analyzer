@@ -1,4 +1,4 @@
-import { baSegment, rateBucket, intensityLevel, INTENSITY_STYLE, COUNT_THRESHOLDS, buildG2BFrequency, buildGlobalRateFreq, buildYearRateFreq } from "../src/lib/g2bFrequency.js";
+import { baSegment, rateBucket, intensityLevel, INTENSITY_STYLE, COUNT_THRESHOLDS, buildG2BFrequency, buildGlobalRateFreq, buildYearRateFreq, dedupExactRecords } from "../src/lib/g2bFrequency.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${JSON.stringify(got)} expect ${JSON.stringify(exp)}`); bad++; } };
@@ -139,6 +139,23 @@ eq(fc.freqAr1.get('99.7100'), 1, 'cat 필터 후 ar1 99.7100');
   eq(ym.get('2025').freqBr1.get('100.3300'), undefined, '2025 제외행 br1 미집계');
   eq(ym.get('2024').br1Stats.n, 2, '2024 br1 통계 n=2');
   near(ym.get('2024').br1Stats.mean, (100.3312+100.3312)/2, '2024 br1 평균');
+}
+
+// 10. dedupExactRecords — 완전중복 제거(최소 id 유지), 다중차수 보존
+{
+  const rs = [
+    { id: 10, pn_no: 'A-1', od: '2026-05-14', ba: 99000000, bp: 87751000 }, // 정본(최소 id)
+    { id: 20, pn_no: 'A-1', od: '2026-05-14', ba: 99000000, bp: 87751000 }, // 완전중복 → 제거
+    { id: 30, pn_no: 'A-1', od: '2026-05-14', ba: 88000000, bp: 80000000 }, // 같은 pn_no·다른 ba → 보존(다중차수)
+    { id: 40, pn_no: '', pn: '공고X', od: '2026-01-01', ba: 5e7, bp: 4e7 },   // pn_no 없음 → 공고명 fallback
+  ];
+  const out = dedupExactRecords(rs);
+  eq(out.length, 3, '완전중복 1건 제거 → 3건');
+  eq(out.some(r => r.id === 10), true, '정본(id10) 유지');
+  eq(out.some(r => r.id === 20), false, '중복(id20) 제거');
+  eq(out.some(r => r.id === 30), true, '다중차수(id30) 보존');
+  eq(out.some(r => r.id === 40), true, 'pn_no 없는 행 보존');
+  eq(dedupExactRecords([]).length, 0, '빈 배열 안전');
 }
 
 console.log(bad===0 ? 'OK g2bFrequency (모든 케이스 통과)' : `FAIL: ${bad}건`);

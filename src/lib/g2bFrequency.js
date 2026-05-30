@@ -150,3 +150,17 @@ export function buildYearRateFreq(recs, decimals = 4){
 export function topN(freqMap, n = 3){
   return [...freqMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
 }
+
+// 완전중복(공고번호|개찰일|기초|낙찰가 동일) 제거 — DB 정리 후에도 화면 안전망. 키당 최소 id 1건만 유지, 원본 순서 보존.
+// 키는 toRecord dedup_key 공식과 동일 의미(pn_no 없으면 공고명 fallback). 다중차수(같은 pn_no·다른 ba/bp)는 보존.
+export function dedupExactRecords(recs){
+  const arr = recs || [];
+  const keyOf = (r) => (r.pn_no || r.pn || "") + "|" + (r.od || "") + "|" + (r.ba != null ? r.ba : "") + "|" + (r.bp != null ? r.bp : "");
+  const best = new Map(); // key -> 최소 id
+  for (const r of arr){
+    const k = keyOf(r), prev = best.get(k);
+    if (prev == null || (r.id || 0) < prev) best.set(k, (r.id || 0));
+  }
+  const keep = new Set([...best.values()]);
+  return arr.filter(r => keep.has(r.id || 0));
+}

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { C, PAGE } from "../lib/constants.js";
-import { buildG2BFrequency, buildGlobalRateFreq, buildYearRateFreq, intensityLevel, INTENSITY_STYLE, COUNT_THRESHOLDS, rateBucket, baSegment, topN } from "../lib/g2bFrequency.js";
+import { buildG2BFrequency, buildGlobalRateFreq, buildYearRateFreq, dedupExactRecords, intensityLevel, INTENSITY_STYLE, COUNT_THRESHOLDS, rateBucket, baSegment, topN } from "../lib/g2bFrequency.js";
 
 const fmtNum  = (v) => (v == null || v === "") ? "—" : Number(v).toLocaleString("ko-KR");
 const fmtRate = (v, d = 3) => (v == null || !isFinite(Number(v))) ? "—" : Number(v).toFixed(d);
@@ -139,39 +139,42 @@ export default function G2BSheetTab({ recs }){
     return () => { document.body.style.overflow = prev; };
   }, [rateModal, detailRow, showLegend]);
 
+  // 완전중복(공고번호|개찰일|기초|낙찰가) 제거 — DB 정리 후에도 화면 안전망(중복 행 1건만). 이하 모든 집계의 데이터 소스.
+  const recsD = useMemo(() => dedupExactRecords(recs), [recs]);
+
   // 발주처 목록 (canonical_ag, 건수 desc)
   const agencyList = useMemo(() => {
     const m = new Map();
-    for (const r of (recs || [])){
+    for (const r of (recsD || [])){
       if (r.ar1 == null) continue; // 발주처사정율 있는 완전 건만 집계 (리스트 표시와 일치)
       const k = r.canonical_ag || r.ag;
       if (!k) continue;
       m.set(k, (m.get(k) || 0) + 1);
     }
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [recs]);
+  }, [recsD]);
 
   // 선택 발주처 기준 필터 옵션 (distinct)
   const filterOpts = useMemo(() => {
     if (!agency) return { cats: [], segs: [] };
     const cats = new Set(), segs = new Set();
-    for (const r of (recs || [])){
+    for (const r of (recsD || [])){
       if ((r.canonical_ag || r.ag) !== agency) continue;
       if (r.ar1 == null) continue; // 완전 건만 (리스트 표시와 일치)
       if (r.cat) cats.add(r.cat);
       segs.add(baSegment(r.ba));
     }
     return { cats: [...cats].sort(), segs: [...segs].sort() };
-  }, [recs, agency]);
+  }, [recsD, agency]);
 
   const freq = useMemo(() => {
     if (!agency) return null;
-    return buildG2BFrequency(recs, { agencyKey: agency, cat: cat || null, seg: seg || null, decimals: dispDecimals });
-  }, [recs, agency, cat, seg, dispDecimals]);
+    return buildG2BFrequency(recsD, { agencyKey: agency, cat: cat || null, seg: seg || null, decimals: dispDecimals });
+  }, [recsD, agency, cat, seg, dispDecimals]);
 
   // 빈도 기준 소스 — recs 전체 1회 산출 (발주사·필터 무관). all=globalFreq, year=yearFreq(Map<년도,…>).
-  const globalFreq = useMemo(() => buildGlobalRateFreq(recs, dispDecimals), [recs, dispDecimals]);
-  const yearFreq = useMemo(() => buildYearRateFreq(recs, dispDecimals), [recs, dispDecimals]);
+  const globalFreq = useMemo(() => buildGlobalRateFreq(recsD, dispDecimals), [recsD, dispDecimals]);
+  const yearFreq = useMemo(() => buildYearRateFreq(recsD, dispDecimals), [recsD, dispDecimals]);
   // 선택 발주처 행만 년도별 — yearAg 기준(현 업종/금액대 필터 반영, freq.rows 기반).
   const agencyYearFreq = useMemo(() => buildYearRateFreq(freq ? freq.rows : [], dispDecimals), [freq, dispDecimals]);
 
@@ -249,7 +252,7 @@ export default function G2BSheetTab({ recs }){
     if (value == null) return;
     const bucket = rateBucket(value, dispDecimals);
     const y = (basis === "year" || basis === "yearAg") ? (r.od ? String(r.od).slice(0, 4) : null) : null;
-    const pop = (basis === "all" || basis === "year") ? (recs || []) : (freq ? freq.rows : []);
+    const pop = (basis === "all" || basis === "year") ? (recsD || []) : (freq ? freq.rows : []);
     const rows = pop.filter(x =>
       x.ar1 != null && x.is_excluded !== true &&
       rateBucket(hl === "br1" ? x.br1 : x.ar1, dispDecimals) === bucket &&
