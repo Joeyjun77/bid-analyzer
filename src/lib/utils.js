@@ -95,7 +95,10 @@ export async function parseFile(file){const buf=await file.arrayBuffer();const w
 // 사정률(ar1/ar0)·낙찰가율(br1/br0) 단위 자동 감지: |v|<50이면 0% 기준 → +100 보정해 100% 기준으로 통일
 // (인포21c 표준 파일은 100% 기준이지만 일부 외부 형식이 0% 기준으로 출력되어 ar1 단위 혼재 발생)
 const _normRate=(v)=>(v!=null&&Math.abs(v)<50)?v+100:v;
-export function toRecord(r){const pn=clean(r[1]);if(!pn||pn.length<2)return null;const ag=clean(r[3]);const at=clsAg(ag);const ep=sn(r[4]);const ba=sn(r[5]);const av=pnv(r[6]);const od=pDt(clean(r[19]));const era=isNewEra(at,od)?"new":"old";const dk=pn+"|"+ag+"|"+(od||"")+"|"+(ba||"");if(dk.length<5)return null;return{dedup_key:md5(dk),pn,pn_no:clean(r[2]),ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:clean(r[7]),xp:sn(r[8]),floor_price:sn(r[9]),ar1:_normRate(sn(r[10])),ar0:_normRate(sn(r[11])),co:clean(r[12]),co_no:clean(r[13]),bp:sn(r[14]),br1:_normRate(sn(r[15])),br0:_normRate(sn(r[16])),base_ratio:sn(r[17]),pc:Math.round(pnv(r[18]))||0,od:od||null,input_date:pDt(clean(r[20]))||null,cat:clean(r[21]),g2b:clean(r[22]),reg:clean(r[23]),era,has_a:av>0,fr:eraFR(at,ep,od)}}
+// dedup_key = md5(공고번호|개찰일|기초금액|낙찰가). 2026-05-30: 기존 공고명 기반에서 변경(공고명 미세변동 재임포트가 중복 생성하던 버그).
+// pn_no 없으면 공고명(pn) fallback. ※ 변경 시 DB 기존 dedup_key도 동일 공식으로 재계산 필요(안 그러면 재임포트가 전건 중복 삽입).
+//   SQL: md5(COALESCE(NULLIF(pn_no,''),pn)||'|'||COALESCE(to_char(od,'YYYY-MM-DD'),'')||'|'||COALESCE(ba::text,'')||'|'||COALESCE(bp::text,''))
+export function toRecord(r){const pn=clean(r[1]);if(!pn||pn.length<2)return null;const ag=clean(r[3]);const at=clsAg(ag);const ep=sn(r[4]);const ba=sn(r[5]);const av=pnv(r[6]);const od=pDt(clean(r[19]));const era=isNewEra(at,od)?"new":"old";const pnNo=clean(r[2]);const bp=sn(r[14]);const idPart=pnNo||pn;const dk=idPart+"|"+(od||"")+"|"+(ba!=null?ba:"")+"|"+(bp!=null?bp:"");if(dk.length<5)return null;return{dedup_key:md5(dk),pn,pn_no:pnNo,ag,at,ep:ep||null,ba:ba||null,av:av||0,raw_cost:clean(r[7]),xp:sn(r[8]),floor_price:sn(r[9]),ar1:_normRate(sn(r[10])),ar0:_normRate(sn(r[11])),co:clean(r[12]),co_no:clean(r[13]),bp,br1:_normRate(sn(r[15])),br0:_normRate(sn(r[16])),base_ratio:sn(r[17]),pc:Math.round(pnv(r[18]))||0,od:od||null,input_date:pDt(clean(r[20]))||null,cat:clean(r[21]),g2b:clean(r[22]),reg:clean(r[23]),era,has_a:av>0,fr:eraFR(at,ep,od)}}
 export function toRecords(rows){return rows.map(toRecord).filter(Boolean)}
 
 // 입찰서류함 파싱 (헤더 동적 매핑)
