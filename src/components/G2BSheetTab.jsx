@@ -412,8 +412,8 @@ export default function G2BSheetTab({ recs }){
             <span style={{ color: C.txd, fontSize: 11, alignSelf: "center" }}>정렬(중복 적용·번호=우선순위):</span>
             {[
               { key: "od",  label: "개찰일",          desc: "최신순", asc: "오래된순" },
-              { key: "ar1", label: "발주처사정율 빈도", desc: "많은순", asc: "적은순" },
               { key: "br1", label: "1위사정율 빈도",    desc: "많은순", asc: "적은순" },
+              { key: "ar1", label: "발주처사정율 빈도", desc: "많은순", asc: "적은순" },
             ].map(c => (
               <span key={c.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: C.txm }}>
                 {prioOf(c.key) > 0 && <span style={{ display: "inline-flex", width: 16, height: 16, alignItems: "center", justifyContent: "center", borderRadius: 8, background: C.gold, color: C.bg, fontSize: 10, fontWeight: 700 }}>{prioOf(c.key)}</span>}
