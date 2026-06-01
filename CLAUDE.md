@@ -37,7 +37,9 @@
 - predict_v6 함수 (Phase 15 예측 엔진)
 - agency_win_stats (발주사별 낙찰 통계, Phase 12-C)
 - 검증 인프라: prediction_quality_daily, weekly_quality_report, phase17_validation, pred_bias_map VIEW
+- prediction_corrected_eval VIEW (2026-06-01): 라이브 표시값 corrected_adj=opt_adj+biasFix 재현. raw opt_adj만 보던 사각지대 보완. read-only
 - 검증 함수: evaluate_model_release(candidate, baseline, window_days), refresh_prediction_quality_daily(since, until, model_version)
+- eval_bias_correction_loo(window_days) (2026-06-01): AG_BA bias 보정 OOS 가치 LOO 판정. delta_corr>0=무보정보다 악화. 보정 수정 검토 게이트
 
 ## Generator / Evaluator 분리 규칙 (Phase 23-3)
 예측 코드(`getFinalRecommendation`, `opt_adj` 계산, `pred_bias_map` 관련, 낙찰하한율 함수) 변경 시:

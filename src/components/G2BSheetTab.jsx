@@ -211,10 +211,20 @@ export default function G2BSheetTab({ recs }){
       return dir === "desc" ? -d : d;
     };
     const chain = sortChain.length ? sortChain : [{ key: "od", dir: "desc" }];
+    const odActive = chain.some(s => s.key === "od"); // 개찰일 정렬 활성 여부
+    const firstFreqKey = (chain.find(s => s.key === "br1" || s.key === "ar1") || {}).key || null; // 최우선 빈도 정렬 키
+    const rateOf = (hl, r) => { const raw = hl === "br1" ? r.br1 : r.ar1; return raw == null ? null : Number(raw); };
     const rs = [...freq.rows];
     rs.sort((a, b) => {
       for (const { key, dir } of chain){ const d = cmp(a, b, key, dir); if (d !== 0) return d; }
-      return (b.id || 0) - (a.id || 0); // 최종 tiebreaker (동일 개찰일·동일 빈도)
+      // 개찰일 정렬 미적용 + 빈도 정렬 활성 시: 동일 빈도는 사정율 높은 순(desc). 예) 100.0000(4)가 99.0000(4) 위.
+      if (!odActive && firstFreqKey){
+        const ra = rateOf(firstFreqKey, a), rb = rateOf(firstFreqKey, b);
+        if (ra == null && rb != null) return 1;
+        if (ra != null && rb == null) return -1;
+        if (ra != null && rb != null && ra !== rb) return rb - ra;
+      }
+      return (b.id || 0) - (a.id || 0); // 최종 tiebreaker (동일 개찰일·동일 빈도·동일 사정율)
     });
     return rs;
   }, [freq, sortChain, basis, globalFreq, yearFreq, agencyYearFreq, dispDecimals]);
