@@ -87,10 +87,10 @@ const LIST_COLS = [
   { label: "입찰공고번호", get: r => r.pn_no, fmt: v => v || "—", w: "8%" },
   { label: "공고명",      get: r => r.pn,    fmt: v => v || "—", w: "11%", tagGreen: "고양시" },
   { label: "발주처",      get: r => r.ag,    fmt: v => v || "—", w: "7%" },
-  { label: "예비기초금액", get: r => r.ba,    fmt: fmtNum, num: true, w: "9%" },
-  { label: "A값",         get: r => r.av,    fmt: fmtNum, num: true, w: "7%" },
-  { label: "1위사정율",   get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1", w: "13%" },
-  { label: "발주처사정율", get: r => r.ar1,   fmt: v => fmtRate(v, 4), num: true, hl: "ar1", w: "13%" },
+  { label: "예비기초금액", get: r => r.ba,    fmt: fmtNum, num: true, w: "9%", sortField: "ba" },
+  { label: "A값",         get: r => r.av,    fmt: fmtNum, num: true, w: "7%", sortField: "av" },
+  { label: "1위사정율",   get: r => r.br1,   fmt: v => fmtRate(v, 4), num: true, hl: "br1", w: "13%", sortField: "br1" },
+  { label: "발주처사정율", get: r => r.ar1,   fmt: v => fmtRate(v, 4), num: true, hl: "ar1", w: "13%", sortField: "ar1" },
   { label: "1순위업체",   get: r => r.co,    fmt: v => v || "—", w: "10%" },
   { label: "사업자번호",   get: r => r.co_no, fmt: v => v || "—", w: "6%" },
 ];
@@ -124,6 +124,7 @@ export default function G2BSheetTab({ recs }){
   const [seg, setSeg] = useState("");
   const [listShow, setListShow] = useState(PAGE || 50); // 더보기 표시 건수
   const [sortChain, setSortChain] = useState([{ key: "od", dir: "desc" }]); // 다중 정렬(활성화 순=우선순위). key: od·ar1·br1, dir: desc·asc
+  const [colSort, setColSort] = useState(null); // 컬럼 헤더 클릭 값정렬 {key,dir}. 개찰일·빈도 정렬(sortChain) 모두 꺼졌을 때만 적용.
   const [detailRow, setDetailRow] = useState(null);
   const [showLegend, setShowLegend] = useState(false);
   const [basis, setBasis] = useState("all"); // 빈도 기준: all·year·yearAg·agency (셀 강조 + 요약 topN 공통 적용)
@@ -196,6 +197,20 @@ export default function G2BSheetTab({ recs }){
 
   const sortedRows = useMemo(() => {
     if (!freq) return [];
+    // 개찰일·빈도 정렬(sortChain) 모두 꺼짐 + 컬럼 헤더 클릭 정렬 활성 시: 해당 컬럼 값 기준 높은순(desc)/낮은순(asc).
+    if (sortChain.length === 0 && colSort){
+      const vOf = (r) => { const v = r[colSort.key]; return (v == null || !isFinite(Number(v))) ? null : Number(v); };
+      const sign = colSort.dir === "desc" ? -1 : 1;
+      const rs2 = [...freq.rows];
+      rs2.sort((a, b) => {
+        const va = vOf(a), vb = vOf(b);
+        if (va == null && vb == null) return (b.id || 0) - (a.id || 0);
+        if (va == null) return 1; if (vb == null) return -1; // 값 없으면 항상 아래
+        if (va !== vb) return sign * (va - vb);
+        return (b.id || 0) - (a.id || 0);
+      });
+      return rs2;
+    }
     // 빈도 정렬도 활성 basis 카운트를 따름 (셀 표시 N과 일치).
     const mapFor = (hl, r) => {
       if (basis === "agency") return hl === "br1" ? freq.freqBr1 : freq.freqAr1;
@@ -227,7 +242,7 @@ export default function G2BSheetTab({ recs }){
       return (b.id || 0) - (a.id || 0); // 최종 tiebreaker (동일 개찰일·동일 빈도·동일 사정율)
     });
     return rs;
-  }, [freq, sortChain, basis, globalFreq, yearFreq, agencyYearFreq, dispDecimals]);
+  }, [freq, sortChain, colSort, basis, globalFreq, yearFreq, agencyYearFreq, dispDecimals]);
 
   const step = PAGE || 50;
   const shownRows = useMemo(() => sortedRows.slice(0, listShow), [sortedRows, listShow]);
@@ -450,7 +465,14 @@ export default function G2BSheetTab({ recs }){
               </colgroup>
               <thead>
                 <tr style={{ background: C.bg3, color: C.txd }}>
-                  {LIST_COLS.map(c => <th key={c.label} title={c.label} style={{ padding: "6px 8px", textAlign: c.num ? "right" : "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", borderBottom: "1px solid " + C.bdr, fontWeight: 600 }}>{c.label}</th>)}
+                  {LIST_COLS.map(c => {
+                    const sortable = !!c.sortField;
+                    const active = sortable && sortChain.length === 0 && colSort && colSort.key === c.sortField;
+                    const arrow = active ? (colSort.dir === "desc" ? " ▲" : " ▼") : "";
+                    return <th key={c.label} title={sortable ? c.label + " — 클릭 정렬(개찰일·빈도 정렬 해제됨)" : c.label}
+                      onClick={sortable ? () => { setSortChain([]); setColSort(prev => (prev && prev.key === c.sortField) ? { key: c.sortField, dir: prev.dir === "desc" ? "asc" : "desc" } : { key: c.sortField, dir: "desc" }); } : undefined}
+                      style={{ padding: "6px 8px", textAlign: c.num ? "right" : "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", borderBottom: "1px solid " + C.bdr, fontWeight: 600, cursor: sortable ? "pointer" : "default", color: active ? C.gold : undefined, userSelect: "none" }}>{c.label}{arrow}</th>;
+                  })}
                   <th style={{ padding: "6px 8px", textAlign: "center", borderBottom: "1px solid " + C.bdr, fontWeight: 600 }}>상세</th>
                 </tr>
               </thead>
