@@ -2193,8 +2193,8 @@ ${baseInfo}
                       <div style={{fontSize:9,color:C.txd,marginBottom:6}}>{s.desc}</div>
                       <div style={{fontSize:15,fontWeight:700,color:C.txt,fontFamily:"monospace",marginBottom:4}}>{fmtAdj(s.adj)}</div>
                       {s.bid!=null&&<div style={{fontSize:10,color:C.txm,fontFamily:"monospace",marginBottom:6}}>{tc(s.bid)}원</div>}
-                      {pwinPct!=null&&<div style={{marginTop:6,padding:"4px 6px",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.25)",borderRadius:4}}>
-                        <div style={{fontSize:9,color:C.txd,marginBottom:2}}>1위 낙찰 확률</div>
+                      {pwinPct!=null&&<div title="추천 투찰가가 [낙찰하한, 실제 1위금액] 구간에 든 과거 실측 비율(금액 기준). 복수예가 추첨 변동·경쟁 미반영 — 보장 아님." style={{marginTop:6,padding:"4px 6px",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.25)",borderRadius:4}}>
+                        <div style={{fontSize:9,color:C.txd,marginBottom:2}}>1위 낙찰 가능률 <span style={{color:C.txd}}>ⓘ</span></div>
                         <div style={{fontSize:14,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{pwinPct}%</div>
                       </div>}
                       {s.risk&&<div style={{fontSize:9,color:C.txd,marginTop:4}}>{s.risk==="high"?"⚠ 고위험":s.risk==="low"?"🛡 저위험":"⚖ 중위험"}</div>}
