@@ -39,7 +39,8 @@ export const WIN_OPT_GAP={
 
 // ─── 낙찰하한율 (2026 기관별 개정 반영) ──────────────────────
 // 구기준 vs 신기준. 시행일은 기관별 상이 (cutoff 필드 참조).
-// 한전은 자체 적격심사 기준 유지 — 144건 중앙값 87.745% 실측 검증.
+// 한전: ~2026-02-09까지 old(~88%), 2026-02-10 개정으로 new(~90%)로 상승 — bid_records floor_price 역산 검증.
+// (이전 "87.745% 유지" 주석은 stale: 2026-Q2 실측 floorErr +1.85%p로 신규율 누락 확인, 2026-06-05 정정.)
 export const RATE_TABLE={
   "조달청":{cutoff:"2026-01-30",
     old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
@@ -50,9 +51,9 @@ export const RATE_TABLE={
   "교육청":{cutoff:"2025-07-01",
     old:[{min:5e9,max:1e11,rate:85.495},{min:3e9,max:5e9,rate:86.745},{min:1e9,max:3e9,rate:86.745},{min:4e8,max:1e9,rate:87.745},{min:3e8,max:4e8,rate:87.745},{min:0,max:3e8,rate:88.25}],
     new:[{min:5e9,max:1e11,rate:87.495},{min:3e9,max:5e9,rate:88.745},{min:1e9,max:3e9,rate:88.745},{min:4e8,max:1e9,rate:89.745},{min:3e8,max:4e8,rate:89.745},{min:0,max:3e8,rate:90.25}]},
-  "한전":{cutoff:"2099-12-31",
+  "한전":{cutoff:"2026-02-10",
     old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
-    new:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}]},
+    new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
   "LH":{cutoff:"2026-02-01",
     old:[{min:5e9,max:1e11,rate:85.495},{min:1e9,max:5e9,rate:86.745},{min:3e8,max:1e9,rate:87.745},{min:0,max:3e8,rate:88.25}],
     new:[{min:5e9,max:1e11,rate:87.495},{min:1e9,max:5e9,rate:88.745},{min:3e8,max:1e9,rate:89.745},{min:0,max:3e8,rate:90.25}]},
