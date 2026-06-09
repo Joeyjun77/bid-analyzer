@@ -312,6 +312,24 @@ export async function sbFetchDetails(){
 export async function sbFetchDetailsByAg(ag){
   try{const res=await authedFetch("/rest/v1/bid_details?ag=eq."+encodeURIComponent(ag)+"&select=*&order=od.desc&limit=1000");if(!res.ok)return[];return await res.json()}catch(e){return[]}}
 
+// 참여업체 멱등 bulk 적재 (Phase 1). on_conflict=pn_no,co_no merge → 재업로드 안전. 1000행씩 청크.
+export async function sbSaveParticipants(meta, participants){
+  if(!participants||!participants.length)return true;
+  const rows=participants.map(p=>({
+    pn_no:meta.pn_no, od:meta.od||null, ag:meta.ag||null,
+    canonical_ag:meta.canonical_ag||meta.ag||null, at:meta.at||null,
+    rank:p.rank, co_no:p.co_no||null, co_name:p.co_name||null, rep:p.rep||null,
+    bid_amount:p.bid_amount, bid_rate:p.bid_rate, base_rate:p.base_rate, adj_rate:p.adj_rate,
+  }));
+  for(let i=0;i<rows.length;i+=1000){
+    const body=sanitizeJson(JSON.stringify(rows.slice(i,i+1000)));
+    const res=await authedFetch("/rest/v1/bid_participants?on_conflict=pn_no,co_no",
+      {method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body});
+    if(!res.ok)return false;
+  }
+  return true;
+}
+
 // ─── Phase 4-C: 관리자 페이지 — auth.users 읽기 전용 조회 ──────
 export async function sbAdminListUsers(){
   const res=await authedFetch("/rest/v1/rpc/admin_list_users",{
