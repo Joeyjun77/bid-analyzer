@@ -57,6 +57,7 @@ export function eraFR(at,ep,od){return getFloorRate(at,ep||0,isNewEra(at,od))}
 // 재export가 아니라 import+export — utils.js 내부(parseBidDoc:126, toRecord:414)에서도
 // clsAg를 호출하므로 로컬 바인딩 필요 (86c6670 회귀: "clsAg is not defined" 수정).
 import { clsAg, isMilitaryAgency } from "./agencyClass.js";
+import { parseBidResultRows, parseParticipants } from "./sucviewParse.js";
 export { clsAg, isMilitaryAgency };
 // ─── 유틸 ──────────────────────────────────────────────────
 // Phase 23-8: agency_predictor 학습 키 정규화 — DB normalize_agency_name 함수와 동일 로직.
@@ -453,12 +454,8 @@ export function parseSucview(rows,fileName){
   const pre_avg=pre_rates.length?Math.round(pre_rates.reduce((a,b)=>a+b,0)/pre_rates.length*10000)/10000:0;
   const pre_min=pre_rates.length?Math.min(...pre_rates):0;
   const pre_max=pre_rates.length?Math.max(...pre_rates):0;
-  // 나의업체 (row17), 1순위 (row19)
-  let my_rank=null,my_bid_rate=null,my_adj_rate=null,win_bid_rate=null,win_adj_rate=null;
-  const myRaw=g(17,0);const myRankM=myRaw.match(/\((\d+)\)/);
-  if(myRankM)my_rank=parseInt(myRankM[1]);
-  my_bid_rate=parseFloat(g(17,8))||null;my_adj_rate=parseFloat(g(17,11))||null;
-  win_bid_rate=parseFloat(g(19,8))||null;win_adj_rate=parseFloat(g(19,11))||null;
+  // 나의업체/1순위 — 라벨 스캔(자회사 행 끼어도 정확). sucviewParse.js로 분리(node 테스트).
+  const {my_rank,my_bid_rate,my_adj_rate,win_bid_rate,win_adj_rate}=parseBidResultRows(rows);
   // 참여업체 투찰 분포
   const bidRates=[];
   let startRow=-1;
@@ -471,7 +468,8 @@ export function parseSucview(rows,fileName){
   const bid_q3=sorted.length>=4?sorted[Math.floor(sorted.length*0.75)]:bid_median;
   const bid_dist={"<89":0,"89-89.5":0,"89.5-90":0,"90-90.5":0,"90.5-91":0,"91-91.5":0,"91.5-92":0,">92":0};
   bidRates.forEach(r=>{if(r<89)bid_dist["<89"]++;else if(r<89.5)bid_dist["89-89.5"]++;else if(r<90)bid_dist["89.5-90"]++;else if(r<90.5)bid_dist["90-90.5"]++;else if(r<91)bid_dist["90.5-91"]++;else if(r<91.5)bid_dist["91-91.5"]++;else if(r<92)bid_dist["91.5-92"]++;else bid_dist[">92"]++});
-  return{pn_no,pn,ag,at,od,ba,ep,xp,av,floor_rate,adj_rate,pre_rates,selected_nums,pre_avg,pre_min,pre_max,participant_count,bid_dist,bid_median,bid_q1,bid_q3,my_rank,my_bid_rate,my_adj_rate,win_bid_rate,win_adj_rate,source_file:fileName}}
+  const participants=parseParticipants(rows);
+  return{pn_no,pn,ag,at,od,ba,ep,xp,av,floor_rate,adj_rate,pre_rates,selected_nums,pre_avg,pre_min,pre_max,participant_count,bid_dist,bid_median,bid_q1,bid_q3,my_rank,my_bid_rate,my_adj_rate,win_bid_rate,win_adj_rate,source_file:fileName,participants}}
 
 // ─── 추첨 시뮬레이션 (C(n,4): 15개=1365, 14개=1001) ─────
 export function simDraws(preRates){
