@@ -1,0 +1,211 @@
+import React, { useState, useEffect, useMemo } from "react";
+import { C } from "../lib/constants.js";
+import { INTENSITY_STYLE } from "../lib/g2bFrequency.js";
+import { buildMatrix, buildCompanyOverlay, matrixLevel } from "../lib/participantMatrix.js";
+import { sbFetchParticipantDistribution, sbFetchParticipantCompanyTrace } from "../lib/supabase.js";
+
+// 참여업체 사정율 분포 — 공유축 매트릭스 모달. 발주처(canonical_ag) 최근 N건 × 사정율 버킷.
+// 셀 = 그 버킷에 베팅한 참여사 수(컬럼별 최대 대비 강조). ★ = 1순위 버킷. 자리수 토글 0.1/0.05/0.01.
+// 경쟁사 검색(등록번호/업체명) → 그 업체가 각 건에서 베팅한 사정율 셀 하이라이트 + 추이.
+
+const RATE_CAVEAT = "업체별사정율(=가정사정율) 100기준 절대값. 추첨 결과 관측 분포 — 의도적 선택 아님.";
+const BUCKETS = [
+  { v: 0.1,  label: "0.1" },
+  { v: 0.05, label: "0.05" },
+  { v: 0.01, label: "0.01" },
+];
+
+// 개찰일 연도 글씨색 (G2BSheetTab odYearColor 축약본) — 최근일수록 빨강, 과거는 흐려짐.
+function odColor(od){
+  if (!od) return "#666680";
+  const y = Number(String(od).slice(0, 4));
+  if (!y) return "#cdd2de";
+  const off = new Date().getFullYear() - y;
+  if (off <= 0) return "#ff6363";
+  if (off <= 1) return "#ff9a9a";
+  if (off <= 3) return "#ffd02e";
+  return "rgba(220,225,235,0.6)";
+}
+
+export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
+  const [bucket, setBucket] = useState(0.01);
+  const [dist, setDist] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");   // 실제 제출된 검색어
+  const [trace, setTrace] = useState([]);
+  const [searching, setSearching] = useState(false);
+
+  // 배경 스크롤 잠금
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  // 분포 페치 — ag / bucket 변경 시
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setError(false);
+    sbFetchParticipantDistribution(ag, 30, bucket).then(d => {
+      if (!alive) return;
+      if (!d) { setError(true); setDist(null); }
+      else setDist(d);
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, [ag, bucket]);
+
+  // 경쟁사 trace 페치 — 검색어 제출 시
+  useEffect(() => {
+    if (!search){ setTrace([]); return; }
+    let alive = true;
+    setSearching(true);
+    sbFetchParticipantCompanyTrace(ag, search, 30).then(t => {
+      if (!alive) return;
+      setTrace(Array.isArray(t) ? t : []);
+      setSearching(false);
+    });
+    return () => { alive = false; };
+  }, [ag, search]);
+
+  const matrix = useMemo(() => dist ? buildMatrix(dist) : null, [dist]);
+  const overlay = useMemo(() => buildCompanyOverlay(trace, bucket), [trace, bucket]);
+
+  const fmtBucket = (b) => Number(b).toFixed(matrix ? matrix.decimals : 2);
+  const colCount = matrix ? matrix.columns.length : 0;
+
+  const headerBtn = { padding: "4px 10px", fontSize: 12, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 5, cursor: "pointer" };
+
+  // 셀 스타일 (강조 단계 → INTENSITY_STYLE), 1순위(★)·검색업체 하이라이트 합성
+  const cellStyle = (lvl, isWin, isCompany) => {
+    const st = INTENSITY_STYLE[lvl];
+    const s = { ...st, padding: "2px 4px", textAlign: "center", whiteSpace: "nowrap", borderLeft: "1px solid " + C.bdr };
+    if (isWin) s.background = "rgba(255,209,46,0.14)";
+    if (isCompany){ s.outline = "2px solid #5dca96"; s.outlineOffset = "-2px"; }
+    return s;
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 10, padding: 16, maxWidth: 1500, width: "98%", maxHeight: "92vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+
+        {/* 헤더 */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 700, color: C.gold, fontSize: 14 }}>
+            참여업체 사정율 분포 — <span style={{ color: C.txt }}>{ag}</span>
+            {matrix && <span style={{ color: C.txm, fontWeight: 400, fontSize: 12, marginLeft: 8 }}>최근 {colCount}건 · 버킷 {bucket}</span>}
+          </span>
+          <button onClick={onClose} style={headerBtn}>닫기 ✕</button>
+        </div>
+
+        {/* 컨트롤바 */}
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap", fontSize: 12 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: C.txm }}>
+            버킷 자리수
+            <span style={{ display: "inline-flex", border: "1px solid " + C.bdr, borderRadius: 6, overflow: "hidden" }}>
+              {BUCKETS.map(b => (
+                <button key={b.v} onClick={() => setBucket(b.v)} title={`사정율 ${b.label} 단위로 묶기`}
+                  style={{ padding: "3px 10px", fontSize: 11, border: "none", cursor: "pointer", background: bucket === b.v ? C.gold : C.bg3, color: bucket === b.v ? C.bg : C.txm, fontWeight: bucket === b.v ? 700 : 400 }}>
+                  {b.label}
+                </button>
+              ))}
+            </span>
+          </span>
+          <form onSubmit={e => { e.preventDefault(); setSearch(query.trim()); }} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="경쟁사 검색 (등록번호/업체명)"
+              style={{ padding: "4px 8px", fontSize: 12, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 5, minWidth: 220 }} />
+            <button type="submit" style={headerBtn}>검색</button>
+            {search && <button type="button" onClick={() => { setQuery(""); setSearch(""); }} style={{ ...headerBtn, color: C.txd }}>해제</button>}
+          </form>
+          {search && <span style={{ color: searching ? C.txd : "#5dca96", fontSize: 11 }}>
+            {searching ? "검색 중…" : `"${search}" ${overlay.size}건 매칭`}
+          </span>}
+        </div>
+
+        {/* 본문 */}
+        <div style={{ flex: 1, overflow: "auto", overscrollBehavior: "contain", border: "1px solid " + C.bdr, borderRadius: 6 }}>
+          {loading && <div style={{ padding: 40, textAlign: "center", color: C.txd, fontSize: 13 }}>분포 불러오는 중…</div>}
+          {error && <div style={{ padding: 40, textAlign: "center", color: "#e07a7a", fontSize: 13 }}>분포를 불러오지 못했습니다.</div>}
+          {!loading && !error && matrix && colCount === 0 && (
+            <div style={{ padding: 40, textAlign: "center", color: C.txd, fontSize: 13 }}>이 발주처의 참여업체 데이터가 없습니다.</div>
+          )}
+          {!loading && !error && matrix && colCount > 0 && (
+            <table style={{ borderCollapse: "collapse", fontSize: 11, tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: 76 }} />
+                {matrix.columns.map(c => <col key={c.pn_no} style={{ width: 62 }} />)}
+              </colgroup>
+              <thead>
+                <tr>
+                  <th style={{ position: "sticky", left: 0, top: 0, zIndex: 3, background: C.bg3, color: C.txd, padding: "4px 6px", textAlign: "right", borderBottom: "1px solid " + C.bdr, fontWeight: 600 }}>사정율 \ 건</th>
+                  {matrix.columns.map(c => {
+                    const isHi = c.pn_no === highlightPnno;
+                    return (
+                      <th key={c.pn_no} title={`${c.pn || ""}\n개찰일 ${c.od || "—"} · 참여 ${c.n}건 · 1순위 ${c.win_rate != null ? Number(c.win_rate).toFixed(4) : "—"}`}
+                        style={{ position: "sticky", top: 0, zIndex: 2, background: isHi ? "rgba(255,209,46,0.18)" : C.bg3, padding: "3px 2px", textAlign: "center", borderBottom: "1px solid " + C.bdr, borderLeft: "1px solid " + C.bdr, verticalAlign: "bottom" }}>
+                        <div style={{ color: odColor(c.od), fontWeight: 700, fontSize: 10 }}>{c.od ? String(c.od).slice(5) : "—"}</div>
+                        <div style={{ color: isHi ? C.gold : C.txm, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 9 }}>{c.pn || c.pn_no}</div>
+                        <div style={{ color: "#ffd02e", fontSize: 9 }}>★{c.win_rate != null ? Number(c.win_rate).toFixed(2) : "—"}</div>
+                      </th>
+                    );
+                  })}
+                </tr>
+                {/* 검색업체 추이 행 */}
+                {search && (
+                  <tr>
+                    <th style={{ position: "sticky", left: 0, zIndex: 2, background: C.bg2, color: "#5dca96", padding: "2px 6px", textAlign: "right", fontWeight: 700, fontSize: 9, borderBottom: "1px solid " + C.bdr }}>검색사 사정율</th>
+                    {matrix.columns.map(c => {
+                      const ov = overlay.get(c.pn_no);
+                      return <td key={c.pn_no} style={{ background: C.bg2, color: ov ? "#5dca96" : C.txd, textAlign: "center", fontSize: 9, padding: "2px", borderLeft: "1px solid " + C.bdr, borderBottom: "1px solid " + C.bdr }}>{ov ? ov.adj_rate.toFixed(2) : "·"}</td>;
+                    })}
+                  </tr>
+                )}
+              </thead>
+              <tbody>
+                {matrix.buckets.map(b => {
+                  const bk = matrix.bkey(b);
+                  return (
+                    <tr key={bk}>
+                      <td style={{ position: "sticky", left: 0, zIndex: 1, background: C.bg2, color: C.txm, padding: "2px 6px", textAlign: "right", fontWeight: 600, borderTop: "1px solid " + C.bdr }}>{fmtBucket(b)}</td>
+                      {matrix.columns.map(c => {
+                        const cell = matrix.cell(c.pn_no, b);
+                        const ov = overlay.get(c.pn_no);
+                        const isCompany = !!(ov && ov.bucketKey === bk);
+                        if (!cell && !isCompany) {
+                          return <td key={c.pn_no} style={{ borderLeft: "1px solid " + C.bdr, borderTop: "1px solid " + C.bdr }} />;
+                        }
+                        const cnt = cell ? cell.cnt : 0;
+                        const lvl = matrixLevel(cnt, matrix.colMax(c.pn_no));
+                        const isWin = matrix.isWinCell(c.pn_no, b);
+                        return (
+                          <td key={c.pn_no} title={`${c.od || ""} · 사정율 ${fmtBucket(b)} · ${cnt}개사${isWin ? " · ★1순위" : ""}${isCompany ? " · 검색사" : ""}`}
+                            style={{ ...cellStyle(lvl, isWin, isCompany), borderTop: "1px solid " + C.bdr }}>
+                            {isWin ? "★" : ""}{cnt || (isCompany ? "·" : "")}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                {/* 참여합 행 */}
+                <tr>
+                  <td style={{ position: "sticky", left: 0, zIndex: 1, background: C.bg3, color: C.txd, padding: "3px 6px", textAlign: "right", fontWeight: 700, borderTop: "2px solid " + C.bdr }}>참여합</td>
+                  {matrix.columns.map(c => (
+                    <td key={c.pn_no} style={{ background: C.bg3, color: C.txm, textAlign: "center", fontWeight: 600, padding: "3px 2px", borderLeft: "1px solid " + C.bdr, borderTop: "2px solid " + C.bdr }}>{matrix.colTotal(c.pn_no)}</td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={{ fontSize: 10, color: C.txd, marginTop: 8, lineHeight: 1.5 }}>
+          {RATE_CAVEAT} <span style={{ color: C.txm }}>세로=사정율 버킷(높을수록 위), 셀=그 버킷 참여사 수(건별 최다 대비 밝기), ★=1순위 버킷. 80~120 범위만 표시.</span>
+        </div>
+      </div>
+    </div>
+  );
+}

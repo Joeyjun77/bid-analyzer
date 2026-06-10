@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { C, PAGE } from "../lib/constants.js";
 import { buildG2BFrequency, buildGlobalRateFreq, buildYearRateFreq, dedupExactRecords, intensityLevel, INTENSITY_STYLE, COUNT_THRESHOLDS, rateBucket, baSegment, topN } from "../lib/g2bFrequency.js";
+import ParticipantMatrixModal from "./ParticipantMatrixModal.jsx";
+import { sbFetchParticipantPnnos } from "../lib/supabase.js";
 
 const fmtNum  = (v) => (v == null || v === "") ? "—" : Number(v).toLocaleString("ko-KR");
 const fmtRate = (v, d = 3) => (v == null || !isFinite(Number(v))) ? "—" : Number(v).toFixed(d);
@@ -131,6 +133,15 @@ export default function G2BSheetTab({ recs }){
   const [rateModal, setRateModal] = useState(null); // 사정율 셀 클릭 드릴다운: { hl, bucket, value, year, rows, basis }
   const [rateModalShow, setRateModalShow] = useState(50); // 드릴다운 더보기 표시 건수
   const [dispDecimals, setDispDecimals] = useState(4); // 사정율 표기/매칭 소수 자리수(4·3·2, 절삭) — 표기·횟수·강조·모달 공통 적용
+  const [partPnnoSet, setPartPnnoSet] = useState(null); // 참여데이터 보유 pn_no Set (null=로딩, 버튼 활성 판단)
+  const [partModal, setPartModal] = useState(null); // 참여분포 모달 { ag, pnno }
+
+  // 참여데이터 보유 pn_no 1회 프리로드 (참여분포 버튼 활성용). 실패 시 빈 Set(전부 비활성).
+  useEffect(() => {
+    let alive = true;
+    sbFetchParticipantPnnos().then(arr => { if (alive) setPartPnnoSet(new Set(arr || [])); });
+    return () => { alive = false; };
+  }, []);
 
   // 모달(드릴다운·상세·범례) 열림 동안 배경 스크롤 잠금 — 모달 끝까지 스크롤해도 뒷 리스트가 스크롤되지 않게(스크롤 체이닝 방지).
   useEffect(() => {
@@ -461,7 +472,8 @@ export default function G2BSheetTab({ recs }){
             <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%", tableLayout: "fixed" }}>
               <colgroup>
                 {LIST_COLS.map(c => <col key={c.label} style={{ width: c.w }} />)}
-                <col style={{ width: "7%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "8%" }} />
               </colgroup>
               <thead>
                 <tr style={{ background: C.bg3, color: C.txd }}>
@@ -474,17 +486,27 @@ export default function G2BSheetTab({ recs }){
                       style={{ padding: "6px 8px", textAlign: c.num ? "right" : "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", borderBottom: "1px solid " + C.bdr, fontWeight: 600, cursor: sortable ? "pointer" : "default", color: active ? C.gold : undefined, userSelect: "none" }}>{c.label}{arrow}</th>;
                   })}
                   <th style={{ padding: "6px 8px", textAlign: "center", borderBottom: "1px solid " + C.bdr, fontWeight: 600 }}>상세</th>
+                  <th style={{ padding: "6px 4px", textAlign: "center", borderBottom: "1px solid " + C.bdr, fontWeight: 600 }}>참여분포</th>
                 </tr>
               </thead>
               <tbody>
-                {shownRows.map((r, i) => (
+                {shownRows.map((r, i) => {
+                  const hasPart = partPnnoSet ? partPnnoSet.has(r.pn_no) : false;
+                  return (
                   <tr key={r.id || i} style={{ borderTop: "1px solid " + C.bdr, background: i % 2 ? C.bg2 : "transparent" }}>
                     {LIST_COLS.map(c => listCell(c, r))}
                     <td style={{ padding: "4px 8px", textAlign: "center" }}>
                       <button onClick={() => setDetailRow(r)} style={{ padding: "2px 8px", fontSize: 11, background: C.bg3, color: C.gold, border: "1px solid " + C.bdr, borderRadius: 5, cursor: "pointer", whiteSpace: "nowrap" }}>상세</button>
                     </td>
+                    <td style={{ padding: "4px 4px", textAlign: "center" }}>
+                      <button onClick={hasPart ? () => setPartModal({ ag: r.canonical_ag || r.ag, pnno: r.pn_no }) : undefined}
+                        disabled={!hasPart}
+                        title={hasPart ? "이 발주처 최근 참여업체 사정율 분포" : (partPnnoSet ? "참여데이터 없음" : "참여데이터 확인 중…")}
+                        style={{ padding: "2px 6px", fontSize: 11, background: C.bg3, color: hasPart ? "#5dca96" : C.txd, border: "1px solid " + C.bdr, borderRadius: 5, cursor: hasPart ? "pointer" : "default", whiteSpace: "nowrap", opacity: hasPart ? 1 : 0.5 }}>분포</button>
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -614,6 +636,11 @@ export default function G2BSheetTab({ recs }){
             </table>
           </div>
         </div>
+      )}
+
+      {/* 참여업체 사정율 분포 매트릭스 모달 */}
+      {partModal && (
+        <ParticipantMatrixModal ag={partModal.ag} highlightPnno={partModal.pnno} onClose={() => setPartModal(null)} />
       )}
     </div>
   );

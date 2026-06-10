@@ -330,6 +330,36 @@ export async function sbSaveParticipants(meta, participants){
   return true;
 }
 
+// ─── Phase 2: 참여업체 사정율 분포 (조회/시각화) ──────────────────
+// 참여데이터 보유 pn_no 목록 (G2B 탭 진입 시 1회 — 버튼 활성 판단). 실패 시 빈 배열.
+export async function sbFetchParticipantPnnos(){
+  try{
+    const res=await authedFetch("/rest/v1/rpc/get_participant_pnnos",{method:"POST",headers:JSON_H,body:"{}"});
+    if(!res.ok)return [];
+    const v=await res.json();
+    return Array.isArray(v)?v:[];
+  }catch(e){return [];}
+}
+// 발주처(canonical_ag) 최근 n건 참여업체 사정율 분포 — 서버 집계 JSON {ag,bucket,columns,cells}. 실패 시 null.
+export async function sbFetchParticipantDistribution(ag,n=30,bucket=0.01){
+  try{
+    const res=await authedFetch("/rest/v1/rpc/get_participant_distribution",
+      {method:"POST",headers:JSON_H,body:JSON.stringify({p_ag:ag,p_n:n,p_bucket:bucket})});
+    if(!res.ok)return null;
+    return await res.json();
+  }catch(e){return null;}
+}
+// 경쟁사 추적 — 발주처 최근 n건에서 특정 업체(co_no 정확 또는 co_name 부분)의 사정율 추이 배열. 실패 시 빈 배열.
+export async function sbFetchParticipantCompanyTrace(ag,query,n=30){
+  try{
+    const res=await authedFetch("/rest/v1/rpc/get_participant_company_trace",
+      {method:"POST",headers:JSON_H,body:JSON.stringify({p_ag:ag,p_query:query,p_n:n})});
+    if(!res.ok)return [];
+    const v=await res.json();
+    return Array.isArray(v)?v:[];
+  }catch(e){return [];}
+}
+
 // ─── Phase 4-C: 관리자 페이지 — auth.users 읽기 전용 조회 ──────
 export async function sbAdminListUsers(){
   const res=await authedFetch("/rest/v1/rpc/admin_list_users",{
