@@ -4,18 +4,27 @@
 // 입력 dist = { ag, bucket(=p_bucket), columns:[{pn_no,od,pn,n,win_rate}], cells:[{pn_no,bucket,cnt,is_win}] }.
 // 세로축 = 사정율 버킷(내림차순, 데이터 있는 버킷만), 가로축 = 최근 N건(od desc, RPC 순서 유지).
 
-// 버킷 라벨 자리수 — p_bucket 그래뉼래러티에 맞춤. 0.1 → 1자리, 그 외(0.05·0.01) → 2자리.
+// 버킷 라벨 자리수 — p_bucket 그래뉼래러티에 맞춤. 0.1→1, 0.05·0.01→2, 0.001→3, 0.0001→4.
 export function bucketDecimals(pBucket){
   const b = Number(pBucket) || 0.01;
-  return b >= 0.1 ? 1 : 2;
+  if (b >= 0.1) return 1;
+  if (b >= 0.01) return 2;
+  if (b >= 0.001) return 3;
+  return 4;
 }
 
-// 사정율 → 버킷(절삭). Postgres floor(adj/p)*p 와 동일. 부동소수 노이즈는 자리수 반올림으로 흡수.
+// 사정율 → 버킷(절삭). Postgres floor(adj/p)*p 와 동일.
+// 정수 스케일(1e4)로 절삭 — adj·p 모두 ≤4자리라 부동소수 오차 없이 RPC numeric 결과와 정확히 일치.
+// (0.0001 단위에서 Math.floor(adj/p)*p 직접 계산은 998611→998610 류 오차로 셀-오버레이 버킷이 어긋남)
 export function cellBucket(adj, pBucket){
   if (adj == null || !isFinite(Number(adj))) return null;
   const p = Number(pBucket) || 0.01;
-  const v = Math.floor(Number(adj) / p) * p;
-  return Number(v.toFixed(4));
+  const scale = 1e4;
+  const pi = Math.round(p * scale);
+  if (pi <= 0) return null;
+  const ai = Math.round(Number(adj) * scale);
+  const bi = Math.floor(ai / pi) * pi;
+  return Number((bi / scale).toFixed(4));
 }
 
 // 버킷 키 정규화(부동소수 중복 방지) — 4자리 문자열.
@@ -43,6 +52,7 @@ export function buildMatrix(dist){
   const colTotal = new Map();    // pn_no -> 셀 합(참여합)
   const winBucketKey = new Map();// pn_no -> ★ 버킷 키(is_win 셀)
   const bucketSet = new Map();   // bkey -> numeric (데이터 있는 버킷 union)
+  const bucketTotal = new Map(); // bkey -> 전 컬럼 합(세밀 버킷 과다 시 밀집 상위 선별용)
 
   for (const c of cells){
     if (!c || c.pn_no == null || c.bucket == null) continue;
@@ -51,6 +61,7 @@ export function buildMatrix(dist){
     const cnt = Number(c.cnt) || 0;
     cellOf.set(c.pn_no + "|" + k, { cnt, is_win: !!c.is_win });
     bucketSet.set(k, b);
+    bucketTotal.set(k, (bucketTotal.get(k) || 0) + cnt);
     colMax.set(c.pn_no, Math.max(colMax.get(c.pn_no) || 0, cnt));
     colTotal.set(c.pn_no, (colTotal.get(c.pn_no) || 0) + cnt);
     if (c.is_win) winBucketKey.set(c.pn_no, k);
@@ -68,6 +79,7 @@ export function buildMatrix(dist){
     cell: (pnNo, bucket) => cellOf.get(pnNo + "|" + bkey(bucket)) || null,
     colMax: (pnNo) => colMax.get(pnNo) || 0,
     colTotal: (pnNo) => colTotal.get(pnNo) || 0,
+    bucketTotalOf: (bucket) => bucketTotal.get(bkey(bucket)) || 0,
     winBucketKey: (pnNo) => winBucketKey.get(pnNo) || null,
     isWinCell: (pnNo, bucket) => winBucketKey.get(pnNo) === bkey(bucket),
   };

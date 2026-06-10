@@ -10,9 +10,11 @@ import { sbFetchParticipantDistribution, sbFetchParticipantCompanyTrace } from "
 
 const RATE_CAVEAT = "업체별사정율(=가정사정율) 100기준 절대값. 추첨 결과 관측 분포 — 의도적 선택 아님.";
 const BUCKETS = [
-  { v: 0.1,  label: "0.1" },
-  { v: 0.05, label: "0.05" },
-  { v: 0.01, label: "0.01" },
+  { v: 0.1,    label: "0.1" },
+  { v: 0.05,   label: "0.05" },
+  { v: 0.01,   label: "0.01" },
+  { v: 0.001,  label: "0.001" },
+  { v: 0.0001, label: "0.0001" },
 ];
 
 // 개찰일 연도 글씨색 (G2BSheetTab odYearColor 축약본) — 최근일수록 빨강, 과거는 흐려짐.
@@ -74,6 +76,19 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
   const matrix = useMemo(() => dist ? buildMatrix(dist) : null, [dist]);
   const overlay = useMemo(() => buildCompanyOverlay(trace, bucket), [trace, bucket]);
 
+  // 세밀 버킷(특히 0.0001) 과다 시 렌더 가드 — 밀집 상위 MAX_ROWS개만(전 컬럼 합 기준) 표시해 프리즈 방지.
+  // 참여합 행은 전체 기준 그대로(절단 무관). 선별 후 사정율 내림차순 복원.
+  const MAX_ROWS = 600;
+  const renderBuckets = useMemo(() => {
+    if (!matrix) return [];
+    if (matrix.buckets.length <= MAX_ROWS) return matrix.buckets;
+    return [...matrix.buckets]
+      .sort((a, b) => matrix.bucketTotalOf(b) - matrix.bucketTotalOf(a))
+      .slice(0, MAX_ROWS)
+      .sort((a, b) => b - a);
+  }, [matrix]);
+  const truncated = matrix ? matrix.buckets.length > renderBuckets.length : false;
+
   const fmtBucket = (b) => Number(b).toFixed(matrix ? matrix.decimals : 2);
   const colCount = matrix ? matrix.columns.length : 0;
 
@@ -125,6 +140,13 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
           </span>}
         </div>
 
+        {/* 세밀 버킷 절단 안내 */}
+        {!loading && !error && truncated && (
+          <div style={{ fontSize: 11, color: "#e0b84a", background: "rgba(255,209,46,0.10)", border: "1px solid " + C.bdr, borderRadius: 5, padding: "5px 8px", marginBottom: 6 }}>
+            버킷 {matrix.buckets.length.toLocaleString()}개 — {bucket} 단위는 사정율이 거의 고유값이라 과도하게 세밀합니다. 밀집 상위 {MAX_ROWS}개 버킷만 표시합니다(참여합은 전체 기준). 더 큰 단위 권장.
+          </div>
+        )}
+
         {/* 본문 */}
         <div style={{ flex: 1, overflow: "auto", overscrollBehavior: "contain", border: "1px solid " + C.bdr, borderRadius: 6 }}>
           {loading && <div style={{ padding: 40, textAlign: "center", color: C.txd, fontSize: 13 }}>분포 불러오는 중…</div>}
@@ -165,7 +187,7 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
                 )}
               </thead>
               <tbody>
-                {matrix.buckets.map(b => {
+                {renderBuckets.map(b => {
                   const bk = matrix.bkey(b);
                   return (
                     <tr key={bk}>

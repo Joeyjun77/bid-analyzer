@@ -7,12 +7,17 @@ const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got
 eq(bucketDecimals(0.1), 1, 'bucketDecimals 0.1 → 1');
 eq(bucketDecimals(0.05), 2, 'bucketDecimals 0.05 → 2');
 eq(bucketDecimals(0.01), 2, 'bucketDecimals 0.01 → 2');
+eq(bucketDecimals(0.001), 3, 'bucketDecimals 0.001 → 3');
+eq(bucketDecimals(0.0001), 4, 'bucketDecimals 0.0001 → 4');
 
-// 2. cellBucket — 절삭(Postgres floor(adj/p)*p 동일)
+// 2. cellBucket — 정수스케일 절삭(Postgres floor(adj/p)*p 동일, 부동소수 오차 없음)
 eq(cellBucket(99.8611, 0.01), 99.86, 'cellBucket 99.8611/0.01 → 99.86');
 eq(cellBucket(100.004, 0.01), 100.00, 'cellBucket 100.004/0.01 → 100.00');
 eq(cellBucket(99.87, 0.05), 99.85, 'cellBucket 99.87/0.05 → 99.85');
 eq(cellBucket(99.84, 0.1), 99.8, 'cellBucket 99.84/0.1 → 99.8');
+eq(cellBucket(99.8611, 0.0001), 99.8611, 'cellBucket 99.8611/0.0001 → 99.8611 (부동소수 오차 없음)');
+eq(cellBucket(99.8615, 0.001), 99.861, 'cellBucket 99.8615/0.001 → 99.861');
+eq(cellBucket(100.0000, 0.0001), 100.00, 'cellBucket 100.0/0.0001 → 100');
 eq(cellBucket(null, 0.01), null, 'cellBucket null');
 
 // 3. matrixLevel — 컬럼 최대 대비 비율 (0 최강 ~ 7 약)
@@ -55,6 +60,11 @@ eq(MATRIX_RATIO_THRESHOLDS.length, 7, 'thresholds 7 경계 (8단계)');
   eq(m.isWinCell("A", 99.86), true, 'isWinCell A/99.86 ★');
   eq(m.isWinCell("A", 99.85), false, 'isWinCell A/99.85 아님');
   eq(m.winBucketKey("B"), "100.0100", 'winBucketKey B');
+  // bucketTotalOf — 전 컬럼 합 (세밀 버킷 선별용)
+  eq(m.bucketTotalOf(99.86), 3, 'bucketTotalOf 99.86 = 3 (A만)');
+  eq(m.bucketTotalOf(100.00), 2, 'bucketTotalOf 100.00 = 2 (B만)');
+  eq(m.bucketTotalOf(99.85), 2, 'bucketTotalOf 99.85 = 2');
+  eq(m.bucketTotalOf(123.45), 0, 'bucketTotalOf 없는 버킷 = 0');
 }
 
 // 5. buildMatrix — 빈 입력 방어
