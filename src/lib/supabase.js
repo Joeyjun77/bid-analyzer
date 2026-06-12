@@ -313,11 +313,12 @@ export async function sbFetchDetailsByAg(ag){
   try{const res=await authedFetch("/rest/v1/bid_details?ag=eq."+encodeURIComponent(ag)+"&select=*&order=od.desc&limit=1000");if(!res.ok)return[];return await res.json()}catch(e){return[]}}
 
 // 참여업체 멱등 bulk 적재 (Phase 1). on_conflict=pn_no,co_no merge → 재업로드 안전. 1000행씩 청크.
+// 주의: 발주처/날짜(ag/canonical_ag/od/at) 컬럼은 스토리지 절감 위해 제거(2026-06-13).
+//   조회 RPC가 pn_no로 bid_records를 조인해 발주처/날짜를 가져오므로 참여행에 중복 저장 불필요.
 export async function sbSaveParticipants(meta, participants){
   if(!participants||!participants.length)return true;
   const rows=participants.map(p=>({
-    pn_no:meta.pn_no, od:meta.od||null, ag:meta.ag||null,
-    canonical_ag:meta.canonical_ag||meta.ag||null, at:meta.at||null,
+    pn_no:meta.pn_no,
     rank:p.rank, co_no:p.co_no||null, co_name:p.co_name||null, rep:p.rep||null,
     bid_amount:p.bid_amount, bid_rate:p.bid_rate, base_rate:p.base_rate, adj_rate:p.adj_rate,
   }));
