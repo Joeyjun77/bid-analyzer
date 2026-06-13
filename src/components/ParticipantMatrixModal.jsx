@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useTransition } from "react";
 import { C } from "../lib/constants.js";
 import { INTENSITY_STYLE } from "../lib/g2bFrequency.js";
 import { buildMatrix, buildCompanyOverlay, matrixLevel } from "../lib/participantMatrix.js";
@@ -35,6 +35,7 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
   const [dist, setDist] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [isPending, startTransition] = useTransition();   // 토글/버킷 변경 시 무거운 표 렌더를 논블로킹 처리
 
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");   // 실제 제출된 검색어
@@ -134,7 +135,7 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
             버킷 자리수
             <span style={{ display: "inline-flex", border: "1px solid " + C.bdr, borderRadius: 6, overflow: "hidden" }}>
               {BUCKETS.map(b => (
-                <button key={b.v} onClick={() => setBucket(b.v)} title={`사정율 ${b.label} 단위로 묶기`}
+                <button key={b.v} onClick={() => startTransition(() => setBucket(b.v))} title={`사정율 ${b.label} 단위로 묶기`}
                   style={{ padding: "3px 10px", fontSize: 11, border: "none", cursor: "pointer", background: bucket === b.v ? C.gold : C.bg3, color: bucket === b.v ? C.bg : C.txm, fontWeight: bucket === b.v ? 700 : 400 }}>
                   {b.label}
                 </button>
@@ -145,13 +146,14 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
             보기
             <span style={{ display: "inline-flex", border: "1px solid " + C.bdr, borderRadius: 6, overflow: "hidden" }}>
               {[{ v: "dot", label: "점표" }, { v: "matrix", label: "숫자" }].map(o => (
-                <button key={o.v} onClick={() => setView(o.v)} title={o.v === "dot" ? "점 크기로 분포 — 모든 건 한눈에" : "버킷별 참여사 수 숫자"}
+                <button key={o.v} onClick={() => startTransition(() => setView(o.v))} title={o.v === "dot" ? "점 크기로 분포 — 모든 건 한눈에" : "버킷별 참여사 수 숫자"}
                   style={{ padding: "3px 10px", fontSize: 11, border: "none", cursor: "pointer", background: view === o.v ? C.gold : C.bg3, color: view === o.v ? C.bg : C.txm, fontWeight: view === o.v ? 700 : 400 }}>
                   {o.label}
                 </button>
               ))}
             </span>
           </span>
+          {isPending && <span style={{ color: C.txd, fontSize: 11 }}>그리는 중…</span>}
           <form onSubmit={e => { e.preventDefault(); setSearch(query.trim()); }} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
             <input value={query} onChange={e => setQuery(e.target.value)} placeholder="경쟁사 검색 (등록번호/업체명)"
               style={{ padding: "4px 8px", fontSize: 12, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 5, minWidth: 220 }} />
@@ -178,7 +180,7 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
             <div style={{ padding: 40, textAlign: "center", color: C.txd, fontSize: 13 }}>이 발주처의 참여업체 데이터가 없습니다.</div>
           )}
           {!loading && !error && matrix && colCount > 0 && (
-            <table style={{ borderCollapse: "collapse", fontSize: 11, tableLayout: "fixed" }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 11, tableLayout: "fixed", width: "100%" }}>
               <colgroup>
                 <col style={{ width: 52 }} />
                 {matrix.columns.map(c => <col key={c.pn_no} style={{ width: view === "dot" ? 22 : 40 }} />)}
