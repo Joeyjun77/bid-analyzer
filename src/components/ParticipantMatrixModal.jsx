@@ -32,6 +32,7 @@ function odColor(od){
 export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
   const [bucket, setBucket] = useState(0.01);
   const [view, setView] = useState("dot");   // "dot"=점표분포 / "matrix"=숫자
+  const [axisFit, setAxisFit] = useState(true);  // true=밀집 구간만(양 끝 희소 이상치 절단) / false=전체 범위
   const [dist, setDist] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -78,18 +79,51 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
   const matrix = useMemo(() => dist ? buildMatrix(dist) : null, [dist]);
   const overlay = useMemo(() => buildCompanyOverlay(trace, bucket), [trace, bucket]);
 
-  // 세밀 버킷(특히 0.0001) 과다 시 렌더 가드 — 밀집 상위 MAX_ROWS개만(전 컬럼 합 기준) 표시해 프리즈 방지.
-  // 참여합 행은 전체 기준 그대로(절단 무관). 선별 후 사정율 내림차순 복원.
+  // 표시 버킷 산출. ① 축 자동맞춤: 양 끝의 희소한 꼬리(각 tailFrac 미만 질량)를 잘라 밀집 구간만 노출
+  //   — 단발 이상치(예 1명짜리 110%)가 축을 길게 늘려 본 덩어리가 안 보이는 문제 해소. ★1순위 버킷은 항상 보존.
+  // ② 세밀 버킷(특히 0.0001) 과다 시 밀집 상위 MAX_ROWS개만(전 컬럼 합 기준) → 프리즈 방지. 참여합 행은 전체 기준.
   const MAX_ROWS = 600;
   const renderBuckets = useMemo(() => {
     if (!matrix) return [];
-    if (matrix.buckets.length <= MAX_ROWS) return matrix.buckets;
-    return [...matrix.buckets]
-      .sort((a, b) => matrix.bucketTotalOf(b) - matrix.bucketTotalOf(a))
-      .slice(0, MAX_ROWS)
-      .sort((a, b) => b - a);
-  }, [matrix]);
-  const truncated = matrix ? matrix.buckets.length > renderBuckets.length : false;
+    let buckets = matrix.buckets;   // 사정율 내림차순
+    if (axisFit && buckets.length > 5) {
+      // 밀도 기반 절단: 양 끝에서 "희소한"(피크 대비 미달) 행을 연속으로 잘라낸다.
+      // 하한처럼 빽빽한 끝은 임계 미달이 아니라 바로 멈춰 보존됨 → 비대칭 분포(긴 윗꼬리)에 적합.
+      // 과도 절단 방지: 각 끝에서 최대 MASS_CAP 질량까지만 잘라낸다.
+      const totals = buckets.map(b => matrix.bucketTotalOf(b));
+      const grand = totals.reduce((s, c) => s + c, 0);
+      const peak = totals.reduce((m, c) => c > m ? c : m, 0);
+      if (grand > 0 && peak > 0) {
+        const thr = Math.max(2, peak * 0.05);   // 피크의 5% 미만 = 희소 꼬리
+        const massCap = grand * 0.20;
+        let hi = 0, accH = 0;
+        while (hi < buckets.length - 1 && totals[hi] < thr && accH + totals[hi] <= massCap) { accH += totals[hi]; hi++; }
+        let lo = buckets.length - 1, accL = 0;
+        while (lo > hi && totals[lo] < thr && accL + totals[lo] <= massCap) { accL += totals[lo]; lo--; }
+        // ★1순위 버킷이 잘려나가지 않도록 범위 확장
+        let hiVal = buckets[hi], loVal = buckets[lo];
+        for (const c of matrix.columns) {
+          const k = matrix.winBucketKey(c.pn_no);
+          if (k == null) continue;
+          const w = Number(k);
+          if (!isFinite(w)) continue;
+          if (w > hiVal) hiVal = w;
+          if (w < loVal) loVal = w;
+        }
+        buckets = buckets.filter(b => b <= hiVal && b >= loVal);
+      }
+    }
+    if (buckets.length > MAX_ROWS) {
+      return [...buckets]
+        .sort((a, b) => matrix.bucketTotalOf(b) - matrix.bucketTotalOf(a))
+        .slice(0, MAX_ROWS)
+        .sort((a, b) => b - a);
+    }
+    return buckets;
+  }, [matrix, axisFit]);
+  const hiddenRows = matrix ? matrix.buckets.length - renderBuckets.length : 0;
+  const truncated = hiddenRows > 0;
+  const denseCapped = matrix ? renderBuckets.length >= MAX_ROWS && matrix.buckets.length > MAX_ROWS : false;
 
   const fmtBucket = (b) => Number(b).toFixed(matrix ? matrix.decimals : 2);
   const colCount = matrix ? matrix.columns.length : 0;
@@ -106,9 +140,11 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
   };
 
   // 점표 뷰 — 강조 단계(0 최강 … 7 약)별 점 지름. 셀 숫자 대신 크기로 참여수 표현.
-  const DOT_SIZE = [11, 10, 9, 8, 7, 6, 5];
+  // 최소 점 크기 7px 보장 — 1~2명 버킷도 또렷이 보이도록(예전 4~5px는 거의 안 보임).
+  const DOT_SIZE = [13, 12, 11, 10, 9, 8, 7];
+  const DOT_MIN = 7;
   const dotEl = (cnt, lvl, isWin, isCompany) => {
-    const size = cnt > 0 ? (DOT_SIZE[lvl] != null ? DOT_SIZE[lvl] : 4) : 0;
+    const size = cnt > 0 ? (DOT_SIZE[lvl] != null ? DOT_SIZE[lvl] : DOT_MIN) : 0;
     // 검색사인데 그 버킷 참여 0 → 빈 초록 링만
     if (size === 0) return isCompany
       ? <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", border: "2px solid #5dca96", boxSizing: "border-box" }} />
@@ -153,6 +189,17 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
               ))}
             </span>
           </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: C.txm }}>
+            축
+            <span style={{ display: "inline-flex", border: "1px solid " + C.bdr, borderRadius: 6, overflow: "hidden" }}>
+              {[{ v: true, label: "자동맞춤" }, { v: false, label: "전체" }].map(o => (
+                <button key={String(o.v)} onClick={() => startTransition(() => setAxisFit(o.v))} title={o.v ? "양 끝 희소 이상치 잘라 밀집 구간만 — 덩어리가 또렷이 보임" : "전체 사정율 범위(이상치 포함)"}
+                  style={{ padding: "3px 10px", fontSize: 11, border: "none", cursor: "pointer", background: axisFit === o.v ? C.gold : C.bg3, color: axisFit === o.v ? C.bg : C.txm, fontWeight: axisFit === o.v ? 700 : 400 }}>
+                  {o.label}
+                </button>
+              ))}
+            </span>
+          </span>
           {isPending && <span style={{ color: C.txd, fontSize: 11 }}>그리는 중…</span>}
           <form onSubmit={e => { e.preventDefault(); setSearch(query.trim()); }} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
             <input value={query} onChange={e => setQuery(e.target.value)} placeholder="경쟁사 검색 (등록번호/업체명)"
@@ -165,10 +212,11 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
           </span>}
         </div>
 
-        {/* 세밀 버킷 절단 안내 */}
+        {/* 축 자동맞춤 / 세밀 버킷 절단 안내 */}
         {!loading && !error && truncated && (
           <div style={{ fontSize: 11, color: "#e0b84a", background: "rgba(255,209,46,0.10)", border: "1px solid " + C.bdr, borderRadius: 5, padding: "5px 8px", marginBottom: 6 }}>
-            버킷 {matrix.buckets.length.toLocaleString()}개 — {bucket} 단위는 사정율이 거의 고유값이라 과도하게 세밀합니다. 밀집 상위 {MAX_ROWS}개 버킷만 표시합니다(참여합은 전체 기준). 더 큰 단위 권장.
+            {axisFit && `축 자동맞춤: 양 끝 희소 이상치 ${hiddenRows.toLocaleString()}행 숨김(밀집 구간만, 참여합은 전체 기준). 전체 범위는 축 [전체]. `}
+            {denseCapped && `${bucket} 단위는 과도하게 세밀합니다 — 밀집 상위 ${MAX_ROWS}행만 표시. 더 큰 단위 권장.`}
           </div>
         )}
 
