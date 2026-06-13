@@ -31,6 +31,7 @@ function odColor(od){
 
 export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
   const [bucket, setBucket] = useState(0.01);
+  const [view, setView] = useState("dot");   // "dot"=점표분포 / "matrix"=숫자
   const [dist, setDist] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -103,6 +104,17 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
     return s;
   };
 
+  // 점표 뷰 — 강조 단계(0 최강 … 7 약)별 점 지름. 셀 숫자 대신 크기로 참여수 표현.
+  const DOT_SIZE = [11, 10, 9, 8, 7, 6, 5];
+  const dotEl = (cnt, lvl, isWin, isCompany) => {
+    const size = cnt > 0 ? (DOT_SIZE[lvl] != null ? DOT_SIZE[lvl] : 4) : 0;
+    // 검색사인데 그 버킷 참여 0 → 빈 초록 링만
+    if (size === 0) return isCompany
+      ? <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", border: "2px solid #5dca96", boxSizing: "border-box" }} />
+      : null;
+    return <span style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", background: isWin ? C.gold : "#8a93a6", outline: isCompany ? "2px solid #5dca96" : "none", outlineOffset: 1 }} />;
+  };
+
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 10, padding: 16, maxWidth: 1500, width: "98%", maxHeight: "92vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
@@ -125,6 +137,17 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
                 <button key={b.v} onClick={() => setBucket(b.v)} title={`사정율 ${b.label} 단위로 묶기`}
                   style={{ padding: "3px 10px", fontSize: 11, border: "none", cursor: "pointer", background: bucket === b.v ? C.gold : C.bg3, color: bucket === b.v ? C.bg : C.txm, fontWeight: bucket === b.v ? 700 : 400 }}>
                   {b.label}
+                </button>
+              ))}
+            </span>
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: C.txm }}>
+            보기
+            <span style={{ display: "inline-flex", border: "1px solid " + C.bdr, borderRadius: 6, overflow: "hidden" }}>
+              {[{ v: "dot", label: "점표" }, { v: "matrix", label: "숫자" }].map(o => (
+                <button key={o.v} onClick={() => setView(o.v)} title={o.v === "dot" ? "점 크기로 분포 — 모든 건 한눈에" : "버킷별 참여사 수 숫자"}
+                  style={{ padding: "3px 10px", fontSize: 11, border: "none", cursor: "pointer", background: view === o.v ? C.gold : C.bg3, color: view === o.v ? C.bg : C.txm, fontWeight: view === o.v ? 700 : 400 }}>
+                  {o.label}
                 </button>
               ))}
             </span>
@@ -158,7 +181,7 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
             <table style={{ borderCollapse: "collapse", fontSize: 11, tableLayout: "fixed" }}>
               <colgroup>
                 <col style={{ width: 52 }} />
-                {matrix.columns.map(c => <col key={c.pn_no} style={{ width: 40 }} />)}
+                {matrix.columns.map(c => <col key={c.pn_no} style={{ width: view === "dot" ? 22 : 40 }} />)}
               </colgroup>
               <thead>
                 <tr>
@@ -169,7 +192,7 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
                       <th key={c.pn_no} title={`${c.pn || ""}\n개찰일 ${c.od || "—"} · 참여 ${c.n}건 · 1순위 ${c.win_rate != null ? Number(c.win_rate).toFixed(4) : "—"}`}
                         style={{ position: "sticky", top: 0, zIndex: 2, background: isHi ? "rgba(255,209,46,0.18)" : C.bg3, padding: "3px 2px", textAlign: "center", borderBottom: "1px solid " + C.bdr, borderLeft: "1px solid " + C.bdr, verticalAlign: "bottom" }}>
                         <div style={{ color: odColor(c.od), fontWeight: 700, fontSize: 10 }}>{c.od ? String(c.od).slice(5) : "—"}</div>
-                        <div style={{ color: isHi ? C.gold : C.txm, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 9 }}>{c.pn || c.pn_no}</div>
+                        {view !== "dot" && <div style={{ color: isHi ? C.gold : C.txm, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 9 }}>{c.pn || c.pn_no}</div>}
                         <div style={{ color: "#ffd02e", fontSize: 9 }}>★{c.win_rate != null ? Number(c.win_rate).toFixed(2) : "—"}</div>
                       </th>
                     );
@@ -202,8 +225,17 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
                         const cnt = cell ? cell.cnt : 0;
                         const lvl = matrixLevel(cnt, matrix.colMax(c.pn_no));
                         const isWin = matrix.isWinCell(c.pn_no, b);
+                        const title = `${c.od || ""} · 사정율 ${fmtBucket(b)} · ${cnt}개사${isWin ? " · ★1순위" : ""}${isCompany ? " · 검색사" : ""}`;
+                        if (view === "dot") {
+                          return (
+                            <td key={c.pn_no} title={title}
+                              style={{ padding: "1px 0", textAlign: "center", lineHeight: 0, borderLeft: "1px solid " + C.bdr, borderTop: "1px solid " + C.bdr, background: isWin ? "rgba(255,209,46,0.10)" : undefined }}>
+                              {dotEl(cnt, lvl, isWin, isCompany)}
+                            </td>
+                          );
+                        }
                         return (
-                          <td key={c.pn_no} title={`${c.od || ""} · 사정율 ${fmtBucket(b)} · ${cnt}개사${isWin ? " · ★1순위" : ""}${isCompany ? " · 검색사" : ""}`}
+                          <td key={c.pn_no} title={title}
                             style={{ ...cellStyle(lvl, isWin, isCompany), borderTop: "1px solid " + C.bdr }}>
                             {isWin ? "★" : ""}{cnt || (isCompany ? "·" : "")}
                           </td>
