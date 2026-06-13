@@ -157,8 +157,8 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
           {!loading && !error && matrix && colCount > 0 && (
             <table style={{ borderCollapse: "collapse", fontSize: 11, tableLayout: "fixed" }}>
               <colgroup>
-                <col style={{ width: 76 }} />
-                {matrix.columns.map(c => <col key={c.pn_no} style={{ width: 62 }} />)}
+                <col style={{ width: 52 }} />
+                {matrix.columns.map(c => <col key={c.pn_no} style={{ width: 40 }} />)}
               </colgroup>
               <thead>
                 <tr>
