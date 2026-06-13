@@ -30,7 +30,7 @@ function odColor(od){
 }
 
 export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
-  const [bucket, setBucket] = useState(0.01);
+  const [bucket, setBucket] = useState(0.05);   // 기본 0.05 — 자동맞춤과 함께 분포 덩어리가 가장 또렷
   const [view, setView] = useState("dot");   // "dot"=점표분포 / "matrix"=숫자
   const [axisFit, setAxisFit] = useState(true);  // true=밀집 구간만(양 끝 희소 이상치 절단) / false=전체 범위
   const [dist, setDist] = useState(null);
