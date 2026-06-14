@@ -257,7 +257,7 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
                     const isHi = c.pn_no === highlightPnno;
                     return (
                       <th key={c.pn_no} title={`${c.pn || ""}\n개찰일 ${c.od || "—"} · 참여 ${c.n}건 · 1순위 ${c.win_rate != null ? Number(c.win_rate).toFixed(4) : "—"}`}
-                        style={{ position: "sticky", top: 0, zIndex: 2, background: isHi ? "rgba(255,209,46,0.18)" : C.bg3, padding: "3px 2px", textAlign: "center", borderBottom: "1px solid " + C.bdr, borderLeft: "1px solid " + C.bdr, verticalAlign: "bottom" }}>
+                        style={{ position: "sticky", top: 0, zIndex: 2, background: isHi ? "#433b30" : C.bg3, padding: "3px 2px", textAlign: "center", borderBottom: "1px solid " + C.bdr, borderLeft: "1px solid " + C.bdr, verticalAlign: "bottom" }}>
                         <div style={{ color: odColor(c.od), fontWeight: 700, fontSize: 10 }}>{c.od ? String(c.od).slice(5) : "—"}</div>
                         {view !== "dot" && <div style={{ color: isHi ? C.gold : C.txm, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 9 }}>{c.pn || c.pn_no}</div>}
                         <div style={{ color: "#ffd02e", fontSize: 9 }}>★{c.win_rate != null ? Number(c.win_rate).toFixed(2) : "—"}</div>
