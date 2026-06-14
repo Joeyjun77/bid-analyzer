@@ -143,13 +143,17 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
   // 최소 점 크기 7px 보장 — 1~2명 버킷도 또렷이 보이도록(예전 4~5px는 거의 안 보임).
   const DOT_SIZE = [13, 12, 11, 10, 9, 8, 7];
   const DOT_MIN = 7;
+  // 점 색 — 버킷에 업체가 몰릴수록(강도 0 최강) 빨강 → 노랑 → 파랑 → 회색. 크기에 더해 색으로도 밀집도 강조.
+  const DOT_COLOR = ["#ff4d4f", "#ff4d4f", "#ffce3a", "#ffce3a", "#4d9fff", "#4d9fff", "#9aa3b4", "#8a93a6"];
+  const dotColorOf = (lvl) => (DOT_COLOR[lvl] != null ? DOT_COLOR[lvl] : "#8a93a6");
   const dotEl = (cnt, lvl, isWin, isCompany) => {
     const size = cnt > 0 ? (DOT_SIZE[lvl] != null ? DOT_SIZE[lvl] : DOT_MIN) : 0;
     // 검색사인데 그 버킷 참여 0 → 빈 초록 링만
     if (size === 0) return isCompany
       ? <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", border: "2px solid #5dca96", boxSizing: "border-box" }} />
       : null;
-    return <span style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", background: isWin ? C.gold : "#8a93a6", outline: isCompany ? "2px solid #5dca96" : "none", outlineOffset: 1 }} />;
+    // 1순위(★)는 밀집도와 의미가 달라 금색 유지, 그 외는 밀집도 색(빨강>노랑>파랑>회색).
+    return <span style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", background: isWin ? C.gold : dotColorOf(lvl), outline: isCompany ? "2px solid #5dca96" : "none", outlineOffset: 1 }} />;
   };
 
   return (
@@ -306,8 +310,23 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
           )}
         </div>
 
+        {view === "dot" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8, fontSize: 10, color: C.txd, flexWrap: "wrap" }}>
+            <span style={{ color: C.txm }}>밀집도</span>
+            {[{ c: "#ff4d4f", l: "높음" }, { c: "#ffce3a", l: "중상" }, { c: "#4d9fff", l: "중하" }, { c: "#8a93a6", l: "낮음" }].map(s => (
+              <span key={s.l} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: s.c }} />
+                {s.l}
+              </span>
+            ))}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: C.gold }} />
+              ★1순위
+            </span>
+          </div>
+        )}
         <div style={{ fontSize: 10, color: C.txd, marginTop: 8, lineHeight: 1.5 }}>
-          {RATE_CAVEAT} <span style={{ color: C.txm }}>세로=사정율 버킷(높을수록 위), 셀=그 버킷 참여사 수(건별 최다 대비 밝기), ★=1순위 버킷. 80~120 범위만 표시.</span>
+          {RATE_CAVEAT} <span style={{ color: C.txm }}>세로=사정율 버킷(높을수록 위), 셀=그 버킷 참여사 수(몰릴수록 점이 크고 빨강 → 노랑 → 파랑 → 회색), ★=1순위 버킷. 80~120 범위만 표시.</span>
         </div>
       </div>
     </div>
