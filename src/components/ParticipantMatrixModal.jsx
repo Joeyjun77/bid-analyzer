@@ -130,10 +130,11 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
 
   const headerBtn = { padding: "4px 10px", fontSize: 12, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 5, cursor: "pointer" };
 
-  // 셀 스타일 (강조 단계 → INTENSITY_STYLE), 1순위(★)·검색업체 하이라이트 합성
+  // 셀 스타일 (강조 단계 → INTENSITY_STYLE의 크기·굵기 유지, 글씨색은 점표와 동일한 밀집도 색으로 덮어씀),
+  // 1순위(★)·검색업체 하이라이트 합성
   const cellStyle = (lvl, isWin, isCompany) => {
     const st = INTENSITY_STYLE[lvl];
-    const s = { ...st, padding: "2px 4px", textAlign: "center", whiteSpace: "nowrap", borderLeft: "1px solid " + C.bdr };
+    const s = { ...st, color: isWin ? C.gold : dotColorOf(lvl), padding: "2px 4px", textAlign: "center", whiteSpace: "nowrap", borderLeft: "1px solid " + C.bdr };
     if (isWin) s.background = "rgba(255,209,46,0.14)";
     if (isCompany){ s.outline = "2px solid #5dca96"; s.outlineOffset = "-2px"; }
     return s;
