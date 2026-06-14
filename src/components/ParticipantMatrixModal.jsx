@@ -146,8 +146,8 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
   // 1순위(★)·검색업체 하이라이트 합성
   const cellStyle = (lvl, isWin, isCompany) => {
     const st = INTENSITY_STYLE[lvl];
-    const s = { ...st, color: isWin ? C.gold : dotColorOf(lvl), padding: "2px 4px", textAlign: "center", whiteSpace: "nowrap", borderLeft: "1px solid " + C.bdr };
-    if (isWin) s.background = "rgba(255,209,46,0.14)";
+    const s = { ...st, color: isWin ? "#8a6d00" : dotColorOf(lvl), padding: "2px 4px", textAlign: "center", whiteSpace: "nowrap", borderLeft: "1px solid " + C.bdr };
+    if (isWin) s.background = "#ffffff";
     if (isCompany){ s.outline = "2px solid #5dca96"; s.outlineOffset = "-2px"; }
     return s;
   };
@@ -257,10 +257,10 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
                     const isHi = c.pn_no === highlightPnno;
                     return (
                       <th key={c.pn_no} title={`${c.pn || ""}\n개찰일 ${c.od || "—"} · 참여 ${c.n}건 · 1순위 ${c.win_rate != null ? Number(c.win_rate).toFixed(4) : "—"}`}
-                        style={{ position: "sticky", top: 0, zIndex: 2, background: isHi ? "#ffffff" : C.bg3, padding: "3px 2px", textAlign: "center", borderBottom: "1px solid " + C.bdr, borderLeft: "1px solid " + C.bdr, verticalAlign: "bottom" }}>
-                        <div style={{ color: isHi ? "#3a2f00" : odColor(c.od), fontWeight: 700, fontSize: 10 }}>{c.od ? String(c.od).slice(5) : "—"}</div>
-                        {view !== "dot" && <div style={{ color: isHi ? "#6b5300" : C.txm, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 9 }}>{c.pn || c.pn_no}</div>}
-                        <div style={{ color: isHi ? "#8a6d00" : "#ffd02e", fontWeight: isHi ? 700 : 400, fontSize: 9 }}>★{c.win_rate != null ? Number(c.win_rate).toFixed(2) : "—"}</div>
+                        style={{ position: "sticky", top: 0, zIndex: 2, background: isHi ? "rgba(255,209,46,0.18)" : C.bg3, padding: "3px 2px", textAlign: "center", borderBottom: "1px solid " + C.bdr, borderLeft: "1px solid " + C.bdr, verticalAlign: "bottom" }}>
+                        <div style={{ color: odColor(c.od), fontWeight: 700, fontSize: 10 }}>{c.od ? String(c.od).slice(5) : "—"}</div>
+                        {view !== "dot" && <div style={{ color: isHi ? C.gold : C.txm, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 9 }}>{c.pn || c.pn_no}</div>}
+                        <div style={{ color: "#ffd02e", fontSize: 9 }}>★{c.win_rate != null ? Number(c.win_rate).toFixed(2) : "—"}</div>
                       </th>
                     );
                   })}
@@ -296,7 +296,7 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
                         if (view === "dot") {
                           return (
                             <td key={c.pn_no} title={title}
-                              style={{ padding: "1px 0", textAlign: "center", lineHeight: 0, borderLeft: "1px solid " + C.bdr, borderTop: "1px solid " + C.bdr, background: isWin ? "rgba(255,209,46,0.10)" : undefined }}>
+                              style={{ padding: "1px 0", textAlign: "center", lineHeight: 0, borderLeft: "1px solid " + C.bdr, borderTop: "1px solid " + C.bdr, background: isWin ? "#ffffff" : undefined }}>
                               {dotEl(cnt, lvl, isWin, isCompany)}
                             </td>
                           );
