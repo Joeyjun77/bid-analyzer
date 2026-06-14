@@ -125,6 +125,18 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
   const truncated = hiddenRows > 0;
   const denseCapped = matrix ? renderBuckets.length >= MAX_ROWS && matrix.buckets.length > MAX_ROWS : false;
 
+  // 열별 "보이는 합" — 실제 렌더되는 버킷(renderBuckets) 안의 셀 cnt만 합산. 참여합(전체)과의 격차로 숨김량 노출.
+  const visibleTotals = useMemo(() => {
+    const m = new Map();
+    if (!matrix) return m;
+    for (const c of matrix.columns) {
+      let s = 0;
+      for (const b of renderBuckets) { const cell = matrix.cell(c.pn_no, b); if (cell) s += cell.cnt; }
+      m.set(c.pn_no, s);
+    }
+    return m;
+  }, [matrix, renderBuckets]);
+
   const fmtBucket = (b) => Number(b).toFixed(matrix ? matrix.decimals : 2);
   const colCount = matrix ? matrix.columns.length : 0;
 
@@ -299,12 +311,32 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
                     </tr>
                   );
                 })}
-                {/* 참여합 행 */}
+                {/* 참여합 행 — 숨김(축 자동맞춤/세밀 버킷 절단) 있을 땐 "보이는 합 / 참여합" 2줄 */}
                 <tr>
-                  <td style={{ position: "sticky", left: 0, zIndex: 1, background: C.bg3, color: C.txd, padding: "3px 6px", textAlign: "right", fontWeight: 700, borderTop: "2px solid " + C.bdr }}>참여합</td>
-                  {matrix.columns.map(c => (
-                    <td key={c.pn_no} style={{ background: C.bg3, color: C.txm, textAlign: "center", fontWeight: 600, padding: "3px 2px", borderLeft: "1px solid " + C.bdr, borderTop: "2px solid " + C.bdr }}>{matrix.colTotal(c.pn_no)}</td>
-                  ))}
+                  <td style={{ position: "sticky", left: 0, zIndex: 1, background: C.bg3, color: C.txd, padding: "3px 6px", textAlign: "right", fontWeight: 700, borderTop: "2px solid " + C.bdr }}>
+                    {truncated ? (
+                      <div style={{ lineHeight: 1.15 }}>
+                        <div style={{ fontSize: 9, fontWeight: 400, color: C.txd }}>보이는</div>
+                        <div>참여합</div>
+                      </div>
+                    ) : "참여합"}
+                  </td>
+                  {matrix.columns.map(c => {
+                    const tot = matrix.colTotal(c.pn_no);
+                    const vis = visibleTotals.get(c.pn_no);
+                    const showFrac = truncated && vis != null && vis < tot;
+                    return (
+                      <td key={c.pn_no} title={showFrac ? `보이는 합 ${vis} / 참여합 ${tot} (숨김 ${tot - vis})` : `참여합 ${tot}`}
+                        style={{ background: C.bg3, color: C.txm, textAlign: "center", fontWeight: 600, padding: "3px 2px", borderLeft: "1px solid " + C.bdr, borderTop: "2px solid " + C.bdr }}>
+                        {showFrac ? (
+                          <div style={{ lineHeight: 1.15 }}>
+                            <div style={{ fontSize: 9, fontWeight: 400, color: C.txd }}>{vis}</div>
+                            <div>{tot}</div>
+                          </div>
+                        ) : tot}
+                      </td>
+                    );
+                  })}
                 </tr>
               </tbody>
             </table>
