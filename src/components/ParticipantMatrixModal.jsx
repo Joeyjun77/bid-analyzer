@@ -43,6 +43,15 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
   const [trace, setTrace] = useState([]);
   const [searching, setSearching] = useState(false);
 
+  // 사정율 중심 포커스 — 세밀 버킷(0.001/0.0001)에서 자동 선택된 밀집 구간이 아닌 임의 구간을 보기 위함.
+  const [center, setCenter] = useState("");    // 중심 사정율(빈값=비활성)
+  const [winStr, setWinStr] = useState("0.05");// ± 윈도우(사정율 단위)
+  const [focusPnno, setFocusPnno] = useState("");// 건 드롭다운 선택 → 그 건 ★1순위로 중심 설정
+  const centerVal = useMemo(() => { const v = parseFloat(center); return isFinite(v) ? v : null; }, [center]);
+  const winVal = useMemo(() => { const v = parseFloat(winStr); return isFinite(v) && v > 0 ? v : 0.05; }, [winStr]);
+  // ag 변경 시 포커스 초기화(이전 발주처 win_rate가 새 컬럼에 무의미)
+  useEffect(() => { setCenter(""); setFocusPnno(""); }, [ag]);
+
   // 배경 스크롤 잠금
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -86,7 +95,11 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
   const renderBuckets = useMemo(() => {
     if (!matrix) return [];
     let buckets = matrix.buckets;   // 사정율 내림차순
-    if (axisFit && buckets.length > 5) {
+    if (centerVal != null) {
+      // 사정율 중심 포커스 — 입력값 ± 윈도우 구간만 표시(자동맞춤 절단 대체).
+      const w = winVal > 0 ? winVal : 0.05;
+      buckets = buckets.filter(b => b >= centerVal - w && b <= centerVal + w);
+    } else if (axisFit && buckets.length > 5) {
       // 밀도 기반 절단: 양 끝에서 "희소한"(피크 대비 미달) 행을 연속으로 잘라낸다.
       // 하한처럼 빽빽한 끝은 임계 미달이 아니라 바로 멈춰 보존됨 → 비대칭 분포(긴 윗꼬리)에 적합.
       // 과도 절단 방지: 각 끝에서 최대 MASS_CAP 질량까지만 잘라낸다.
@@ -114,13 +127,18 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
       }
     }
     if (buckets.length > MAX_ROWS) {
-      return [...buckets]
+      // ★1순위 버킷은 밀도와 무관하게 무조건 보존(각 입찰 1등 행이 잘려 사라지던 문제 해소).
+      // 나머지는 밀집 상위로 채워 MAX_ROWS 맞춤.
+      const winKeys = new Set();
+      for (const c of matrix.columns) { const k = matrix.winBucketKey(c.pn_no); if (k != null) winKeys.add(k); }
+      const wins = buckets.filter(b => winKeys.has(matrix.bkey(b)));
+      const rest = buckets.filter(b => !winKeys.has(matrix.bkey(b)))
         .sort((a, b) => matrix.bucketTotalOf(b) - matrix.bucketTotalOf(a))
-        .slice(0, MAX_ROWS)
-        .sort((a, b) => b - a);
+        .slice(0, Math.max(0, MAX_ROWS - wins.length));
+      return [...wins, ...rest].sort((a, b) => b - a);
     }
     return buckets;
-  }, [matrix, axisFit]);
+  }, [matrix, axisFit, centerVal, winVal]);
   const hiddenRows = matrix ? matrix.buckets.length - renderBuckets.length : 0;
   const truncated = hiddenRows > 0;
   const denseCapped = matrix ? renderBuckets.length >= MAX_ROWS && matrix.buckets.length > MAX_ROWS : false;
@@ -217,6 +235,35 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
               ))}
             </span>
           </span>
+          {/* 사정율 중심 포커스 — 건 선택 또는 값 입력으로 임의 구간을 세밀 버킷에서 직접 보기 */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: C.txm }}>
+            건
+            <select value={focusPnno} title="입찰(개찰일) 선택 → 그 건 ★1순위 사정율로 중심 설정"
+              onChange={e => {
+                const pn = e.target.value;
+                setFocusPnno(pn);
+                if (pn && matrix) {
+                  const col = matrix.columns.find(c => c.pn_no === pn);
+                  if (col && col.win_rate != null) setCenter(Number(col.win_rate).toFixed(matrix.decimals));
+                }
+              }}
+              style={{ padding: "3px 6px", fontSize: 11, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 5, maxWidth: 150 }}>
+              <option value="">선택…</option>
+              {matrix && matrix.columns.map(c => (
+                <option key={c.pn_no} value={c.pn_no}>
+                  {(c.od ? String(c.od).slice(5) : "—")} ★{c.win_rate != null ? Number(c.win_rate).toFixed(2) : "—"}
+                </option>
+              ))}
+            </select>
+            중심
+            <input value={center} onChange={e => { setCenter(e.target.value); setFocusPnno(""); }} placeholder="사정율" inputMode="decimal"
+              title="이 사정율 주변만 표시 — 자동 선택 밀집 구간이 아닌 임의 구간 탐색"
+              style={{ padding: "3px 6px", fontSize: 11, width: 64, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 5 }} />
+            ±
+            <input value={winStr} onChange={e => setWinStr(e.target.value)} inputMode="decimal" title="중심 ± 윈도우(사정율 단위)"
+              style={{ padding: "3px 6px", fontSize: 11, width: 48, background: C.bg3, color: C.txt, border: "1px solid " + C.bdr, borderRadius: 5 }} />
+            {centerVal != null && <button type="button" onClick={() => { setCenter(""); setFocusPnno(""); }} style={{ ...headerBtn, padding: "3px 8px", color: C.txd }}>해제</button>}
+          </span>
           {isPending && <span style={{ color: C.txd, fontSize: 11 }}>그리는 중…</span>}
           <form onSubmit={e => { e.preventDefault(); setSearch(query.trim()); }} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
             <input value={query} onChange={e => setQuery(e.target.value)} placeholder="경쟁사 검색 (등록번호/업체명)"
@@ -232,8 +279,10 @@ export default function ParticipantMatrixModal({ ag, highlightPnno, onClose }){
         {/* 축 자동맞춤 / 세밀 버킷 절단 안내 */}
         {!loading && !error && truncated && (
           <div style={{ fontSize: 11, color: "#e0b84a", background: "rgba(255,209,46,0.10)", border: "1px solid " + C.bdr, borderRadius: 5, padding: "5px 8px", marginBottom: 6 }}>
-            {axisFit && `축 자동맞춤: 양 끝 희소 이상치 ${hiddenRows.toLocaleString()}행 숨김(밀집 구간만, 참여합은 전체 기준). 전체 범위는 축 [전체]. `}
-            {denseCapped && `${bucket} 단위는 과도하게 세밀합니다 — 밀집 상위 ${MAX_ROWS}행만 표시. 더 큰 단위 권장.`}
+            {centerVal != null
+              ? `사정율 중심 ${centerVal} ±${winVal} 구간만 표시(${hiddenRows.toLocaleString()}행 숨김). ★1순위는 항상 보존. 해제하면 전체. `
+              : (axisFit && `축 자동맞춤: 양 끝 희소 이상치 ${hiddenRows.toLocaleString()}행 숨김(밀집 구간만, 참여합은 전체 기준). 전체 범위는 축 [전체]. `)}
+            {denseCapped && `${bucket} 단위는 과도하게 세밀합니다 — 밀집 상위 ${MAX_ROWS}행만 표시(★1순위 제외). 더 큰 단위 권장.`}
           </div>
         )}
 
