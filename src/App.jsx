@@ -2080,6 +2080,7 @@ ${baseInfo}
                   <td style={{padding:"6px 8px",textAlign:"right",color:C.gold,fontWeight:500,fontFamily:"monospace"}}>{aa!=null?(100+aa).toFixed(4)+"%":"—"}</td>
                   <td style={{padding:"6px 8px",textAlign:"right",color:errAbs!=null?(errAbs<0.3?"#5dca96":errAbs<1?"#d4a834":"#e24b4a"):C.txd,fontWeight:600,fontFamily:"monospace"}}>{err!=null?err.toFixed(4)+"%":"—"}</td>
                 </tr>
+                {(()=>{const v8i=v8Map[d.id]||null;const v8r=v8i?.rate??null;const bAdj=calcBenchmarkAdj(d);return<>{v8r!=null&&<tr style={{borderBottom:"1px solid "+C.bdr}}><td style={{padding:"6px 8px",color:C.txm}}>v8 사정률(100%)</td><td style={{padding:"6px 8px",textAlign:"right",color:"#5dca96",fontWeight:500,fontFamily:"monospace"}}>{(100+v8r).toFixed(4)+"%"}</td><td style={{padding:"6px 8px",textAlign:"right",color:C.gold,fontWeight:500,fontFamily:"monospace"}}>{aa!=null?(100+aa).toFixed(4)+"%":"—"}</td><td style={{padding:"6px 8px",textAlign:"right",color:aa!=null?(Math.abs(v8r-aa)<0.3?"#5dca96":Math.abs(v8r-aa)<1?"#d4a834":"#e24b4a"):C.txd,fontWeight:600,fontFamily:"monospace"}}>{aa!=null?(v8r-aa>=0?"+":"")+(v8r-aa).toFixed(4)+"%":"—"}</td></tr>}{bAdj!=null&&<tr style={{borderBottom:"1px solid "+C.bdr}}><td style={{padding:"6px 8px",color:C.txm}}>벤치마크 사정률(100%)</td><td style={{padding:"6px 8px",textAlign:"right",color:"#a8b4ff",fontWeight:500,fontFamily:"monospace"}}>{(100+bAdj).toFixed(4)+"%"}</td><td style={{padding:"6px 8px",textAlign:"right",color:C.gold,fontWeight:500,fontFamily:"monospace"}}>{aa!=null?(100+aa).toFixed(4)+"%":"—"}</td><td style={{padding:"6px 8px",textAlign:"right",color:aa!=null?(Math.abs(bAdj-aa)<0.3?"#5dca96":Math.abs(bAdj-aa)<1?"#d4a834":"#e24b4a"):C.txd,fontWeight:600,fontFamily:"monospace"}}>{aa!=null?(bAdj-aa>=0?"+":"")+(bAdj-aa).toFixed(4)+"%":"—"}</td></tr>}</>;})()}
                 <tr style={{borderBottom:"1px solid "+C.bdr}}>
                   <td style={{padding:"6px 8px",color:C.txm}}>예정가격</td>
                   <td style={{padding:"6px 8px",textAlign:"right",fontFamily:"monospace"}}>{pxp?tc(pxp):"—"}</td>
@@ -2700,17 +2701,9 @@ ${baseInfo}
             </div>}
           </div>
         })()}
-        {/* Phase 23-5: 화살표 범례 (다른 이용자용 해설) */}
-        <div style={{display:"flex",gap:10,marginBottom:6,padding:"4px 8px",background:C.bg3,borderRadius:6,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{fontSize:10,color:C.txd}}>화살표:</span>
-          <span style={{fontSize:10}}><span style={{color:"#85b7eb",fontWeight:700}}>▴▾</span> <span style={{color:C.txm}}>작음(정확)</span></span>
-          <span style={{fontSize:10}}><span style={{color:"#d4a834",fontWeight:700}}>▲▼</span> <span style={{color:C.txm}}>보통</span></span>
-          <span style={{fontSize:10}}><span style={{color:"#e24b4a",fontWeight:700}}>⇈⇊</span> <span style={{color:C.txm}}>주의(큰 편향)</span></span>
-          <span style={{fontSize:10,color:C.txd}}>위=실측 1위가 추천보다 높음 · 아래=낮음 · 표시 없음=데이터 부족</span>
-        </div>
-        {/* 오차 색상 범례 */}
+        {/* v8 오차 색상 범례 */}
         <div style={{display:"flex",gap:12,marginBottom:8,padding:"4px 8px",background:C.bg3,borderRadius:6,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{fontSize:10,color:C.txd}}>오차 범례:</span>
+          <span style={{fontSize:10,color:C.txd}}>v8 오차 범례:</span>
           <span style={{fontSize:10,color:"#5dca96"}}>● &lt;0.3% 우수</span>
           <span style={{fontSize:10,color:"#d4a834"}}>● 0.3~1.0% 보통</span>
           <span style={{fontSize:10,color:"#e24b4a"}}>● ≥1.0% 큰차이</span>
@@ -2726,22 +2719,21 @@ ${baseInfo}
         </div>
         {compList.length>0?<div style={{overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"4%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"7%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
+            <colgroup><col style={{width:"4%"}}/><col style={{width:"18%"}}/><col style={{width:"12%"}}/><col style={{width:"11%"}}/><col style={{width:"8%"}}/><col style={{width:"9%"}}/><col style={{width:"13%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"5%"}}/></colgroup>
             <thead>
               <tr><th colSpan={1} style={{padding:"4px 6px",fontSize:10,color:"#e24b4a",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"center",letterSpacing:1}}>P12</th>
-                <th colSpan={5} style={{padding:"4px 6px",fontSize:10,color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>투찰 전 추천</th>
-                <th colSpan={3} style={{padding:"4px 6px",fontSize:10,color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>입찰 후 결과</th>
+                <th colSpan={2} style={{padding:"4px 6px",fontSize:10,borderBottom:"1px solid "+C.bdr+"44"}}></th>
+                <th colSpan={2} style={{padding:"4px 6px",fontSize:10,color:"#5dca96",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>v8 예측</th>
+                <th colSpan={2} style={{padding:"4px 6px",fontSize:10,color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>결과</th>
                 <th colSpan={3} style={{padding:"4px 6px",fontSize:10,borderBottom:"1px solid "+C.bdr+"44"}}></th></tr>
               <tr style={{background:C.bg3}}>
               <th style={{padding:"7px 4px",textAlign:"center",color:"#e24b4a",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}} title="발주사별 낙찰 예측 (P1~P5)">타깃</th>
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
-              <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 사정률(100%)</th>
-              <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 투찰금</th>
+              <th style={{padding:"7px 4px",textAlign:"right",color:"#5dca96",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}} title="v8 Bayesian 수축 사정률 예측 (발주기관→유형→전체 3단계 fallback)">v8 사정률(100%)</th>
+              <th style={{padding:"7px 4px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}} title="v8 사정률 - 실제 1위 사정률">v8 오차</th>
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
-              <th title="1순위사정율(br1) 기준 — 1순위 투찰금에서 역산한 사정률. 예가/기초(ar1) 아님. 오차도 br1 기준." style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제 1위 사정률(100%)</th>
-              <th style={{padding:"7px 4px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>오차</th>
-              <th style={{padding:"7px 4px",textAlign:"right",color:"#5dca96",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}} title="발주처사정율(ar1 = 예가/기초, 100-base) — 개찰 후 매칭된 실제값">발주사 사정율(100%)</th>
+              <th title="1순위사정율(br1) 기준 — 1순위 투찰금에서 역산한 사정률." style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제 1위 사정률(100%)</th>
               <SortTh label="상태" sortKey="match_status" current={predSort} setCurrent={setPredSort} align="center"/>
               <th style={{padding:"7px 4px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>낙찰</th>
               <th style={{padding:"7px 4px",textAlign:"center",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}></th>
@@ -2778,6 +2770,7 @@ ${baseInfo}
               const rowBorder=tierStyle&&agAsmt.tier<=2?{borderLeft:"3px solid "+tierStyle.border}:{};
               const p5Fade=agAsmt&&agAsmt.tier===5?0.55:1;
               const isFocused=focusedPredId===p.id;
+              const v8i=v8Map[p.id]||null;const v8Rate=v8i?.rate??null;const v8Err=v8Rate!=null&&actBr1!=null?(100+v8Rate)-actBr1:null;const v8ErrCol=v8Err==null?C.txd:(Math.abs(v8Err)<0.3?"#5dca96":Math.abs(v8Err)<1?"#d4a834":"#e24b4a");
               return<tr key={p.id} id={"pred-row-"+p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:(isAnomaly||isYuchal||isSuui||isDataWait?0.5:1)*p5Fade,background:isFocused?"rgba(93,202,150,0.14)":"",boxShadow:isFocused?"inset 3px 0 0 #5dca96":"",transition:"background 0.3s",...rowBorder}}>
                 <td style={{padding:"6px 2px",textAlign:"center"}}>
                   {agAsmt&&agAsmt.tier?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}} title={`${agAsmt.label}\n샘플 ${agAsmt.n}건\n이론 ${agAsmt.win_rate}%\n오차 ${agAsmt.mae}%`}>
@@ -2788,25 +2781,10 @@ ${baseInfo}
                 </td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:finalRec.jongsim?"#e24b4a":(finalRec.floorSafe===false?"#e24b4a":(isHighConf?"#5dca96":C.gold)),fontWeight:500}} title={finalRec.jongsim?"LH 종심제·순심제 (예측 미지원)":(finalRec.floorSafe===false?"⚠ 자격 미달 — 그대로 투찰 시 자동 탈락 (av가 큰 입찰)":(finalRec.source?"근거: "+finalRec.source:""))}>
-                  {finalRec.jongsim?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.12)"}}>⚠ 종심제</span>:(finalAdj!=null?(
-                    <span style={{display:"inline-flex",alignItems:"center",gap:4,justifyContent:"flex-end"}}>
-                      <span>{(100+Number(finalAdj)).toFixed(4)+"%"}</span>
-                      {finalRec.floorSafe===false&&<span style={{fontSize:10,color:"#e24b4a",fontWeight:700}} title="자격 미달">⚠</span>}
-                      {biasArrow&&<span
-                        style={{color:biasArrow.color,fontSize:biasArrow.size==='large'?13:biasArrow.size==='medium'?12:11,lineHeight:1,fontWeight:700}}
-                        title={`실측 방향 힌트: ${biasArrow.label} (${biasArrow.sign>=0?'↑ 상향':'↓ 하향'} ${Math.abs(biasArrow.actualDir).toFixed(3)}%p · 근거 ${biasArrow.source})`}
-                      >{biasArrow.glyph}</span>}
-                    </span>
-                  ):"")}
-                </td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:(isHighConf&&!finalRec.jongsim&&finalRec.floorSafe!==false)?"#5dca96":C.gold,fontWeight:700}}>
-                  {finalRec.jongsim?<span style={{fontSize:10,color:C.txd}}>—</span>:((finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):"")}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:v8Rate!=null?"#5dca96":C.txd,fontWeight:500}}>{v8Rate!=null?(100+v8Rate).toFixed(4)+"%":"—"}</td>
+                <td style={{padding:"6px",textAlign:"right",color:v8ErrCol,fontWeight:600,fontSize:11}}>{isYuchal||isSuui||isDataWait?"—":v8Err!=null?(v8Err>=0?"+":"")+v8Err.toFixed(4):"—"}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11,whiteSpace:"nowrap"}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":isDataWait?"#8a93a8":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:isDataWait?<span style={{fontSize:10}}>데이터대기</span>:actBr1!=null?actBr1.toFixed(4)+"%":""}</td>
-                <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui||isDataWait?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:"#5dca96"}} title="발주처사정율(ar1 = 예가/기초)">
-                  {agAr1!=null?agAr1.toFixed(4)+"%":<span style={{color:C.txd,fontSize:10}}>—</span>}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{isYuchal?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.1)",color:"#e24b4a"}}>유찰</span>:isSuui?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(212,168,52,0.15)",color:"#d4a834"}}>수의</span>:isDataWait?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(138,147,168,0.15)",color:"#8a93a8"}}>데이터대기</span>:isCanc?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(192,128,64,0.15)",color:"#c08040"}}>취소</span>:<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span>}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"&&!isYuchal&&!isSuui&&!isDataWait?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>{setDetailModal(p);setDetailTab("detail");setDetailAi(p.ai_advice||"");setDetailAiLoading(false);
