@@ -2,7 +2,6 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from "react"
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS } from "./lib/constants.js";
 import { authedFetch } from "./auth.js";
-import { WinStrategyDashboard } from "./WinStrategyDashboard.jsx";
 import V2PreviewTab from "./components/V2PreviewTab.jsx";
 import ModeBadge from "./components/ModeBadge.jsx";
 import { fmtAdj as v2FmtAdj, fmtPct as v2FmtPct, fmtKRW as v2FmtKRW } from "./lib/fmtAdj.js";
@@ -422,6 +421,7 @@ function SplitBadge({sim,compact=false}){
 export default function App(){
   const{isAdmin}=useAuth();
   const[tab,setTab]=useState("dash");
+  const[moreTabs,setMoreTabs]=useState(false); // 보조 메뉴(피드백·검증·V6·하한·V2) 접기 — 자주 쓰는 5개만 기본 노출
   const[recs,setRecs]=useState([]);
   const[allS,setAllS]=useState({ts:{},as:{}});const[newS,setNewS]=useState({ts:{},as:{}});const[oldS,setOldS]=useState({ts:{},as:{}});
   const[drag,setDrag]=useState(false);const[dragPred,setDragPred]=useState(false);const[busy,setBusy]=useState(false);const[msg,setMsg]=useState({type:"",text:""});
@@ -1331,7 +1331,21 @@ ${baseInfo}
         })()}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:0}}><Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="feedback" ch="📈 피드백"/><Tb id="quality" ch="🔬 검증"/><Tb id="agency_predict_v6" ch="💎 발주처 예측 V6"/><Tb id="agency_floor" ch="🎯 발주사 하한"/><Tb id="g2b_sheet" ch="G2B 양식"/><Tb id="v2_preview" ch="🧪 V2 미리보기"/><Tb id="chat" ch="AI 상담"/>{isAdmin&&<Tb id="admin" ch="👤 관리자"/>}</div>
+        <div style={{display:"flex",gap:0,flexWrap:"wrap",alignItems:"center"}}>
+          <Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="g2b_sheet" ch="G2B 양식"/>
+          {/* 보조 메뉴 접기 — 접힌 상태에서도 활성 탭은 노출 유지 */}
+          {(()=>{
+            const SUB=[{id:"feedback",ch:"📈 피드백"},{id:"quality",ch:"🔬 검증"},{id:"agency_predict_v6",ch:"💎 발주처 예측 V6"},{id:"agency_floor",ch:"🎯 발주사 하한"},{id:"v2_preview",ch:"🧪 V2 미리보기"}];
+            const shown=moreTabs?SUB:SUB.filter(s=>s.id===tab);
+            return<>
+              {shown.map(s=><Tb key={s.id} id={s.id} ch={s.ch}/>)}
+              <button onClick={()=>setMoreTabs(v=>!v)} title={moreTabs?"보조 메뉴 접기":"피드백·검증·발주처 예측·발주사 하한·V2 미리보기"}
+                style={{padding:"10px 12px",fontSize:12,background:"transparent",color:moreTabs?C.gold:C.txd,border:"none",borderBottom:"2px solid transparent",cursor:"pointer"}}>
+                {moreTabs?"접기 ▴":"더보기 ▾"}</button>
+            </>;
+          })()}
+          <Tb id="chat" ch="AI 상담"/>{isAdmin&&<Tb id="admin" ch="👤 관리자"/>}
+        </div>
         <UserBadge/>
       </div>
     </div>
@@ -2839,7 +2853,6 @@ ${baseInfo}
     />}
 
     {/* ═══ Phase 20: 작전 대시보드 탭 ═══ */}
-    {tab==="winstrat"&&<WinStrategyDashboard/>}
 
     {/* ═══ U0 Phase 2: V2 미리보기 (mock 표시, B2/B3 엔진 미연결) ═══ */}
     {tab==="v2_preview"&&<V2PreviewTab/>}
