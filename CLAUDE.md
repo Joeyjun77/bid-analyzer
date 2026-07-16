@@ -120,3 +120,17 @@
 - adj_rate 공간 WIN-zone/승률 KPI 신규 추가 금지 (`/evaluate` G-단위 FAIL)
 - 매칭된 `bid_predictions.opt_adj`·`bid1st_v2_*` UPDATE 금지, `predictions_v2` UPDATE 금지 (A안 INSERT-only)
 - `bid_records`/`bid_details` DELETE 금지
+
+## Agent skills
+
+### Issue tracker
+
+이슈·명세는 로컬 마크다운으로 관리 — `.scratch/<feature-slug>/` 아래 spec.md + issues/NN-slug.md. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+기본 5종 레이블 그대로 사용 (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix) — 로컬 트래커에서는 이슈 파일의 `Status:` 줄로 기록. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+단일 컨텍스트 — 루트 `CONTEXT.md` + `docs/adr/` (둘 다 아직 없음, /domain-modeling·/grill-with-docs가 필요 시 생성). See `docs/agents/domain.md`.
