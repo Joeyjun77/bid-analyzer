@@ -16,6 +16,7 @@ import { calcEffectiveFloorRate, formatFloorDual } from "./lib/effectiveFloor.js
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH, predConfidence, predConfidenceV2 } from "./lib/utils.js";
 import { resolveMode, resolveFloorErrDist } from "./lib/modeResolver.js";
 import { sbFetchFloorRateDistMap, resolveFloorDist, floorRiskPct, floorSafeBid, floorModeOf, riskColor, riskLabel, floorRiskSnapshot } from "./lib/floorRisk.js";
+import { sbFetchPcDistMap, resolvePcDist, pcBucketOf, pcColor, pcSnapshot } from "./lib/participantCount.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
 import { sbFetchAllCached } from "./lib/bidCache.js";
 import { useAuth, getSession } from "./auth.js";
@@ -444,6 +445,8 @@ export default function App(){
   const[predBiasMap,setPredBiasMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Phase 23-2: 동적 편향 보정 (AG×금액대 다층)
   const[accuracyMap,setAccuracyMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Track2: 실측 정확도(n/bias/mae/sd) — 신뢰도 V2 표시용
   const[floorDistMap,setFloorDistMap]=useState(null); // Mode B 실격위험 Phase 1: 실현 하한율 분포 (m38, 표시 전용)
+  const[pcDistMap,setPcDistMap]=useState(null); // Phase ①: 예상 참가자수 분포 (m41, 표시 전용)
+  const[pcFilter,setPcFilter]=useState(""); // 예측 리스트 참가자수 버킷 필터 (""=전체, small/mid/large)
   const[basegFinetune,setBasegFinetune]=useState({}); // Phase 23-3: 한전·고양시 (ag,at,seg) median fine-tune
   // V2_DOMAIN_RULES_CHECK #1 — 자사 비가격 점수 (0~20, 디폴트 20=만점)
   const OWN_SCORE_KEY='bidAnalyzer.ownScore';
@@ -795,6 +798,7 @@ ${baseInfo}
     try{const pbm=await sbFetchPredBiasMap();if(pbm)setPredBiasMap(pbm)}catch(e){}
     try{const acc=await sbFetchAccuracyMap();if(acc)setAccuracyMap(acc)}catch(e){}
     try{const fdm=await sbFetchFloorRateDistMap();if(fdm)setFloorDistMap(fdm)}catch(e){}
+    try{const pdm=await sbFetchPcDistMap();if(pdm)setPcDistMap(pdm)}catch(e){}
     try{const fb=await sbFetchFloorBench();if(fb)setFloorBench(fb)}catch(e){}
     try{const wd=await sbFetchWin1stDistMap();if(wd)setWin1stDistMap(wd)}catch(e){}
     try{const bf=await sbFetchBasegFinetune();if(bf)setBasegFinetune(bf)}catch(e){}
@@ -903,7 +907,7 @@ ${baseInfo}
           const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore,od:item.notice_date||item.open_date},allS.ts,allS.as,bidDetails,agencyPred,floorBench);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore,od:item.notice_date||item.open_date},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
           if(!results.length)throw new Error("예측 결과 0건");
           accPredResults=accPredResults.concat(results);setPredResults([...accPredResults]); // ★ 누적 표시
-          const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,own_score:ownScore,source:"file_upload",match_status:"pending",...floorRiskSnapshot(floorDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,bid:r.pred.optBid||r.pred.bid,jongsim:isLhJongsim(r.at,r.ba,r.pn)})}));
+          const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,own_score:ownScore,source:"file_upload",match_status:"pending",...floorRiskSnapshot(floorDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,bid:r.pred.optBid||r.pred.bid,jongsim:isLhJongsim(r.at,r.ba,r.pn)}),...pcSnapshot(pcDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba})}));
           await sbSavePredictions(dbRows);
           logs.push({name:file.name,type:"ok",text:`[예측] ${results.length}건 예측 완료`});
           setUploadLog([...logs]);continue}
@@ -937,7 +941,7 @@ ${baseInfo}
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭 · 신규 ${newPreds.length}건`})}
       else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:`업로드 완료 · 신규 ${newPreds.length}건`})}
     }catch(e){setMsg({type:"err",text:"DB 재로드 실패"})}
-    setSel({});setBusy(false)},[refreshStats,allS,bidDetails,agencyPred,floorBench,agAss,floorDistMap]);
+    setSel({});setBusy(false)},[refreshStats,allS,bidDetails,agencyPred,floorBench,agAss,floorDistMap,pcDistMap]);
 
   // 입찰서류함 예측 (복수 파일 지원)
   const loadPredFiles=useCallback(async(fileList)=>{
@@ -978,7 +982,7 @@ ${baseInfo}
       }catch(e){logs.push({name:file.name,ok:false,msg:e.message});failCount++}}
     if(totalResults.length>0){
       setPredResults(prev=>{const dkSet=new Set(totalResults.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...totalResults]});
-      const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,bid1st_v2_adj:r.v2?.auto?.adj??null,bid1st_v2_bid:r.v2?.auto?.bid??null,bid1st_v2_win_prob:r.v2?.auto?.winProb??null,bid1st_v2_floor_safe:r.v2?.auto?.floorSafe??null,bid1st_v2_grain:r.v2?.distribution?.grain??null,bid1st_v2_src:r.v2?.distribution?.src??null,own_score:ownScore,source:"file_upload",match_status:"pending",...floorRiskSnapshot(floorDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,bid:r.v2?.auto?.bid??r.pred.optBid??r.pred.bid,jongsim:isLhJongsim(r.at,r.ba,r.pn)})}));
+      const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,bid1st_v2_adj:r.v2?.auto?.adj??null,bid1st_v2_bid:r.v2?.auto?.bid??null,bid1st_v2_win_prob:r.v2?.auto?.winProb??null,bid1st_v2_floor_safe:r.v2?.auto?.floorSafe??null,bid1st_v2_grain:r.v2?.distribution?.grain??null,bid1st_v2_src:r.v2?.distribution?.src??null,own_score:ownScore,source:"file_upload",match_status:"pending",...floorRiskSnapshot(floorDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,bid:r.v2?.auto?.bid??r.pred.optBid??r.pred.bid,jongsim:isLhJongsim(r.at,r.ba,r.pn)}),...pcSnapshot(pcDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba})}));
       await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds);
       const existingIds=new Set(Object.keys(scoringMap).map(Number));
       const newPreds=preds.filter(p=>!existingIds.has(p.id));
@@ -989,7 +993,7 @@ ${baseInfo}
     }
     const summary=fileList.length===1?logs[0]?.ok?`${totalResults.length}건 예측 완료 · DB 저장`:logs[0]?.msg
       :`${fileList.length}개 파일 처리: 성공 ${successCount} · 실패 ${failCount} · 총 ${totalResults.length}건 예측`;
-    setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap,ownScore,floorDistMap]);
+    setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap,ownScore,floorDistMap,pcDistMap]);
 
   // ★ 마크다운 → HTML 변환 (공통)
   const md2html=(text)=>{if(!text)return"";
@@ -1100,6 +1104,8 @@ ${baseInfo}
     if(hideYuchal)list=list.filter(x=>!(x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)")));
     if(hideSuui)list=list.filter(x=>!(x.is_negotiation===true&&x.actual_adj_rate==null));
     if(agFilter){const q=agFilter.trim().toLowerCase();if(q)list=list.filter(x=>(x.ag||"").trim().toLowerCase()===q)} // 발주기관 정확일치 (각 기관 개별 — 고양시≠고양시 덕양구)
+    // Phase ①: 예상 참가자수 버킷 필터 (분포 미해석 행은 필터 활성 시 제외)
+    if(pcFilter&&pcDistMap){list=list.filter(x=>{const d=resolvePcDist(pcDistMap,{at:x.at,canonicalAg:x.canonical_ag||x.ag,ba:x.ba});return d&&pcBucketOf(d.p50)===pcFilter})}
     // Phase 5: 등급 필터
     if(gradeFilter!=="all"){list=list.filter(x=>{const g=scoringMap[x.id]?.roi_grade||"D";if(gradeFilter==="SA")return g==="S"||g==="A";if(gradeFilter==="SAB")return g==="S"||g==="A"||g==="B";if(gradeFilter==="notD")return g!=="D";return true})}
     // Phase 12-C: 발주사별 P5 숨김, 주력만 보기 (pending 건에만 적용)
@@ -1113,7 +1119,10 @@ ${baseInfo}
       const a=assessPrediction(x,agencyStats,agencyPred);
       return a&&a.tier!=null&&a.tier<=2;
     })}
-    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,agFilter,predSort,hideYuchal,hideSuui,gradeFilter,scoringMap,hideP5,onlyPrimary,agencyStats,agencyPred]);
+    // Phase ①: 예상 참가자수 정렬 (계산 필드 — 공용 sortFn 미변경, null은 항상 뒤로)
+    if(predSort.key==="exp_pc"){const val=x=>{const d=pcDistMap?resolvePcDist(pcDistMap,{at:x.at,canonicalAg:x.canonical_ag||x.ag,ba:x.ba}):null;return d?d.p50:null};
+      return[...list].sort((a,b)=>{const va=val(a),vb=val(b);if(va==null&&vb==null)return 0;if(va==null)return 1;if(vb==null)return -1;return predSort.dir==="asc"?va-vb:vb-va})}
+    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,agFilter,predSort,hideYuchal,hideSuui,gradeFilter,scoringMap,hideP5,onlyPrimary,agencyStats,agencyPred,pcFilter,pcDistMap]);
 
   // Phase 23-9: pending 건 v2 backfill (분포 map 로드 후 NULL 행에 적용)
   // 라운드 11 권고: ref를 scoreSnap으로 변환 — ownScore 변경 시 stale row 재계산
@@ -2625,6 +2634,14 @@ ${baseInfo}
               style={{padding:"6px 12px",fontSize:12,background:C.bg3,border:"1px solid "+(agFilter?C.gold+"66":C.bdr),borderRadius:5,color:C.txt,minWidth:320,flex:"1 1 320px",maxWidth:480}}/>
             <datalist id="agFilterOptions">{agOptions.map(a=><option key={a} value={a}/>)}</datalist>
             {agFilter&&<button onClick={()=>{setAgFilter("");setPredListShow(50)}} title="전체 보기" style={{padding:"4px 8px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txd,cursor:"pointer"}}>✕</button>}
+            {/* Phase ①: 예상 참가자수 버킷 필터 — 팩트 필터일 뿐, 낙찰 보장 아님 */}
+            <select value={pcFilter} onChange={e=>{setPcFilter(e.target.value);setPredListShow(50)}} title="예상 참가자수 필터 — 과거 동일 기관·금액대 개찰 실측 분포(p50) 기준. 참가자가 적을수록 추첨 모수가 작아집니다 (낙찰 보장 아님)"
+              style={{padding:"6px 10px",fontSize:12,background:C.bg3,border:"1px solid "+(pcFilter?"#5dca9666":C.bdr),borderRadius:5,color:pcFilter?"#5dca96":C.txt,cursor:"pointer"}}>
+              <option value="">참가자수 전체</option>
+              <option value="small">{"<1,000"}</option>
+              <option value="mid">{"1,000~3,000"}</option>
+              <option value="large">{"≥3,000"}</option>
+            </select>
           </span>
           <label style={{display:"flex",alignItems:"center",gap:4,marginLeft:8,cursor:"pointer",fontSize:10,color:hideYuchal?C.txd:"#e24b4a"}}>
             <input type="checkbox" checked={hideYuchal} onChange={e=>{setHideYuchal(e.target.checked);setPredListShow(50)}} style={{accentColor:"#e24b4a",width:12,height:12}}/>
@@ -2762,10 +2779,10 @@ ${baseInfo}
         </div>
         {compList.length>0?<div style={{overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"4%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"5%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"7%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
+            <colgroup><col style={{width:"4%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"7%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
             <thead>
               <tr><th colSpan={1} style={{padding:"4px 6px",fontSize:10,color:"#e24b4a",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"center",letterSpacing:1}}>P12</th>
-                <th colSpan={6} style={{padding:"4px 6px",fontSize:10,color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>투찰 전 추천</th>
+                <th colSpan={7} style={{padding:"4px 6px",fontSize:10,color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>투찰 전 추천</th>
                 <th colSpan={3} style={{padding:"4px 6px",fontSize:10,color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>입찰 후 결과</th>
                 <th colSpan={3} style={{padding:"4px 6px",fontSize:10,borderBottom:"1px solid "+C.bdr+"44"}}></th></tr>
               <tr style={{background:C.bg3}}>
@@ -2775,6 +2792,7 @@ ${baseInfo}
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 사정률(100%)</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 투찰금</th>
               <th title="실격위험 — 추천 투찰금이 실제 낙찰하한가에 미달할 확률. 최근 실현 하한율 분포(기관유형×금액대, 기본 365일·드리프트 시 180일) 기반, 정보 제공용" style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실격위험</th>
+              <SortTh label="예상참가" sortKey="exp_pc" current={predSort} setCurrent={setPredSort} align="right"/>
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
               <th title="1순위사정율(br1) 기준 — 1순위 투찰금에서 역산한 사정률. 예가/기초(ar1) 아님. 오차도 br1 기준." style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제 1위 사정률(100%)</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>오차</th>
@@ -2790,6 +2808,8 @@ ${baseInfo}
               // Mode B 실격위험 Phase 1 (표시 전용): 실현 하한율 분포 vs 추천 투찰금
               const frDist=floorDistMap?resolveFloorDist(floorDistMap,{at:p.at,canonicalAg:p.canonical_ag||p.ag,ba:p.ba}):null;
               const dRisk=(!finalRec.jongsim&&frDist&&(finalBid1st||finalBid)&&p.ba)?floorRiskPct(frDist,Number(finalBid1st||finalBid),Number(p.ba)):null;
+              // Phase ①: 예상 참가자수 (과거 동일 grain 개찰 실측 p50, 표시 전용 — 낙찰 보장 아님)
+              const pcD=pcDistMap?resolvePcDist(pcDistMap,{at:p.at,canonicalAg:p.canonical_ag||p.ag,ba:p.ba}):null;
               // 신뢰도: 모달과 동일한 공유 헬퍼(predConfidenceV2, 실측 정확도 기반) — badge·강조 정합
               const isHighConf=predConfidenceV2(p.pred_source, accuracyMap, {at:p.at, ag:p.ag, ba:p.ba}).level==='high';
               // 실측 1위 사정률 = br1(1순위사정율, 100-base). 표시·오차 산출에 사용 (actual_adj_rate/검증 인프라는 ar1 유지)
@@ -2843,6 +2863,7 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:(isHighConf&&!finalRec.jongsim&&finalRec.floorSafe!==false)?"#5dca96":C.gold,fontWeight:700}}>
                   {finalRec.jongsim?<span style={{fontSize:10,color:C.txd}}>—</span>:((finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):"")}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,fontWeight:600,color:dRisk!=null?riskColor(dRisk):C.txd}} title={dRisk!=null?`실격위험 ${riskLabel(dRisk)} — 추천 투찰금이 실제 하한 미달일 확률\n표본 ${frDist.n}건 · 최근 ${frDist.window}일 · ${frDist.grain==='AG_BA'?'발주기관×금액대':'기관유형×금액대 (표본 부족 fallback)'}`:(finalRec.jongsim?"종심제 — 미적용":"분포 표본 부족")}>{dRisk!=null?riskLabel(dRisk):<span style={{fontSize:10,color:C.txd}}>—</span>}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:(pcD&&pcColor(pcD.p50))||C.txm}} title={pcD?`예상 참가자수 ~${tc(pcD.p50)}개 (p25~p75: ${tc(pcD.p25)}~${tc(pcD.p75)})\n표본 ${pcD.n}건 · 최근 365일 · ${pcD.grain==='AG_BA'?'발주기관×금액대':'기관유형×금액대'} · 개찰 실측 분포\n참가자가 적을수록 추첨 모수가 작아집니다 (낙찰 보장 아님)`:"분포 표본 부족"}>{pcD?"~"+tc(pcD.p50):<span style={{fontSize:10,color:C.txd}}>—</span>}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11,whiteSpace:"nowrap"}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":isDataWait?"#8a93a8":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:isDataWait?<span style={{fontSize:10}}>데이터대기</span>:actBr1!=null?actBr1.toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui||isDataWait?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
