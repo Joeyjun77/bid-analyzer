@@ -12,6 +12,7 @@ SELECT measured_on, route, SUM(n) AS n, ROUND(AVG(mae)::numeric,4) AS mae,
        ROUND(AVG(hit_0_5_pct)::numeric,2) AS hit_05, ROUND(AVG(floor_safe_pct)::numeric,2) AS floor_safe
 FROM prediction_quality_daily
 WHERE measured_on >= CURRENT_DATE - 14
+  AND model_version = 'v6.2'  -- m43: v6.2=file_upload 전용 슬라이스 (g2b_auto는 v6.2_g2b 별도)
 GROUP BY measured_on, route
 ORDER BY measured_on DESC, route;
 ```
@@ -22,13 +23,13 @@ ORDER BY measured_on DESC, route;
 WITH recent AS (
   SELECT at, SUM(n) AS n, SUM(mae*n)/NULLIF(SUM(n),0) AS mae_14d
   FROM prediction_quality_daily
-  WHERE measured_on >= CURRENT_DATE - 14 AND at IS NOT NULL
+  WHERE measured_on >= CURRENT_DATE - 14 AND at IS NOT NULL AND model_version = 'v6.2'
   GROUP BY at
 ),
 prior AS (
   SELECT at, SUM(mae*n)/NULLIF(SUM(n),0) AS mae_prev14d
   FROM prediction_quality_daily
-  WHERE measured_on >= CURRENT_DATE - 28 AND measured_on < CURRENT_DATE - 14 AND at IS NOT NULL
+  WHERE measured_on >= CURRENT_DATE - 28 AND measured_on < CURRENT_DATE - 14 AND at IS NOT NULL AND model_version = 'v6.2'
   GROUP BY at
 )
 SELECT r.at, r.n, ROUND(r.mae_14d::numeric,4) AS mae, ROUND(p.mae_prev14d::numeric,4) AS prev,
@@ -117,6 +118,7 @@ SELECT
 FROM prediction_quality_daily
 WHERE route IS NULL AND at IS NULL
   AND measured_on >= CURRENT_DATE - 30
+  AND model_version = 'v6.2'
   AND top1_n IS NOT NULL;
 ```
 → **판정 기준**
@@ -135,6 +137,7 @@ SELECT at,
 FROM prediction_quality_daily
 WHERE route IS NULL AND at IS NOT NULL
   AND measured_on >= CURRENT_DATE - 60
+  AND model_version = 'v6.2'
   AND top1_n IS NOT NULL
 GROUP BY at
 ORDER BY SUM(top1_n) DESC NULLS LAST;
@@ -161,7 +164,7 @@ SELECT at, route, SUM(n) AS n,
        ROUND((SUM(floor_safe_pct*n)/NULLIF(SUM(n),0))::numeric, 2) AS floor_safe
 FROM prediction_quality_daily
 WHERE measured_on >= CURRENT_DATE - 30
-  AND at IS NOT NULL AND route IS NOT NULL
+  AND at IS NOT NULL AND route IS NOT NULL AND model_version = 'v6.2'
 GROUP BY at, route
 ORDER BY at, n DESC;
 ```
