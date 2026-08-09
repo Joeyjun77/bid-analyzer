@@ -185,6 +185,30 @@ SELECT * FROM v_cron_health WHERE jobid IN (14,15,16);
 → success_pct < 95% → 해당 jobid 실패 패턴 분석
 → avg_duration_sec 평소 대비 2배 이상 → 함수 성능 회귀 의심
 
+### 체크 13 — g2b_auto 슬라이스 보조 모니터링 (v6.2_g2b, m43 분리)
+> v6.2 슬라이스는 file_upload(상품 추천) 전용 — g2b_auto(자동수집, 정보용) 품질은 이 보조 체크로만 관측된다.
+> **주의**: g2b_auto는 게이트·핵심 KPI 대상이 아니다. 여기 수치로 릴리스 판정·bias 재학습을 트리거하지 말 것 (관측 전용).
+```sql
+WITH recent AS (
+  SELECT SUM(n) AS n, ROUND((SUM(mae*n)/NULLIF(SUM(n),0))::numeric,4) AS mae,
+         ROUND((SUM(floor_safe_pct*n)/NULLIF(SUM(n),0))::numeric,2) AS floor_safe
+  FROM prediction_quality_daily
+  WHERE model_version='v6.2_g2b' AND route IS NULL AND at IS NULL
+    AND measured_on >= CURRENT_DATE - 14
+), prior AS (
+  SELECT SUM(n) AS n, ROUND((SUM(mae*n)/NULLIF(SUM(n),0))::numeric,4) AS mae
+  FROM prediction_quality_daily
+  WHERE model_version='v6.2_g2b' AND route IS NULL AND at IS NULL
+    AND measured_on >= CURRENT_DATE - 28 AND measured_on < CURRENT_DATE - 14
+)
+SELECT r.n AS n_14d, r.mae AS mae_14d, r.floor_safe AS floor_safe_14d,
+       p.n AS n_prev, p.mae AS mae_prev, ROUND((r.mae - p.mae)::numeric,4) AS delta
+FROM recent r, prior p;
+```
+→ mae_14d가 v6.2(체크1) 대비 +0.15 이상 크면 ⚠ — g2b 수집 입력(ba 부가세 근사 m42b, ep 등) 재점검 신호
+→ floor_safe_14d < 30% → g2b 추천 산식이 하한 근처로 과도 하향 중인지 점검 (2026-08-09 단위 인시던트 재발 시그니처: 전 구간 0% 고정)
+→ n_14d = 0 → g2b 매칭 파이프라인(jobid 14) 또는 v6.2_g2b refresh(jobid 8 2호출) 중단 의심
+
 ## 리포트 포맷 (반드시 이 순서)
 
 ```
@@ -244,6 +268,11 @@ SELECT * FROM v_cron_health WHERE jobid IN (14,15,16);
 ### 12. cron 건강 (체크12)
 [표 — jobid / jobname / success_pct / avg_duration_sec / last_run_at]
 {success_pct < 100% 또는 last_run_at가 schedule 대비 누락이면 ⚠}
+
+### 13. g2b_auto 보조 관측 (체크13, 게이트 무관)
+- n_14d: X / mae_14d: X.XXXX (v6.2 대비 Δ X.XXXX) / floor_safe_14d: X%
+- {정상 | ⚠ 수집 입력 점검 | 🚨 단위 인시던트 시그니처(전 구간 0%) | 파이프라인 중단 의심}
+{관측 전용 — 릴리스 판정·재학습 트리거 금지를 명시}
 
 ### 🔧 개선 제안
 {감지된 문제별로 구체 조치 1~3개}
