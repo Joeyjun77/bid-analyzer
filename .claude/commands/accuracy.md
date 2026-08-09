@@ -2,7 +2,13 @@
 description: 예측 시스템 정확도 자동 점검 — 기존 검증 인프라(prediction_quality_daily, weekly_quality_report, phase17_validation, evaluate_model_release)를 표준화된 쿼리로 조회해 회귀·드리프트·핵심영역 악화를 한 번에 리포트.
 ---
 
-당신은 예측 정확도 모니터링 전용 서브에이전트입니다. **코드를 변경하지 말고** 다음 12개 체크를 순서대로 실행하고 결과를 구조화된 리포트로 제출하세요.
+당신은 예측 정확도 모니터링 전용 서브에이전트입니다. **코드를 변경하지 말고** 다음 13개 체크를 순서대로 실행하고 결과를 구조화된 리포트로 제출하세요.
+
+## 모델 버전 상수 (버전 승격 시 여기 두 줄만 수정)
+- `MODEL_VERSION` = **v6.2** — file_upload(상품 추천) 슬라이스. 게이트·핵심 KPI 대상.
+- `G2B_VERSION` = **v6.2_g2b** — g2b_auto(자동수집) 보조 슬라이스. 관측 전용.
+
+아래 모든 SQL의 `'<MODEL_VERSION>'` / `'<G2B_VERSION>'` 자리표시자에 위 값을 **문자열 리터럴로 대입해** 실행한다 (예: `model_version = 'v6.2'`). 자리표시자를 그대로 실행하지 말 것.
 
 ## 실행 순서 (Supabase MCP 사용)
 
@@ -12,7 +18,7 @@ SELECT measured_on, route, SUM(n) AS n, ROUND(AVG(mae)::numeric,4) AS mae,
        ROUND(AVG(hit_0_5_pct)::numeric,2) AS hit_05, ROUND(AVG(floor_safe_pct)::numeric,2) AS floor_safe
 FROM prediction_quality_daily
 WHERE measured_on >= CURRENT_DATE - 14
-  AND model_version = 'v6.2'  -- m43: v6.2=file_upload 전용 슬라이스 (g2b_auto는 v6.2_g2b 별도)
+  AND model_version = '<MODEL_VERSION>'  -- m43: 상품(file_upload) 전용 슬라이스 (g2b_auto는 <G2B_VERSION> 별도)
 GROUP BY measured_on, route
 ORDER BY measured_on DESC, route;
 ```
@@ -23,13 +29,13 @@ ORDER BY measured_on DESC, route;
 WITH recent AS (
   SELECT at, SUM(n) AS n, SUM(mae*n)/NULLIF(SUM(n),0) AS mae_14d
   FROM prediction_quality_daily
-  WHERE measured_on >= CURRENT_DATE - 14 AND at IS NOT NULL AND model_version = 'v6.2'
+  WHERE measured_on >= CURRENT_DATE - 14 AND at IS NOT NULL AND model_version = '<MODEL_VERSION>'
   GROUP BY at
 ),
 prior AS (
   SELECT at, SUM(mae*n)/NULLIF(SUM(n),0) AS mae_prev14d
   FROM prediction_quality_daily
-  WHERE measured_on >= CURRENT_DATE - 28 AND measured_on < CURRENT_DATE - 14 AND at IS NOT NULL AND model_version = 'v6.2'
+  WHERE measured_on >= CURRENT_DATE - 28 AND measured_on < CURRENT_DATE - 14 AND at IS NOT NULL AND model_version = '<MODEL_VERSION>'
   GROUP BY at
 )
 SELECT r.at, r.n, ROUND(r.mae_14d::numeric,4) AS mae, ROUND(p.mae_prev14d::numeric,4) AS prev,
@@ -118,7 +124,7 @@ SELECT
 FROM prediction_quality_daily
 WHERE route IS NULL AND at IS NULL
   AND measured_on >= CURRENT_DATE - 30
-  AND model_version = 'v6.2'
+  AND model_version = '<MODEL_VERSION>'
   AND top1_n IS NOT NULL;
 ```
 → **판정 기준**
@@ -137,7 +143,7 @@ SELECT at,
 FROM prediction_quality_daily
 WHERE route IS NULL AND at IS NOT NULL
   AND measured_on >= CURRENT_DATE - 60
-  AND model_version = 'v6.2'
+  AND model_version = '<MODEL_VERSION>'
   AND top1_n IS NOT NULL
 GROUP BY at
 ORDER BY SUM(top1_n) DESC NULLS LAST;
@@ -164,7 +170,7 @@ SELECT at, route, SUM(n) AS n,
        ROUND((SUM(floor_safe_pct*n)/NULLIF(SUM(n),0))::numeric, 2) AS floor_safe
 FROM prediction_quality_daily
 WHERE measured_on >= CURRENT_DATE - 30
-  AND at IS NOT NULL AND route IS NOT NULL AND model_version = 'v6.2'
+  AND at IS NOT NULL AND route IS NOT NULL AND model_version = '<MODEL_VERSION>'
 GROUP BY at, route
 ORDER BY at, n DESC;
 ```
@@ -185,29 +191,29 @@ SELECT * FROM v_cron_health WHERE jobid IN (14,15,16);
 → success_pct < 95% → 해당 jobid 실패 패턴 분석
 → avg_duration_sec 평소 대비 2배 이상 → 함수 성능 회귀 의심
 
-### 체크 13 — g2b_auto 슬라이스 보조 모니터링 (v6.2_g2b, m43 분리)
-> v6.2 슬라이스는 file_upload(상품 추천) 전용 — g2b_auto(자동수집, 정보용) 품질은 이 보조 체크로만 관측된다.
+### 체크 13 — g2b_auto 슬라이스 보조 모니터링 (`G2B_VERSION`, m43 분리)
+> `MODEL_VERSION` 슬라이스는 file_upload(상품 추천) 전용 — g2b_auto(자동수집, 정보용) 품질은 이 보조 체크로만 관측된다.
 > **주의**: g2b_auto는 게이트·핵심 KPI 대상이 아니다. 여기 수치로 릴리스 판정·bias 재학습을 트리거하지 말 것 (관측 전용).
 ```sql
 WITH recent AS (
   SELECT SUM(n) AS n, ROUND((SUM(mae*n)/NULLIF(SUM(n),0))::numeric,4) AS mae,
          ROUND((SUM(floor_safe_pct*n)/NULLIF(SUM(n),0))::numeric,2) AS floor_safe
   FROM prediction_quality_daily
-  WHERE model_version='v6.2_g2b' AND route IS NULL AND at IS NULL
+  WHERE model_version='<G2B_VERSION>' AND route IS NULL AND at IS NULL
     AND measured_on >= CURRENT_DATE - 14
 ), prior AS (
   SELECT SUM(n) AS n, ROUND((SUM(mae*n)/NULLIF(SUM(n),0))::numeric,4) AS mae
   FROM prediction_quality_daily
-  WHERE model_version='v6.2_g2b' AND route IS NULL AND at IS NULL
+  WHERE model_version='<G2B_VERSION>' AND route IS NULL AND at IS NULL
     AND measured_on >= CURRENT_DATE - 28 AND measured_on < CURRENT_DATE - 14
 )
 SELECT r.n AS n_14d, r.mae AS mae_14d, r.floor_safe AS floor_safe_14d,
        p.n AS n_prev, p.mae AS mae_prev, ROUND((r.mae - p.mae)::numeric,4) AS delta
 FROM recent r, prior p;
 ```
-→ mae_14d가 v6.2(체크1) 대비 +0.15 이상 크면 ⚠ — g2b 수집 입력(ba 부가세 근사 m42b, ep 등) 재점검 신호
+→ mae_14d가 `MODEL_VERSION`(체크1) 대비 +0.15 이상 크면 ⚠ — g2b 수집 입력(ba 부가세 근사 m42b, ep 등) 재점검 신호
 → floor_safe_14d < 30% → g2b 추천 산식이 하한 근처로 과도 하향 중인지 점검 (2026-08-09 단위 인시던트 재발 시그니처: 전 구간 0% 고정)
-→ n_14d = 0 → g2b 매칭 파이프라인(jobid 14) 또는 v6.2_g2b refresh(jobid 8 2호출) 중단 의심
+→ n_14d = 0 → g2b 매칭 파이프라인(jobid 14) 또는 `G2B_VERSION` refresh(jobid 8 2호출) 중단 의심
 
 ## 리포트 포맷 (반드시 이 순서)
 
@@ -270,14 +276,14 @@ FROM recent r, prior p;
 {success_pct < 100% 또는 last_run_at가 schedule 대비 누락이면 ⚠}
 
 ### 13. g2b_auto 보조 관측 (체크13, 게이트 무관)
-- n_14d: X / mae_14d: X.XXXX (v6.2 대비 Δ X.XXXX) / floor_safe_14d: X%
+- n_14d: X / mae_14d: X.XXXX (MODEL_VERSION 대비 Δ X.XXXX) / floor_safe_14d: X%
 - {정상 | ⚠ 수집 입력 점검 | 🚨 단위 인시던트 시그니처(전 구간 0%) | 파이프라인 중단 의심}
 {관측 전용 — 릴리스 판정·재학습 트리거 금지를 명시}
 
 ### 🔧 개선 제안
 {감지된 문제별로 구체 조치 1~3개}
 - 예: "한전 <3억 구간 MAE 0.52 → pred_bias_map의 AG_BA lookup n<15 케이스라 AG grain으로 fallback. 이 영역 데이터 15건 이상 축적 후 AG_BA 그레인 활용 가능."
-- 예: "드리프트 감지된 at=지자체 → refresh_prediction_quality_daily('2026-XX-XX','2026-XX-XX','v6.2') 실행 권장."
+- 예: "드리프트 감지된 at=지자체 → refresh_prediction_quality_daily('2026-XX-XX','2026-XX-XX','<MODEL_VERSION>') 실행 권장."
 - 예: "군시설 hit_aggressive=0% (체크8) → Phase 17-A WIN_OPT_GAP[군시설]=0.385가 과도. utils.js:20 재추정 or agency_win_stats 기반 동적화 검토 (2순위 B)."
 - 예: "지자체 MAE 0.55 양호하나 Top-1 hit 7.2% (체크7) → MAE–승률 미스매치 → TYPE_OFF 동적화(2순위 C) 착수 시점."
 ```
