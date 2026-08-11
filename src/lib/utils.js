@@ -491,7 +491,7 @@ export function simDraws(preRates){
 // 이전 버전(3,318건 백테스트) 대비 P25 하향 → 실전 낙찰 가능성 2배 향상
 // ASSUMED_ADJ_TABLE / FAIL_RATES 상수는 constants-tables.js에 분리됨.
 
-export function recommendAssumedAdj({at,agName,ba,ep,av,pc,ownScore,od},ts,as,agAss){
+export function recommendAssumedAdj({at,agName,ba,ep,av,ownScore,od},ts,as,agAss){
   const tbl=ASSUMED_ADJ_TABLE[at]||ASSUMED_ADJ_TABLE["지자체"];
   const tier=(ba||0)<300000000?"under300M":"over300M";
   let base={p25:tbl[tier].p25,p50:tbl[tier].p50,p75:tbl[tier].p75};
@@ -520,11 +520,8 @@ export function recommendAssumedAdj({at,agName,ba,ep,av,pc,ownScore,od},ts,as,ag
     }
   }
 
-  // 3단계: 참여업체수 보정
-  if(pc&&pc>0){
-    if(pc<100){base.p25-=0.05;base.p75+=0.05;src+=` · ${pc}개사(소규모)`}
-    else if(pc>3000){base.p25+=0.05;base.p75-=0.05;src+=` · ${pc}개사(대규모)`}
-  }
+  // (구 3단계 참여업체수 보정은 제거 — 호출부 전부 pc 미전달로 도달 불가 dead code였고,
+  //  참가자수 기반 마진 사이징은 채택 금지 결론(경쟁강도 함정)과 상충. 2026-08-13)
 
   const r4=v=>Math.round(v*10000)/10000;
   // era 키: 입력 공고일/개찰일(od) 우선, 누락 시 today fallback (Codex 결함1; old 강제 방지 위해 today 명시).
@@ -537,10 +534,7 @@ export function recommendAssumedAdj({at,agName,ba,ep,av,pc,ownScore,od},ts,as,ag
     return at==="LH"?ceilToThousand(raw):ceilToWon(raw);
   };
 
-  // 추천 전략 결정
-  let strategy="balanced";
-  if(pc&&pc>3000)strategy="balanced";
-  else if(pc&&pc<100)strategy="conservative";
+  const strategy="balanced";
 
   return{
     aggressive:{adj:r4(base.p25),bid:calcBid(base.p25)},

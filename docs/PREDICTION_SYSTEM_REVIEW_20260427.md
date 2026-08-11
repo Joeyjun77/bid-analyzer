@@ -176,7 +176,7 @@ biasAdj = clamp(±0.5, avgPreBias×0.3 + avgDrawBias×0.2)
 base = ASSUMED_ADJ_TABLE[at][tier]
 if agAss[ag|tier] n≥10: w=0.8, n≥5: w=0.5, n≥3: w=0.3
 elif agSt[ag] n≥5: agOff = ag_med - at_med, w=0.3~0.5
-참여업체수 보정: pc<100 → p25-=0.05/p75+=0.05, pc>3000 → 반대
+(참여업체수 보정은 2026-08-13 제거 — 호출부 전부 pc 미전달 dead code + 경쟁강도 함정 결론 상충)
 ```
 
 ### 5-4. 라우팅 분류 (`opt_adj_router`)
