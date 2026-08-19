@@ -56,9 +56,11 @@
 ### 1단계 — 설계 (Design)
 **진입 트리거**: 사용자가 예측 로직 변경/신규 기능을 제안하는 발화 (예: "predict_v6 에 X 보정 추가", "낙찰하한율 함수 바꿔줘", "pred_bias_map grain 조정")
 **필수 절차**:
+- 요구가 모호하거나 신규 기능이면 `superpowers:brainstorming` 스킬로 의도·범위 먼저 확정 (단순 파라미터 조정은 생략 가능)
 - 코드 작성 전에 `predict-architect` 서브에이전트(Agent 툴, subagent_type=`predict-architect`) 호출하여 격리된 컨텍스트로 영향도 사전 검토
 - 검토 결과 Generator 분류 시 → 2단계 진입 가능, Evaluator 분류 시 → 검증 면제
 - 핵심 영역(한전·고양시·군부대) 영향 예측 표 받은 후에만 코드 수정 시작
+- 다단계 구현(DB+클라+UI 등)이면 `superpowers:writing-plans`로 스펙을 `.scratch/<slug>/spec.md`에 고정 후 착수
 
 ### 2단계 — 구축 (Build)
 **진입 트리거**: `src/App.jsx` 또는 `src/utils*.js`의 `getFinalRecommendation`, `opt_adj`, `pred_bias_map`, 낙찰하한율 함수 Edit/Write
@@ -66,6 +68,8 @@
 - Edit 직후 PostToolUse hook이 자동 알림 (변경 키워드 감지 시)
 - 변경 즉시 `npx vite build` 통과 확인
 - 빌드 통과 → 3단계 진입
+- 버그 수정 경로(인시던트·회귀)면 원인 확정 전 수정 금지 — `superpowers:systematic-debugging` (또는 `investigate`) 스킬로 근본 원인 먼저 규명
+- 순수 함수 로직(utils.js 산식·파서) 변경이고 tests/에 대응 테스트가 있으면 `superpowers:test-driven-development` 적용 가능
 
 ### 3단계 — 검증 (Verify)
 **진입 트리거**: 2단계 완료 직후, 또는 사용자가 "검증해줘"·"테스트"·"백테스트" 발화
@@ -73,6 +77,7 @@
 - `/evaluate` 슬래시 커맨드 실행 (PASS/WARN/FAIL 3값)
 - FAIL 시 git push 금지, 롤백 또는 수정 후 재검증
 - WARN/PASS 시 4단계 진입 가능
+- "완료" 보고 전 `superpowers:verification-before-completion` 원칙 적용 — 빌드·evaluate·캘리브레이션 결과를 실제 출력으로 확인한 것만 완료로 보고 (추정·기대값으로 보고 금지)
 
 ### 4단계 — 운영 (Operate)
 **진입 트리거**: 사용자가 "push", "배포", "main에 올려" 발화 또는 git push 실행 직전
@@ -80,6 +85,8 @@
 - `deploy-gate` 서브에이전트(Agent 툴, subagent_type=`deploy-gate`) 호출하여 통합 게이트 실행
 - 빌드 + 핵심 영역 MAE + evaluate_model_release 통합 PASS 시에만 push 허용
 - 배포 후 24시간 내 `/accuracy` 재측정 (WARN 이상 판정인 경우)
+- Generator 변경 커밋은 push 전 `superpowers:requesting-code-review`로 독립 리뷰 1회 (deploy-gate는 수치 게이트, 코드 리뷰는 로직·가독성 — 역할 분리). Neutral/Evaluator 변경은 생략 가능
+- 브랜치는 사용하지 않으므로(main 직접) `using-git-worktrees`·`finishing-a-development-branch`는 이 프로젝트에서 비적용
 
 ### 5단계 — 예측 시스템 (Predict)
 **진입 트리거**: 사용자가 신규 입찰 데이터를 추가하거나 "예측해줘" 발화
@@ -87,6 +94,16 @@
 - DB 함수 `predict_v6(...)` 직접 호출 (코드 변경 없음)
 - 결과는 정보 제공 도구로만 사용 (UI에 "확정/제출" 류 액션 금지)
 - 예측 품질이 의심되면 즉시 `/accuracy` 실행
+
+### superpowers 스킬 ↔ 단계 매핑 요약 (플러그인 superpowers@claude-plugins-official, Skill 툴로 호출)
+| 단계 | 스킬 | 역할 | 필수/선택 |
+|---|---|---|---|
+| 1 설계 | brainstorming → writing-plans | 의도·범위 확정 → 스펙 고정 (predict-architect **앞**) | 신규 기능 필수, 파라미터 조정 선택 |
+| 2 구축 | systematic-debugging / test-driven-development | 인시던트는 원인 먼저 / 순수 로직은 테스트 먼저 | 버그 수정 시 필수 / TDD 선택 |
+| 3 검증 | verification-before-completion | 실제 출력 확인한 것만 완료 보고 | 항상 |
+| 4 운영 | requesting-code-review | Generator 커밋 push 전 독립 리뷰 (deploy-gate와 역할 분리) | Generator 필수 |
+| 공통 | executing-plans / subagent-driven-development | spec.md 기반 다단계 실행·병렬 위임 | 선택 |
+- 스킬은 기존 게이트(predict-architect·/evaluate·deploy-gate)를 **대체하지 않는다** — 그 앞뒤를 보강하는 절차다. 게이트 판정은 항상 게이트가 우선.
 
 ### 트리거 충돌·우회 방지
 - Plan/메모리는 강제력이 없다. 위 절차는 commands/agents/hooks로만 실행된다.
