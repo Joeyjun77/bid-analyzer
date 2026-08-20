@@ -143,6 +143,16 @@ export default function G2BSheetTab({ recs }){
     return () => { alive = false; };
   }, []);
 
+  // 공고번호 차수 접미사(-000 등) 정규화 — SUCVIEW는 접미사 포함, bid_records엔 무접미사 행도 존재해
+  // 정확 일치만으로는 같은 공고의 무접미사 행에서 분포 버튼이 비활성되는 문제 보정 (모달 내용은 발주처 단위라 무해)
+  const normPn = (s) => String(s || "").replace(/-\d{2,3}$/, "");
+  const partPnnoNormSet = useMemo(() => {
+    if (!partPnnoSet) return null;
+    const m = new Set();
+    for (const p of partPnnoSet) m.add(normPn(p));
+    return m;
+  }, [partPnnoSet]);
+
   // 모달(드릴다운·상세·범례) 열림 동안 배경 스크롤 잠금 — 모달 끝까지 스크롤해도 뒷 리스트가 스크롤되지 않게(스크롤 체이닝 방지).
   useEffect(() => {
     if (!(rateModal || detailRow || showLegend)) return;
@@ -491,7 +501,7 @@ export default function G2BSheetTab({ recs }){
               </thead>
               <tbody>
                 {shownRows.map((r, i) => {
-                  const hasPart = partPnnoSet ? partPnnoSet.has(r.pn_no) : false;
+                  const hasPart = partPnnoSet ? (partPnnoSet.has(r.pn_no) || partPnnoNormSet.has(normPn(r.pn_no))) : false;
                   return (
                   <tr key={r.id || i} style={{ borderTop: "1px solid " + C.bdr, background: i % 2 ? C.bg2 : "transparent" }}>
                     {LIST_COLS.map(c => listCell(c, r))}

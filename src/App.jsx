@@ -17,7 +17,7 @@ import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, p
 import { resolveMode, resolveFloorErrDist } from "./lib/modeResolver.js";
 import { sbFetchFloorRateDistMap, resolveFloorDist, floorRiskPct, floorSafeBid, floorModeOf, riskColor, riskLabel, floorRiskSnapshot } from "./lib/floorRisk.js";
 import { sbFetchPcDistMap, resolvePcDist, pcBucketOf, pcColor, pcSnapshot } from "./lib/participantCount.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbRefreshParticipantDistFor, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
 import { sbFetchAllCached } from "./lib/bidCache.js";
 import { useAuth, getSession } from "./auth.js";
 
@@ -889,7 +889,10 @@ ${baseInfo}
           const detail=parseSucview(raw,file.name);if(!detail.pn_no)throw new Error("공고번호 없음");
           await sbSaveDetail(detail);
           if(detail.participants&&detail.participants.length){
-            try{await sbSaveParticipants({pn_no:detail.pn_no,od:detail.od,ag:detail.ag,canonical_ag:detail.ag,at:detail.at},detail.participants);}
+            try{
+              await sbSaveParticipants({pn_no:detail.pn_no,od:detail.od,ag:detail.ag,canonical_ag:detail.ag,at:detail.at},detail.participants);
+              sbRefreshParticipantDistFor([detail.pn_no]); // 분포 층 즉시 반영 (m46, fire-and-forget — 실패 시 일배치가 보정)
+            }
             catch(e){console.warn("참여업체 저장 실패:",e.message);}
           }
           const sim=simDraws(detail.pre_rates);setSimResult(sim);

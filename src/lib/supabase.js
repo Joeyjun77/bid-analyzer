@@ -333,6 +333,15 @@ export async function sbSaveParticipants(meta, participants){
 
 // ─── Phase 2: 참여업체 사정율 분포 (조회/시각화) ──────────────────
 // 참여데이터 보유 pn_no 목록 (G2B 탭 진입 시 1회 — 버튼 활성 판단). 실패 시 빈 배열.
+// SUCVIEW 업로드 직후 해당 공고만 분포 층(participant_dist/meta) 즉시 반영 (m46).
+// 실패해도 무해 — 일배치(jobid 25)가 다음 날 보정. fire-and-forget 호출 전제.
+export async function sbRefreshParticipantDistFor(pnnos){
+  try{
+    const res=await authedFetch("/rest/v1/rpc/refresh_participant_dist_for",
+      {method:"POST",headers:JSON_H,body:JSON.stringify({p_pnnos:pnnos})});
+    return res.ok;
+  }catch(e){return false;}
+}
 export async function sbFetchParticipantPnnos(){
   try{
     const res=await authedFetch("/rest/v1/rpc/get_participant_pnnos",{method:"POST",headers:JSON_H,body:"{}"});
