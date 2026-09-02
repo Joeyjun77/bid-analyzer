@@ -90,7 +90,15 @@ export function md5(s){function rl(n,c){return(n<<c)|(n>>>(32-c))}function tI(s)
 export function sanitizeJson(s){return s.replace(/\\u0000/g,"").replace(/[\uD800-\uDFFF]/g,"")}
 
 // ─── 파싱 ──────────────────────────────────────────────────
-export async function parseFile(file){const buf=await file.arrayBuffer();const wb=XLSX.read(new Uint8Array(buf),{type:"array",codepage:949,cellDates:false,raw:true});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true});if(!rows.length)throw new Error("빈 파일");return{rows,format:file.name.toLowerCase().endsWith(".xlsx")?"XLSX":"XLS"}}
+export async function parseFile(file){
+  const buf=await file.arrayBuffer();
+  // 비엑셀 가드 (2026-09-02): PDF 등 출력물 업로드 시 "지원하지 않는 파일 형식"만 떠서 원인 파악이 어려웠던 혼선 방지.
+  // 확장자 + 시그니처(BOM 포함 %PDF도 존재) 이중 검사 — 명확한 조치 안내를 에러로 노출.
+  const head=String.fromCharCode(...new Uint8Array(buf.slice(0,8)));
+  if(head.includes("%PDF"))throw new Error("PDF 파일은 지원되지 않습니다 — 인포21c에서 '엑셀 저장'(.xlsx)으로 받아 올려주세요");
+  const ext=String(file.name||"").toLowerCase().split(".").pop();
+  if(ext!=="xlsx"&&ext!=="xls")throw new Error(`.${ext} 파일은 지원되지 않습니다 — 엑셀(.xlsx/.xls)로 받아 올려주세요`);
+  const wb=XLSX.read(new Uint8Array(buf),{type:"array",codepage:949,cellDates:false,raw:true});const ws=wb.Sheets[wb.SheetNames[0]];const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true});if(!rows.length)throw new Error("빈 파일");return{rows,format:file.name.toLowerCase().endsWith(".xlsx")?"XLSX":"XLS"}}
 
 // 낙찰정보리스트 레코드 변환
 // 사정률(ar1/ar0)·낙찰가율(br1/br0) 단위 자동 감지: |v|<50이면 0% 기준 → +100 보정해 100% 기준으로 통일
