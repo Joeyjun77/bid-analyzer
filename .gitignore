@@ -43,3 +43,6 @@ scripts/
 .codex/
 .context/
 .superpowers/
+
+# 프로젝트 로컬 MCP 설정 (Power BI 모델링 — 이 폴더 한정, 커밋 불필요)
+.mcp.json
