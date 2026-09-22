@@ -50,8 +50,12 @@ ORDER BY r.n DESC;
 WITH base AS (
   SELECT
     CASE
-      WHEN ag ILIKE '%한국전력%' OR ag ILIKE '%한전%' THEN '한전'
-      WHEN ag ILIKE '%국방%' OR ag ILIKE '%육군%' OR ag ILIKE '%공군%' OR ag ILIKE '%해군%' OR ag ILIKE '%해병%' OR at='군시설' THEN '군부대'
+      -- 2026-09-22: 저장된 at 대신 classify_agency_type(ag) 사용.
+      -- 저장 at은 분류기 수정(2026-05-23) 이전 값이 남아 군부대 집계에 '군 단위 지자체'(해남군·가평군 등)가
+      -- 혼입되고, 반대로 '제9911부대·지상작전사령부'처럼 ILIKE 목록에 없는 진짜 군부대는 통째로 누락됐음.
+      -- 재계산 기준으로 바꾸면 양쪽이 동시에 해소되고 ILIKE 군 키워드 목록도 불필요해진다.
+      WHEN classify_agency_type(ag)='한전' THEN '한전'
+      WHEN classify_agency_type(ag)='군시설' THEN '군부대'
       WHEN ag ILIKE '%고양시%' OR ag ILIKE '%고양교육%' THEN '고양시'
     END AS focus,
     opt_adj - actual_adj_rate AS err

@@ -45,8 +45,10 @@ FROM base;
 WITH base AS (
   SELECT
     CASE
-      WHEN ag ILIKE '%한국전력%' OR ag ILIKE '%한전%' THEN '한전'
-      WHEN ag ILIKE '%국방%' OR ag ILIKE '%육군%' OR ag ILIKE '%공군%' OR ag ILIKE '%해군%' OR ag ILIKE '%해병%' OR at='군시설' THEN '군부대'
+      -- 2026-09-22: 저장 at → classify_agency_type(ag) 전환 (accuracy.md 체크3과 동일 근거).
+      -- 저장 at에는 분류기 수정 이전 값이 남아 군부대 집계가 오염·누락됨.
+      WHEN classify_agency_type(ag)='한전' THEN '한전'
+      WHEN classify_agency_type(ag)='군시설' THEN '군부대'
       WHEN ag ILIKE '%고양시%' OR ag ILIKE '%고양교육%' THEN '고양시'
     END AS focus,
     opt_adj - actual_adj_rate AS err
@@ -136,9 +138,12 @@ WHERE schemaname='public'
 **검출 — 코드 측면**:
 ```bash
 # SQL 측면 UPDATE 패턴
+# 2026-09-22: 검출 대상에서 bid_records 제외. CLAUDE.md 금기는 bid_records의 DELETE뿐이고
+#   (아래 DELETE 패턴에서 이미 검사), UPDATE는 정책상 허용인데 여기 포함돼 오탐 FAIL을 냈음
+#   (at 재분류 backfill·m28 선례). A안 보호 대상은 bid_predictions/predictions_v2 두 테이블.
 git diff -U0 HEAD~1 -- '*.sql' '*.js' '*.jsx' \
   | grep -E '^\+' \
-  | grep -iE 'UPDATE\s+(bid_predictions|predictions_v2|bid_records)' \
+  | grep -iE 'UPDATE\s+(bid_predictions|predictions_v2)' \
   | grep -viE '(--|//|#|매칭 전|match_status\s*!=\s*'\''matched'\'')'
 
 # JS/JSX 측면: REST PATCH/PUT + 보호 컬럼 매칭
