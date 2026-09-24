@@ -2962,7 +2962,7 @@ ${baseInfo}
           const labS={fontSize:9,color:C.txd,marginBottom:4,textTransform:"uppercase",letterSpacing:0.3};
           return<div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:8,marginBottom:14}}>
             <div style={cardS}>
-              <div style={labS}>📊 주간 MAE</div>
+              <div style={labS}>📊 주간 MAE (원시 엔진)</div>
               {latestWeek?<div>
                 <div style={{fontSize:18,fontWeight:700,color:maeColor(latestWeek.mae_week),fontFamily:"monospace"}}>{Number(latestWeek.mae_week).toFixed(3)}%</div>
                 {latestWeek.mae_delta!=null&&<div style={{fontSize:9,color:Number(latestWeek.mae_delta)<=0?"#5dca96":"#e24b4a",fontFamily:"monospace"}}>Δ {Number(latestWeek.mae_delta)>0?"+":""}{Number(latestWeek.mae_delta).toFixed(3)} · n={latestWeek.n_week}</div>}
@@ -3011,7 +3011,7 @@ ${baseInfo}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
             <div style={{padding:"10px 12px",background:C.bg3,borderRadius:6}}>
-              <div style={{fontSize:9,color:C.txd,marginBottom:4}}>주간 MAE</div>
+              <div style={{fontSize:9,color:C.txd,marginBottom:4}}>주간 MAE (원시 엔진)</div>
               <div style={{fontSize:20,fontWeight:700,color:maeColor(latestWeek.mae_week),fontFamily:"monospace"}}>{Number(latestWeek.mae_week).toFixed(3)}%</div>
               {latestWeek.mae_delta!=null&&<div style={{fontSize:10,color:Number(latestWeek.mae_delta)<=0?"#5dca96":"#e24b4a",marginTop:2,fontFamily:"monospace"}}>Δ {Number(latestWeek.mae_delta)>0?"+":""}{Number(latestWeek.mae_delta).toFixed(3)}</div>}
             </div>
@@ -3215,7 +3215,7 @@ ${baseInfo}
 
         {/* 2. 기관별 주간 MAE */}
         {atWeekly.length>0&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"14px 16px",marginBottom:14}}>
-          <div style={{fontSize:12,color:C.txm,fontWeight:600,marginBottom:10}}>🏢 기관별 주간 MAE</div>
+          <div style={{fontSize:12,color:C.txm,fontWeight:600,marginBottom:10}}>🏢 기관별 주간 MAE (원시 엔진)</div>
           <table style={{width:"100%",fontSize:11,borderCollapse:"collapse"}}>
             <thead><tr style={{color:C.txd,fontSize:10}}>
               <th style={{textAlign:"left",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>주차</th>

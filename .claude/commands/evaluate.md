@@ -28,6 +28,7 @@ WITH base AS (
   FROM bid_predictions
   WHERE match_status='matched' AND source='file_upload'
     AND bid1st_v2_adj IS NOT NULL AND actual_adj_rate IS NOT NULL
+    AND COALESCE(is_cancelled,false)=false
     AND open_date >= CURRENT_DATE - 30
     AND COALESCE(actual_winner,'') NOT IN ('유찰','유찰(무)')
     AND ABS(bid1st_v2_adj - actual_adj_rate) <= 5
@@ -62,7 +63,7 @@ FROM base;
 
 ### 3. 핵심 영역 baseline (한전/고양시/군부대)
 
-**1차 — 메인 추천 하한통과율(비율 공간) + MAE:**
+**1차 — 메인 추천 하한통과율(비율 공간) + MAE (전체 기간):**
 ```sql
 WITH base AS (
   SELECT
@@ -128,6 +129,7 @@ SELECT * FROM evaluate_model_release(
 > **재기준화 (2026-09-24, P1)**: 채점 대상을 `opt_adj` → 메인 추천 `bid1st_v2`로 전환했다. 이 시점은 **기준선 단절점**이다.
 > shown 수치와 opt 수치를 서로 비교하지 말 것 — 예: 고양시 MAE 0.6830(opt) → 0.7318(shown), 군부대 하한통과 96.0% → 88.4%는
 > 모델 회귀가 아니라 측정 정의 변경이다. "핵심 영역 MAE +0.02 이상 악화 → 즉시 FAIL"은 **같은 정의끼리(shown↔shown)만** 적용한다.
+> ⚠ `v6.2_shown` 슬라이스를 수동 재계산할 때는 반드시 5인자 `refresh_prediction_quality_daily(since, until, 'v6.2_shown', 'file_upload', 'shown')`를 쓴다. 3·4인자 호출은 기존 4인자 함수로 해석되어 opt_adj 채점 결과를 v6.2_shown 라벨로 조용히 덮어쓴다.
 
 ### 5. 변경 로직 직접 시뮬레이션 (Generator가 변경한 공식을 재현)
 Generator가 변경한 로직이 결정론적이면 여기서 샘플로 재현. 예:

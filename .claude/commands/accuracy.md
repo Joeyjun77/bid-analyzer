@@ -320,6 +320,7 @@ FROM recent r, prior p;
 {감지된 문제별로 구체 조치 1~3개}
 - 예: "한전 <3억 구간 MAE 0.52 → pred_bias_map의 AG_BA lookup n<15 케이스라 AG grain으로 fallback. 이 영역 데이터 15건 이상 축적 후 AG_BA 그레인 활용 가능."
 - 예: "드리프트 감지된 at=지자체 → refresh_prediction_quality_daily('2026-XX-XX','2026-XX-XX','<MODEL_VERSION>') 실행 권장."
+- ⚠ `'<SHOWN_VERSION>'`(v6.2_shown) 재계산은 반드시 5인자 `refresh_prediction_quality_daily(since, until, 'v6.2_shown', 'file_upload', 'shown')`로 호출한다. 3·4인자로 호출하면 기존 4인자 함수로 해석되어 opt_adj 채점 결과가 v6.2_shown 라벨로 에러 없이 덮어써진다.
 - 예: "군시설 hit_aggressive=0% (체크8) → Phase 17-A WIN_OPT_GAP[군시설]=0.385가 과도. utils.js:20 재추정 or agency_win_stats 기반 동적화 검토 (2순위 B)."
 - 예: "지자체 MAE 0.55 양호하나 Top-1 hit 7.2% (체크7) → MAE–승률 미스매치 → TYPE_OFF 동적화(2순위 C) 착수 시점."
 ```
