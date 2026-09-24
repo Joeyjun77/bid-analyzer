@@ -123,7 +123,7 @@ SELECT * FROM evaluate_model_release(
 ```
 - 반환: metric, baseline_value, candidate_value, passes 등
 - **1차(v6.2_shown) passes=false가 1개라도 있으면 FAIL**. 보조(v6.2)는 WARN.
-- n_candidate=0(최근 14일 매칭 없음)이면 판정 불가 — "표본 0"으로 명시 보고하고 회귀로 취급하지 않는다.
+- n_candidate=0(최근 14일 매칭 없음)이면 "판정 불가(표본 0)"로 명시 보고한다 — 회귀 원인으로 기록하지는 않되 **FAIL은 유지**하고 push 여부는 사용자에게 확인한다 (🚦 판정 기준 참조).
 
 > **재기준화 (2026-09-24, P1)**: 채점 대상을 `opt_adj` → 메인 추천 `bid1st_v2`로 전환했다. 이 시점은 **기준선 단절점**이다.
 > shown 수치와 opt 수치를 서로 비교하지 말 것 — 예: 고양시 MAE 0.6830(opt) → 0.7318(shown), 군부대 하한통과 96.0% → 88.4%는
@@ -510,6 +510,7 @@ git diff -U30 HEAD~1 -- '*.sql' | grep -E '^\+' \
   - 전체 MAE +0.005~+0.02 악화
   - 게이트 통과했지만 특정 영역 소폭 악화
   - 릴리스 게이트 보조(v6.2, 원시 엔진 opt_adj) passes=false
+    - n_candidate=0(표본 0)이면 "판정 불가(표본 0)"로 별도 표기한다.
   - G-A안 WARN (DB suspect 있으나 diff 없음)
   - G-bias WARN (중복 있으나 가드 명시됨)
   - G-모드표시 WARN (빌드 산출물 매칭만 있고 코드 SUSPECT 없음 / 기획 문서 충돌)
