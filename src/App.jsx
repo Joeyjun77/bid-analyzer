@@ -2924,7 +2924,10 @@ ${baseInfo}
       const latestWeek=weeklyQuality.find(w=>w.scope==="overall");
       const atWeekly=weeklyQuality.filter(w=>w.scope==="at").slice(0,12);
       const routeWeekly=weeklyQuality.filter(w=>w.scope==="route").slice(0,6);
-      const dailyOverall=qualityDaily.filter(d=>!d.at&&!d.route).slice(0,14);
+      // P1(2026-09-24): 버전 필터 필수 — 조회(sbFetchQualityDaily)가 전 버전을 가져오므로, 필터가 없으면
+      // v6.2·v6.2_g2b·v6.2_shown이 같은 날짜에 여러 줄로 섞여 표시된다(m43 이후 기존 결함).
+      // 공식 추천안(메인 bid1st_v2) 채점 슬라이스만 표시.
+      const dailyOverall=qualityDaily.filter(d=>d.model_version==='v6.2_shown'&&!d.at&&!d.route).slice(0,14);
       const biasColor=(b)=>{const a=Math.abs(Number(b));if(a<0.05)return C.txm;if(a<0.10)return "#d4a834";if(a<0.20)return "#e8954b";return "#e24b4a"};
       const maeColor=(m)=>{const v=Number(m);if(v<0.50)return "#5dca96";if(v<0.70)return "#d4a834";return "#e24b4a"};
       return<div style={{padding:"14px 16px",maxWidth:1100,margin:"0 auto"}}>
@@ -3252,7 +3255,7 @@ ${baseInfo}
 
         {/* 4. 일별 전체 MAE (최근 14일) */}
         {dailyOverall.length>0&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"14px 16px"}}>
-          <div style={{fontSize:12,color:C.txm,fontWeight:600,marginBottom:10}}>📅 일별 전체 MAE (최근 {dailyOverall.length}일)</div>
+          <div style={{fontSize:12,color:C.txm,fontWeight:600,marginBottom:10}}>📅 일별 전체 MAE — 메인 추천 기준 (최근 {dailyOverall.length}일)</div>
           <table style={{width:"100%",fontSize:11,borderCollapse:"collapse"}}>
             <thead><tr style={{color:C.txd,fontSize:10}}>
               <th style={{textAlign:"left",padding:"4px 6px",borderBottom:"1px solid "+C.bdr}}>측정일</th>
