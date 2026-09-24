@@ -166,7 +166,7 @@ WHERE route IS NULL AND at IS NULL
 → **판정 기준**
 - 어떤 전략이든 hit < 5% → 🚨 해당 전략의 낙찰 기여 없음 (보정 구조 점검 필요)
 - `hit_aggressive` < `hit_balanced` 3%p 이상 → ⚠ 공격 전략 과잉 보정 → `WIN_OPT_GAP` 재추정 검토
-- 전체 MAE는 `/accuracy` 체크1에서 양호한데 hit < 20% → MAE–승률 미스매치, 2순위 착수 신호
+- 전체 MAE(체크1을 `'<MODEL_VERSION>'`으로 재실행한 원시 엔진 값 — 이 체크의 hit와 같은 슬라이스)가 양호한데 hit < 20% → MAE–승률 미스매치, 2순위 착수 신호
 
 ### 체크 8 — at × 전략별 Top-1 hit 분포 (최근 60일)
 ```sql
@@ -247,7 +247,7 @@ SELECT r.n AS n_14d, r.mae AS mae_14d, r.floor_safe AS floor_safe_14d,
        p.n AS n_prev, p.mae AS mae_prev, ROUND((r.mae - p.mae)::numeric,4) AS delta
 FROM recent r, prior p;
 ```
-→ mae_14d가 `MODEL_VERSION`(체크1) 대비 +0.15 이상 크면 ⚠ — g2b 수집 입력(ba 부가세 근사 m42b, ep 등) 재점검 신호
+→ mae_14d가 `MODEL_VERSION` 슬라이스(체크1을 `'<MODEL_VERSION>'`으로 재실행한 값 — 둘 다 opt_adj 채점이라 같은 정의) 대비 +0.15 이상 크면 ⚠ — g2b 수집 입력(ba 부가세 근사 m42b, ep 등) 재점검 신호
 → floor_safe_14d < 30% → g2b 추천 산식이 하한 근처로 과도 하향 중인지 점검 (2026-08-09 단위 인시던트 재발 시그니처: 전 구간 0% 고정)
 → n_14d = 0 → g2b 매칭 파이프라인(jobid 14) 또는 `G2B_VERSION` refresh(jobid 8 2호출) 중단 의심
 

@@ -498,8 +498,9 @@ git diff -U30 HEAD~1 -- '*.sql' | grep -E '^\+' \
 ### 🚦 판정 기준
 - **FAIL** (push 차단):
   - 빌드 실패
-  - 핵심 영역 MAE +0.02 이상 악화
-  - 릴리스 게이트 passes=false
+  - 핵심 영역 MAE +0.02 이상 악화 (같은 정의끼리만 비교: shown↔shown 또는 opt↔opt — §4 재기준화 참조)
+  - 릴리스 게이트 1차(v6.2_shown) passes=false
+    - 단 n_candidate=0(표본 0)으로 인한 passes=false는 "판정 불가(표본 0)"로 별도 표기해 보고한다. FAIL 판정은 유지하며, push 진행 여부는 사용자에게 확인한다.
   - **G-단위 FAIL** (adj_rate WIN-zone 신규 추가)
   - **G-A안 FAIL** (matched row 보호 컬럼 UPDATE/DELETE)
   - **G-bias FAIL** (격리 가드 없는 bias 중복)
@@ -508,6 +509,7 @@ git diff -U30 HEAD~1 -- '*.sql' | grep -E '^\+' \
 - **WARN** (push 가능, 24h 내 /accuracy 재측정):
   - 전체 MAE +0.005~+0.02 악화
   - 게이트 통과했지만 특정 영역 소폭 악화
+  - 릴리스 게이트 보조(v6.2, 원시 엔진 opt_adj) passes=false
   - G-A안 WARN (DB suspect 있으나 diff 없음)
   - G-bias WARN (중복 있으나 가드 명시됨)
   - G-모드표시 WARN (빌드 산출물 매칭만 있고 코드 SUSPECT 없음 / 기획 문서 충돌)
