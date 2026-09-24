@@ -34,13 +34,16 @@ model: opus
 - 빌드/배포 스크립트
 
 ### 2. 핵심 영역 현재 baseline 측정
-Supabase MCP로:
+Supabase MCP로. 핵심영역 정의는 `classify_agency_type(ag)` 기준 (evaluate.md·accuracy.md·deploy-gate.md와 동일, 2026-09-22 전환 — 저장 `at`/ILIKE 목록은 분류기 수정 이전 값이 남아 군부대 집계를 오염·누락시킴).
+아래는 **원시 엔진(`opt_adj`) 기준선** — Generator 변경은 이 경로를 바꾸므로 영향 추정에 쓴다.
+단 사용자가 보는 값은 메인 추천 `bid1st_v2`(model_version `v6.2_shown`)이므로, 영향 표에는 메인 추천 기준 하한통과율·MAE도 함께 제시한다
+(쿼리: `.claude/commands/evaluate.md` §3 1차). opt 수치와 shown 수치는 서로 비교하지 않는다(evaluate.md §4 재기준화).
 ```sql
 WITH base AS (
   SELECT
     CASE
-      WHEN ag ILIKE '%한국전력%' OR ag ILIKE '%한전%' THEN '한전'
-      WHEN ag ILIKE '%국방%' OR ag ILIKE '%육군%' OR ag ILIKE '%공군%' OR ag ILIKE '%해군%' OR ag ILIKE '%해병%' OR at='군시설' THEN '군부대'
+      WHEN classify_agency_type(ag)='한전' THEN '한전'
+      WHEN classify_agency_type(ag)='군시설' THEN '군부대'
       WHEN ag ILIKE '%고양시%' OR ag ILIKE '%고양교육%' THEN '고양시'
     END AS focus,
     opt_adj - actual_adj_rate AS err

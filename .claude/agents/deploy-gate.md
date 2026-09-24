@@ -34,7 +34,30 @@ git diff --name-only HEAD~1 HEAD
 → Generator 변경 감지 시 게이트 3~5 모두 실행
 → Evaluator/Neutral만 변경 시 게이트 3~5 건너뛰고 PASS
 
+> **채점 대상 (P1, 2026-09-24)**: 게이트 3~5의 1차 기준은 **메인 추천 `bid1st_v2`** (사용자가 화면에서 보는 값, model_version `v6.2_shown`)이다.
+> 원시 엔진 `opt_adj`(`v6.2`)는 보조 모니터링 — 회귀 판정은 WARN까지만. shown 수치와 opt 수치는 서로 비교하지 않는다
+> (기준선 단절점: 예 고양시 MAE opt 0.5539 vs shown 0.7318은 정의 차이). 비교는 같은 정의끼리(shown↔shown, opt↔opt)만.
+> 상세 근거: `.claude/commands/evaluate.md` §4 재기준화.
+
 ### 게이트 3 — 전체 baseline MAE (최근 30일)
+**1차 — 메인 추천(`bid1st_v2`):**
+```sql
+WITH base AS (
+  SELECT bid1st_v2_adj - actual_adj_rate AS err
+  FROM bid_predictions
+  WHERE match_status='matched' AND source='file_upload'
+    AND bid1st_v2_adj IS NOT NULL AND actual_adj_rate IS NOT NULL
+    AND COALESCE(is_cancelled,false)=false
+    AND open_date >= CURRENT_DATE - 30
+    AND COALESCE(actual_winner,'') NOT IN ('유찰','유찰(무)')
+    AND ABS(bid1st_v2_adj - actual_adj_rate) <= 5
+)
+SELECT COUNT(*) AS n,
+       ROUND(AVG(ABS(err))::numeric,4) AS mae_shown,
+       ROUND(AVG(err)::numeric,4) AS bias_shown
+FROM base;
+```
+**보조 — 원시 엔진(`opt_adj`) 모니터링:**
 ```sql
 WITH base AS (
   SELECT opt_adj - actual_adj_rate AS err
@@ -49,19 +72,44 @@ SELECT COUNT(*) AS n,
        ROUND(AVG(err)::numeric,4) AS bias
 FROM base;
 ```
-- 직전 push 시 기록된 MAE와 비교 (없으면 14일 전 MAE를 baseline으로)
-- 신규 MAE > baseline + 0.005 → WARN
-- 신규 MAE > baseline + 0.02 → FAIL
+- 1차(shown): 직전 push 시 기록된 shown MAE와 비교 (없으면 14일 전 shown MAE를 baseline으로)
+  - 신규 MAE > baseline + 0.005 → WARN / > baseline + 0.02 → FAIL
+- 보조(opt): 같은 방식으로 opt끼리 비교하되 악화는 WARN까지만
+- n=0이면 "판정 불가(표본 0)"로 명시 보고
 
-### 게이트 4 — 핵심 영역 MAE (한전·고양시·군부대)
+### 게이트 4 — 핵심 영역 (한전·고양시·군부대)
+핵심영역 정의는 저장 `at`/ILIKE 목록이 아니라 `classify_agency_type(ag)` 기준 (evaluate.md·accuracy.md와 동일, 2026-09-22 전환).
+
+**1차 — 메인 추천 하한통과율(비율 공간) + MAE (최근 60일):**
 ```sql
 WITH base AS (
   SELECT
-    CASE
-      WHEN ag ILIKE '%한국전력%' OR ag ILIKE '%한전%' THEN '한전'
-      WHEN ag ILIKE '%국방%' OR ag ILIKE '%육군%' OR ag ILIKE '%공군%' OR ag ILIKE '%해군%' OR ag ILIKE '%해병%' OR at='군시설' THEN '군부대'
-      WHEN ag ILIKE '%고양시%' OR ag ILIKE '%고양교육%' THEN '고양시'
-    END AS focus,
+    CASE WHEN classify_agency_type(p.ag)='한전' THEN '한전'
+         WHEN classify_agency_type(p.ag)='군시설' THEN '군부대'
+         WHEN p.ag ILIKE '%고양시%' OR p.ag ILIKE '%고양교육%' THEN '고양시' END AS focus,
+    p.bid1st_v2_adj - p.actual_adj_rate AS err,
+    CASE WHEN r.floor_price IS NULL OR COALESCE(p.ba,0)<=0 OR COALESCE(r.ba,0)<=0 THEN NULL
+         WHEN p.bid1st_v2_bid/p.ba >= r.floor_price/r.ba THEN 1 ELSE 0 END AS floor_pass
+  FROM bid_predictions p LEFT JOIN bid_records r ON r.id=p.matched_record_id
+  WHERE p.match_status='matched' AND p.source='file_upload'
+    AND p.bid1st_v2_adj IS NOT NULL AND p.bid1st_v2_bid IS NOT NULL AND p.actual_adj_rate IS NOT NULL
+    AND COALESCE(p.is_cancelled,false)=false
+    AND p.open_date >= CURRENT_DATE - 60
+    AND COALESCE(p.actual_winner,'') NOT IN ('유찰','유찰(무)')
+    AND ABS(p.bid1st_v2_adj - p.actual_adj_rate) <= 5
+)
+SELECT focus, COUNT(*) AS n, COUNT(floor_pass) AS n_floor,
+  ROUND(AVG(floor_pass)*100,1) AS floor_pass_pct,
+  ROUND(AVG(ABS(err))::numeric,4) AS mae_shown
+FROM base WHERE focus IS NOT NULL GROUP BY focus ORDER BY mae_shown DESC;
+```
+**참고 — 원시 엔진(`opt_adj`) MAE:**
+```sql
+WITH base AS (
+  SELECT
+    CASE WHEN classify_agency_type(ag)='한전' THEN '한전'
+         WHEN classify_agency_type(ag)='군시설' THEN '군부대'
+         WHEN ag ILIKE '%고양시%' OR ag ILIKE '%고양교육%' THEN '고양시' END AS focus,
     opt_adj - actual_adj_rate AS err
   FROM bid_predictions
   WHERE match_status='matched' AND opt_adj IS NOT NULL AND actual_adj_rate IS NOT NULL
@@ -72,18 +120,27 @@ WITH base AS (
 SELECT focus, COUNT(*) AS n, ROUND(AVG(ABS(err))::numeric,4) AS mae
 FROM base WHERE focus IS NOT NULL GROUP BY focus ORDER BY mae DESC;
 ```
-- 어느 영역이라도 직전 측정 대비 MAE +0.02 이상 악화 → 즉시 FAIL
-- +0.005~+0.02 악화 → WARN
+- 1차(shown) 기준, 어느 영역이라도 직전 shown 측정 대비 MAE +0.02 이상 악화 → 즉시 FAIL / +0.005~+0.02 → WARN
+- 참고(opt) 악화는 WARN까지만 (같은 정의끼리 비교)
+- 하한통과율은 기록·보고 (한전은 2026-09-24 기준 49.2%로 상시 낮음 — 별건 조사 대상, 이 게이트의 FAIL 사유 아님)
 
 ### 게이트 5 — 모델 릴리스 게이트 (DB 함수)
 ```sql
+-- 1차: 메인 추천 채점 슬라이스 (m51)
+SELECT * FROM evaluate_model_release(
+  p_candidate := 'v6.2_shown',
+  p_baseline  := 'v6.2_shown',
+  p_window_days := 14
+);
+-- 보조: 원시 엔진 슬라이스
 SELECT * FROM evaluate_model_release(
   p_candidate := 'v6.2',
   p_baseline  := 'v6.2',
   p_window_days := 14
 );
 ```
-- `passes=false`가 1개라도 있으면 FAIL
+- 1차(v6.2_shown) `passes=false`가 1개라도 있으면 FAIL. 보조(v6.2) `passes=false`는 WARN
+- n_candidate=0(표본 0)으로 인한 passes=false는 "판정 불가(표본 0)"로 명시 — **FAIL은 유지**하고 push 여부는 사용자 확인으로 넘긴다
 - 함수 호출 자체가 에러나면 WARN (함수 시그니처 변경 가능성, 메인 Claude에게 보고)
 
 ### 게이트 6 — git 상태 점검
@@ -111,19 +168,21 @@ git log --oneline -5
 - Generator 변경: {Y / N}
 
 ### 3. 전체 MAE (최근 30일)
-- n: NNN / MAE: 0.XXXX / bias: ±0.XXXX
-- baseline 대비: Δ {±0.XXXX} ({✅/⚠/🚨})
+- 메인 추천(shown, 1차): n: NNN / MAE: 0.XXXX / bias: ±0.XXXX / baseline 대비 Δ {±0.XXXX} ({✅/⚠/🚨})
+- 원시 엔진(opt, 보조): n: NNN / MAE: 0.XXXX / Δ {±0.XXXX}
 
-### 4. 핵심 영역
-| 영역 | n | MAE | Δ |
-|---|---|---|---|
-| 한전 | | | |
-| 고양시 | | | |
-| 군부대 | | | |
+### 4. 핵심 영역 (메인 추천 기준, 최근 60일)
+| 영역 | n | 하한통과율 | MAE(shown) | Δ(shown) | MAE(opt, 참고) |
+|---|---|---|---|---|---|
+| 한전 | | | | | |
+| 고양시 | | | | | |
+| 군부대 | | | | | |
 
 ### 5. 릴리스 게이트
-| metric | baseline | candidate | passes |
-[표]
+| slice | metric | baseline | candidate | n | passes |
+|---|---|---|---|---|---|
+| v6.2_shown (1차) | | | | | |
+| v6.2 (보조) | | | | | |
 
 ### 6. git 상태
 - 미커밋: {O / X}
