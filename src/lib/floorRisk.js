@@ -104,12 +104,8 @@ export function riskColor(risk) {
   return "#5dca96";
 }
 
-export function riskLabel(risk) {
-  if (risk == null) return "—";
-  if (risk >= 95) return "≥95%";
-  if (risk < 1) return "<1%";
-  return risk.toFixed(risk < 10 ? 1 : 0) + "%";
-}
+// 표기 쌍(실격위험↔하한통과)은 floorLabels.js 단일 정의 — 합=100 불변식이 node 테스트로 고정됨
+export { riskLabel } from "./floorLabels.js";
 
 // 저장 스냅샷 필드 4개 (bid_predictions INSERT payload용, UPDATE 금지)
 export function floorRiskSnapshot(map, { at, canonicalAg, ba, bid, jongsim }) {
