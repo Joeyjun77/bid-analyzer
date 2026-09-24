@@ -20,6 +20,26 @@ npx vite build
 
 ### 2. 현행 baseline MAE 측정
 Supabase MCP로:
+
+**1차 — 메인 추천(`bid1st_v2`), 사용자가 실제로 보는 값** (P1, 2026-09-24):
+```sql
+WITH base AS (
+  SELECT bid1st_v2_adj - actual_adj_rate AS err
+  FROM bid_predictions
+  WHERE match_status='matched' AND source='file_upload'
+    AND bid1st_v2_adj IS NOT NULL AND actual_adj_rate IS NOT NULL
+    AND open_date >= CURRENT_DATE - 30
+    AND COALESCE(actual_winner,'') NOT IN ('유찰','유찰(무)')
+    AND ABS(bid1st_v2_adj - actual_adj_rate) <= 5
+)
+SELECT COUNT(*) AS n,
+  ROUND(AVG(ABS(err))::numeric,4) AS mae_shown,
+  ROUND(AVG(err)::numeric,4) AS bias_shown,
+  ROUND(100.0*SUM(CASE WHEN ABS(err)<0.3 THEN 1 ELSE 0 END)/NULLIF(COUNT(*),0),2) AS hit_03
+FROM base;
+```
+
+**보조 — 원시 엔진(`opt_adj`) 모니터링** (화면 미표시 값, 회귀 판정에 쓰지 않음):
 ```sql
 -- 최근 30일, 매칭된 낙찰 건 전체
 WITH base AS (
@@ -41,6 +61,31 @@ FROM base;
 > **주의**: V2 재설계 이후 MAE는 **보조 모니터링 지표**로 강등됨 (HANDOFF_V2_DIAGNOSIS_RESULT §5). 1차 KPI는 영역별 하한 통과율(Mode B) / WIN-zone 진입률(Mode A).
 
 ### 3. 핵심 영역 baseline (한전/고양시/군부대)
+
+**1차 — 메인 추천 하한통과율(비율 공간) + MAE:**
+```sql
+WITH base AS (
+  SELECT
+    CASE WHEN classify_agency_type(p.ag)='한전' THEN '한전'
+         WHEN classify_agency_type(p.ag)='군시설' THEN '군부대'
+         WHEN p.ag ILIKE '%고양시%' OR p.ag ILIKE '%고양교육%' THEN '고양시' END AS focus,
+    p.bid1st_v2_adj - p.actual_adj_rate AS err,
+    CASE WHEN r.floor_price IS NULL OR COALESCE(p.ba,0)<=0 OR COALESCE(r.ba,0)<=0 THEN NULL
+         WHEN p.bid1st_v2_bid/p.ba >= r.floor_price/r.ba THEN 1 ELSE 0 END AS floor_pass
+  FROM bid_predictions p LEFT JOIN bid_records r ON r.id=p.matched_record_id
+  WHERE p.match_status='matched' AND p.source='file_upload'
+    AND p.bid1st_v2_adj IS NOT NULL AND p.bid1st_v2_bid IS NOT NULL AND p.actual_adj_rate IS NOT NULL
+    AND COALESCE(p.is_cancelled,false)=false
+    AND COALESCE(p.actual_winner,'') NOT IN ('유찰','유찰(무)')
+    AND ABS(p.bid1st_v2_adj - p.actual_adj_rate) <= 5
+)
+SELECT focus, COUNT(*) AS n, COUNT(floor_pass) AS n_floor,
+  ROUND(AVG(floor_pass)*100,1) AS floor_pass_pct,
+  ROUND(AVG(ABS(err))::numeric,4) AS mae_shown
+FROM base WHERE focus IS NOT NULL GROUP BY focus;
+```
+
+**참고 — 원시 엔진(`opt_adj`) MAE:**
 ```sql
 WITH base AS (
   SELECT
@@ -63,6 +108,13 @@ FROM base WHERE focus IS NOT NULL GROUP BY focus;
 
 ### 4. 모델 릴리스 게이트 (기존 함수 활용)
 ```sql
+-- 1차: 메인 추천 채점 슬라이스 (m51, P1 2026-09-24)
+SELECT * FROM evaluate_model_release(
+  p_candidate := 'v6.2_shown',
+  p_baseline  := 'v6.2_shown',
+  p_window_days := 14
+);
+-- 보조: 원시 엔진 슬라이스 (모니터링 — passes=false여도 WARN까지만)
 SELECT * FROM evaluate_model_release(
   p_candidate := 'v6.2',
   p_baseline  := 'v6.2',
@@ -70,7 +122,12 @@ SELECT * FROM evaluate_model_release(
 );
 ```
 - 반환: metric, baseline_value, candidate_value, passes 등
-- **passes=false가 1개라도 있으면 FAIL**
+- **1차(v6.2_shown) passes=false가 1개라도 있으면 FAIL**. 보조(v6.2)는 WARN.
+- n_candidate=0(최근 14일 매칭 없음)이면 판정 불가 — "표본 0"으로 명시 보고하고 회귀로 취급하지 않는다.
+
+> **재기준화 (2026-09-24, P1)**: 채점 대상을 `opt_adj` → 메인 추천 `bid1st_v2`로 전환했다. 이 시점은 **기준선 단절점**이다.
+> shown 수치와 opt 수치를 서로 비교하지 말 것 — 예: 고양시 MAE 0.6830(opt) → 0.7318(shown), 군부대 하한통과 96.0% → 88.4%는
+> 모델 회귀가 아니라 측정 정의 변경이다. "핵심 영역 MAE +0.02 이상 악화 → 즉시 FAIL"은 **같은 정의끼리(shown↔shown)만** 적용한다.
 
 ### 5. 변경 로직 직접 시뮬레이션 (Generator가 변경한 공식을 재현)
 Generator가 변경한 로직이 결정론적이면 여기서 샘플로 재현. 예:
@@ -382,19 +439,22 @@ git diff -U30 HEAD~1 -- '*.sql' | grep -E '^\+' \
 - 상태: {OK | FAIL}
 - 번들 크기: X kB (변경 전 Y kB, Δ Z kB)
 
-### 2. 전체 MAE (baseline, 보조 지표)
-- n: NNN / MAE: 0.XXXX / bias: ±0.XXXX / hit_0.3: X% / hit_1.0: X%
+### 2. 전체 MAE (보조 지표)
+- 메인 추천(shown): n: NNN / MAE: 0.XXXX / bias: ±0.XXXX / hit_0.3: X%
+- 원시 엔진(opt, 참고): n: NNN / MAE: 0.XXXX
 
-### 3. 핵심 영역 MAE
-| 영역 | n | MAE |
-|---|---|---|
-| 한전 | | |
-| 고양시 | | |
-| 군부대 | | |
+### 3. 핵심 영역 (메인 추천 기준)
+| 영역 | n | 하한통과율 | MAE(shown) | MAE(opt, 참고) |
+|---|---|---|---|---|
+| 한전 | | | | |
+| 고양시 | | | | |
+| 군부대 | | | | |
 
 ### 4. 릴리스 게이트 (evaluate_model_release)
-| metric | baseline | candidate | passes |
-[표]
+| slice | metric | baseline | candidate | n | passes |
+|---|---|---|---|---|---|
+| v6.2_shown (1차) | | | | | |
+| v6.2 (보조) | | | | | |
 
 ### 5. 변경 로직 재현
 - 재현 가능: Y/N

@@ -4,11 +4,14 @@ description: 예측 시스템 정확도 자동 점검 — 기존 검증 인프�
 
 당신은 예측 정확도 모니터링 전용 서브에이전트입니다. **코드를 변경하지 말고** 다음 13개 체크를 순서대로 실행하고 결과를 구조화된 리포트로 제출하세요.
 
-## 모델 버전 상수 (버전 승격 시 여기 두 줄만 수정)
-- `MODEL_VERSION` = **v6.2** — file_upload(상품 추천) 슬라이스. 게이트·핵심 KPI 대상.
+## 모델 버전 상수 (버전 승격 시 여기 세 줄만 수정)
+- `SHOWN_VERSION` = **v6.2_shown** — file_upload 메인 추천(`bid1st_v2`) 채점 슬라이스. **1차 게이트·핵심 KPI 대상** (m51, P1 2026-09-24).
+- `MODEL_VERSION` = **v6.2** — file_upload 원시 엔진(`opt_adj`) 슬라이스. 화면 미표시 값 — 엔진 진단·보조 모니터링용.
 - `G2B_VERSION` = **v6.2_g2b** — g2b_auto(자동수집) 보조 슬라이스. 관측 전용.
 
-아래 모든 SQL의 `'<MODEL_VERSION>'` / `'<G2B_VERSION>'` 자리표시자에 위 값을 **문자열 리터럴로 대입해** 실행한다 (예: `model_version = 'v6.2'`). 자리표시자를 그대로 실행하지 말 것.
+아래 모든 SQL의 `'<SHOWN_VERSION>'` / `'<MODEL_VERSION>'` / `'<G2B_VERSION>'` 자리표시자에 위 값을 **문자열 리터럴로 대입해** 실행한다 (예: `model_version = 'v6.2_shown'`). 자리표시자를 그대로 실행하지 말 것.
+
+> **재기준화 (2026-09-24)**: `SHOWN_VERSION` 수치와 `MODEL_VERSION` 수치를 서로 비교하지 말 것. 채점 대상이 다른 두 값이다(예: 고양시 MAE opt 0.6830 vs shown 0.7318은 회귀가 아니라 정의 차이). 추이·드리프트 판정은 같은 버전끼리만.
 
 ## 실행 순서 (Supabase MCP 사용)
 
@@ -18,11 +21,12 @@ SELECT measured_on, route, SUM(n) AS n, ROUND(AVG(mae)::numeric,4) AS mae,
        ROUND(AVG(hit_0_5_pct)::numeric,2) AS hit_05, ROUND(AVG(floor_safe_pct)::numeric,2) AS floor_safe
 FROM prediction_quality_daily
 WHERE measured_on >= CURRENT_DATE - 14
-  AND model_version = '<MODEL_VERSION>'  -- m43: 상품(file_upload) 전용 슬라이스 (g2b_auto는 <G2B_VERSION> 별도)
+  AND model_version = '<SHOWN_VERSION>'  -- P1: 메인 추천 채점 (원시 엔진 추이가 필요하면 '<MODEL_VERSION>'으로 재실행, 보조)
 GROUP BY measured_on, route
 ORDER BY measured_on DESC, route;
 ```
 → MAE가 전일 대비 +0.01 이상 악화되면 ⚠ 표시.
+→ floor_safe(메인 추천 하한통과율)가 80% 미만인 날은 ⚠ 표시 (2026-09-24 전체 83.9% 기준).
 
 ### 체크 2 — 발주유형(at)별 MAE (최근 14일 vs 이전 14일 드리프트)
 ```sql
@@ -45,7 +49,35 @@ ORDER BY r.n DESC;
 ```
 → delta > 0.02 → 드리프트 경고.
 
-### 체크 3 — 핵심 영역 실측 MAE (한전/고양시/군부대, 최근 30일)
+### 체크 3 — 핵심 영역 (한전/고양시/군부대, 최근 30일)
+
+**1차 — 메인 추천 하한통과율 + MAE:**
+```sql
+WITH base AS (
+  SELECT
+    CASE WHEN classify_agency_type(p.ag)='한전' THEN '한전'
+         WHEN classify_agency_type(p.ag)='군시설' THEN '군부대'
+         WHEN p.ag ILIKE '%고양시%' OR p.ag ILIKE '%고양교육%' THEN '고양시' END AS focus,
+    p.bid1st_v2_adj - p.actual_adj_rate AS err,
+    CASE WHEN r.floor_price IS NULL OR COALESCE(p.ba,0)<=0 OR COALESCE(r.ba,0)<=0 THEN NULL
+         WHEN p.bid1st_v2_bid/p.ba >= r.floor_price/r.ba THEN 1 ELSE 0 END AS floor_pass
+  FROM bid_predictions p LEFT JOIN bid_records r ON r.id=p.matched_record_id
+  WHERE p.match_status='matched' AND p.source='file_upload'
+    AND p.bid1st_v2_adj IS NOT NULL AND p.bid1st_v2_bid IS NOT NULL AND p.actual_adj_rate IS NOT NULL
+    AND p.open_date >= CURRENT_DATE - 30
+    AND COALESCE(p.is_cancelled,false)=false
+    AND COALESCE(p.actual_winner,'') NOT IN ('유찰','유찰(무)')
+    AND ABS(p.bid1st_v2_adj - p.actual_adj_rate) <= 5
+)
+SELECT focus, COUNT(*) AS n, COUNT(floor_pass) AS n_floor,
+  ROUND(AVG(floor_pass)*100,1) AS floor_pass_pct,
+  ROUND(AVG(err)::numeric,4) AS bias_shown,
+  ROUND(AVG(ABS(err))::numeric,4) AS mae_shown
+FROM base WHERE focus IS NOT NULL GROUP BY focus ORDER BY floor_pass_pct;
+```
+→ 하한통과율 80% 미만 영역 ⚠ (한전은 2026-09-24 기준 49.2%로 상시 ⚠ — 별건 조사 대상, 스펙 §8).
+
+**참고 — 원시 엔진(`opt_adj`) MAE** (pred_bias_map 재학습 판단용, 아래 임계는 이 쿼리에만 적용):
 ```sql
 WITH base AS (
   SELECT
@@ -225,7 +257,7 @@ FROM recent r, prior p;
 ## 📊 예측 정확도 점검 리포트 (YYYY-MM-DD)
 
 ### 🎯 한눈에
-- 전체 MAE (최근 14일): X.XXXX ({전일대비 ↑↓ 0.XXXX})
+- 전체 MAE — 메인 추천 (최근 14일): X.XXXX ({전일대비 ↑↓ 0.XXXX}) · 하한통과율 XX.X%
 - 드리프트 플래그: N개 / 총 M개
 - 핵심 영역 (한전/고양시/군부대): {모두 안정 | X 영역 경고}
 - Top-1 승률 (최근 30일, 최고 전략): XX.X% ({✅ ≥20% / ⚠ 10-20% / 🚨 <10%})
@@ -239,7 +271,7 @@ FROM recent r, prior p;
 [표 — delta > 0.02인 row는 ⚠ 표시]
 
 ### 3. 핵심 영역 (체크3)
-[표 — 0.60 초과 시 🚨]
+[1차 표 — 하한통과율 80% 미만 ⚠] · [참고 표 — opt MAE 0.60 초과 시 pred_bias_map 재학습 제안]
 
 ### 4. 주간 게이트 (체크4)
 [drift_flag=true 또는 gate_status!='PASS' 우선 나열]
