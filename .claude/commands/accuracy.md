@@ -75,7 +75,8 @@ SELECT focus, COUNT(*) AS n, COUNT(floor_pass) AS n_floor,
   ROUND(AVG(ABS(err))::numeric,4) AS mae_shown
 FROM base WHERE focus IS NOT NULL GROUP BY focus ORDER BY floor_pass_pct;
 ```
-→ 하한통과율 80% 미만 영역 ⚠ (한전은 2026-09-24 기준 49.2%로 상시 ⚠ — 별건 조사 대상, 스펙 §8).
+→ 하한통과율 80% 미만 영역 ⚠.
+→ 한전 해석 주의 (2026-09-24 조사 완료): 전체기간 한전 49.2%(n=61)는 **한전 2026 개정 요율(88→90%대, cutoff 2026-02-10)이 RATE_TABLE에 반영되기 전(커밋 e4d26ae, 2026-06-05) 생성된 예측 27건(하한통과 0/27)**이 끌어내린 값이다. 수정 이후 예측은 30/34 = 88.2%로 타 영역과 동급 — 현재 결함 아님. 한전 추이는 `p.created_at >= '2026-06-05'` 조건을 추가해 읽을 것 (30일 창에서는 이미 자연 소멸).
 
 **참고 — 원시 엔진(`opt_adj`) MAE** (pred_bias_map 재학습 판단용, 아래 임계는 이 쿼리에만 적용):
 ```sql
@@ -149,6 +150,7 @@ LIMIT 10;
 → 동일 ag가 2건 이상 반복되면 해당 ag를 pred_bias_map 재학습 후보로 제안.
 
 ### 체크 7 — 전략별 Top-1 적중률 (최근 30일, MAE–승률 미스매치 감지)
+> **혼합 정의 주의 (2026-09-24)**: `top1_hit_*`의 원천 `rec_1st_possible`은 두 경로에서 기록된다. 서버 cron(`match_pending_predictions`)은 처음부터 올바른 정의(`bid < bp AND bid >= floor_price`)였지만, **앱 클라이언트 매처는 2026-09-24 수정 전까지 `bid <= bp AND bid >= xp*fr/100`(A값 누락·stale fr)** 이었다. 수정 전 저장된 "가능" 106건 중 20건(19%)이 실제 하한 미달 — 마지막 오판 matched_at 2026-08-20. 이 기간이 창에 걸리면 적중률이 소폭 과대 표시된다. 추세 비교는 수정 배포일 이후로 한정하고, 기존 오판 행의 소급 재계산은 별건(미처리).
 ```sql
 SELECT
   SUM(n) AS n,
@@ -169,6 +171,7 @@ WHERE route IS NULL AND at IS NULL
 - 전체 MAE(체크1을 `'<MODEL_VERSION>'`으로 재실행한 원시 엔진 값 — 이 체크의 hit와 같은 슬라이스)가 양호한데 hit < 20% → MAE–승률 미스매치, 2순위 착수 신호
 
 ### 체크 8 — at × 전략별 Top-1 hit 분포 (최근 60일)
+> 체크 7의 **혼합 정의 주의**가 동일하게 적용된다 (2026-08-20 이전 클라이언트 매칭분 일부 과대).
 ```sql
 SELECT at,
        SUM(n) AS n, SUM(top1_n) AS top1_n,
