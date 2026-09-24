@@ -16,6 +16,7 @@ import { calcEffectiveFloorRate, formatFloorDual } from "./lib/effectiveFloor.js
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH, predConfidence, predConfidenceV2 } from "./lib/utils.js";
 import { resolveMode, resolveFloorErrDist } from "./lib/modeResolver.js";
 import { sbFetchFloorRateDistMap, resolveFloorDist, floorRiskPct, floorSafeBid, floorModeOf, riskColor, riskLabel, floorRiskSnapshot } from "./lib/floorRisk.js";
+import { floorPassPct, floorPassLabel } from "./lib/floorLabels.js";
 import { sbFetchPcDistMap, resolvePcDist, pcBucketOf, pcColor, pcSnapshot } from "./lib/participantCount.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbRefreshParticipantDistFor, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
 import { sbFetchAllCached } from "./lib/bidCache.js";
@@ -1783,10 +1784,11 @@ ${baseInfo}
                     )}
                   </div>
                   <div style={{fontSize:10,color:C.txd,marginTop:3}}>이 예정가격을 기초금액으로 계산한 값</div>
-                  {/* B2.5b: V2 보조 표시 — 사정률 */}
+                  {/* B2.5b: V2 보조 표시 — 사정률. Mode B '안착안'은 메인 추천과 다른 투찰금이며 95%는 측정값이 아닌 목표값 (P1 2026-09-24) */}
                   {d.b_pred_adj!=null&&(
                     <div style={{fontSize:10,color:d.b_pred_mode==='A'?"#d28b16":"#1a7a4a",marginTop:4,fontFamily:"monospace"}}>
-                      V2 {d.b_pred_mode==='A'?'공략':'안착'}: {fmtAdj(d.b_pred_adj)}
+                      V2 {d.b_pred_mode==='A'?'공략':'안착안'}: {fmtAdj(d.b_pred_adj)}
+                      {d.b_pred_mode==='B'&&d.b_pred_floor_pass_prob!=null&&<span style={{marginLeft:6,color:C.txd}}>· 목표 통과 {(Number(d.b_pred_floor_pass_prob)*100).toFixed(0)}%</span>}
                       {d.b_pred_grain&&<span style={{color:C.txd,marginLeft:6}}>({d.b_pred_grain})</span>}
                     </div>
                   )}
@@ -1801,33 +1803,39 @@ ${baseInfo}
                   <div style={{fontSize:10,color:C.txm,marginBottom:3}}>💰 입찰 시 사용할 투찰금액</div>
                   <div style={{fontSize:28,fontWeight:700,color:C.gold,fontFamily:"monospace",lineHeight:1}}>{winBid?tc(winBid)+"원":"—"}</div>
                   <div style={{fontSize:10,color:C.txd,marginTop:3}}>낙찰하한율 {d.pred_floor_rate||"—"}% 적용{d.av&&Number(d.av)>0?" (A값 "+tc(Number(d.av))+"원)":""}</div>
-                  {/* B2.5b: V2 보조 표시 — 투찰금액 + Mode B 통과확률 */}
+                  {/* B2.5b: V2 보조 표시 — 안착안 투찰금액 (메인 추천 투찰금과 다른 값, P1 2026-09-24) */}
                   {d.b_pred_bid_amount!=null&&(
                     <div style={{fontSize:10,color:d.b_pred_mode==='A'?"#d28b16":"#1a7a4a",marginTop:4,fontFamily:"monospace"}}>
-                      V2: {tc(Number(d.b_pred_bid_amount))}원
+                      V2{d.b_pred_mode==='B'?' 안착안':''}: {tc(Number(d.b_pred_bid_amount))}원
                       {d.b_pred_mode==='B'&&d.b_pred_floor_pass_prob!=null&&(
-                        <span style={{marginLeft:6,color:C.txd}}>· 통과 확률 {(Number(d.b_pred_floor_pass_prob)*100).toFixed(0)}%</span>
+                        <span style={{marginLeft:6,color:C.txd}}>· 목표 통과 {(Number(d.b_pred_floor_pass_prob)*100).toFixed(0)}%</span>
                       )}
                     </div>
                   )}
                 </div>
               </div>
-              {/* B2.5c: V2 메인 메트릭 행 (Mode B=하한 통과 확률 / Mode A=예상 낙찰 확률) — 실 데이터 의존이라 d.b_pred_mode 유지 */}
+              {/* B2.5c: V2 메인 메트릭 행 — Mode A=예상 낙찰 확률(winProb, 변경 없음)
+                  Mode B=하한 통과 확률 (추천 투찰금 기준) = 100 − 같은 화면 실격위험%(dRiskM). 두 숫자 합 100이 구조적으로 보장된다.
+                  P1(2026-09-24): 이전 고정값 0.95는 다른 투찰금(안착안) 기준의 목표값이어서 보조 줄로 이동. */}
               {d.b_pred_mode&&(()=>{
                 const isModeA=d.b_pred_mode==='A';
-                const probVal=isModeA?(winProb!=null?Number(winProb):null):(d.b_pred_floor_pass_prob!=null?Number(d.b_pred_floor_pass_prob):null);
-                const probPct=probVal!=null?Math.round(probVal*100):null;
+                const barPct=isModeA?(winProb!=null?Math.round(Number(winProb)*100):null):floorPassPct(dRiskM);
+                const valText=isModeA?(barPct!=null?barPct+"%":"—"):floorPassLabel(dRiskM);
                 const accent=isModeA?"#d28b16":"#1a7a4a";
-                const label=isModeA?'🎯 예상 낙찰 확률':'🛡️ 하한 통과 확률';
+                const label=isModeA?'🎯 예상 낙찰 확률':'🛡️ 하한 통과 확률 (추천 투찰금 기준)';
+                const basis=isModeA?null:(dRiskM==null?(finalRec.jongsim?'종심제 미지원':'표본 부족'):(frDistM?`표본 ${frDistM.n}건 · 최근 ${frDistM.window}일`:null));
                 return(
                   <div style={{padding:"10px 16px",background:"rgba(0,0,0,0.1)",borderTop:"1px solid "+C.bdr+"33",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                    <span style={{fontSize:11,color:C.txm,fontWeight:600}}>{label}</span>
+                    <div>
+                      <span style={{fontSize:11,color:C.txm,fontWeight:600}}>{label}</span>
+                      {basis&&<div style={{fontSize:9,color:C.txd,marginTop:2}}>{basis}</div>}
+                    </div>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
                       <div style={{width:120,height:8,background:"#1a1a30",borderRadius:4,overflow:"hidden"}}>
-                        {probPct!=null&&<div style={{width:Math.min(100,probPct)+"%",height:"100%",background:accent,transition:"width 0.3s"}}/>}
+                        {barPct!=null&&<div style={{width:Math.min(100,Math.max(0,barPct))+"%",height:"100%",background:accent,transition:"width 0.3s"}}/>}
                       </div>
                       <span style={{fontSize:18,fontWeight:700,fontFamily:"monospace",color:accent,minWidth:48,textAlign:"right"}}>
-                        {probPct!=null?probPct+"%":"—"}
+                        {valText}
                       </span>
                     </div>
                   </div>
