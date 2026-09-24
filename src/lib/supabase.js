@@ -1,5 +1,6 @@
 import { sanitizeJson } from "./utils.js";
 import { authedFetch } from "../auth.js";
+import { rec1stPossible } from "./rec1stPossible.js";
 
 // 모든 Supabase REST 호출은 authedFetch 경유 — 401 시 refresh_token으로 자동 재시도.
 // 공통 헤더 스니펫: body 있는 요청에는 Content-Type만, apikey/Authorization은 authedFetch가 주입.
@@ -147,13 +148,8 @@ export async function sbMatchPredictions(predictions,records){
     const adjErr=p.pred_adj_rate!=null&&actualAdj!=null?Math.round((p.pred_adj_rate-actualAdj)*10000)/10000:null;
     const bidErr=p.pred_bid_amount!=null&&match.bp!=null?Math.round(p.pred_bid_amount-match.bp):null;
     updates.push({id:p.id,actual_adj_rate:actualAdj,actual_expected_price:match.xp,actual_bid_amount:match.bp,actual_winner:match.co,actual_participant_count:match.pc,adj_rate_error:adjErr,bid_amount_error:bidErr,match_status:"matched",matched_record_id:match.id,matched_at:new Date().toISOString(),
-      // ★ rec_1st_possible: 각 전략이 1위 가능했는지 판정
-      ...(match.xp&&match.bp&&match.fr?{rec_1st_possible:JSON.stringify({
-        existing:p.pred_bid_amount!=null&&Number(p.pred_bid_amount)<=Number(match.bp)&&Number(p.pred_bid_amount)>=Number(match.xp)*Number(match.fr)/100,
-        aggressive:p.rec_bid_p25!=null&&Number(p.rec_bid_p25)<=Number(match.bp)&&Number(p.rec_bid_p25)>=Number(match.xp)*Number(match.fr)/100,
-        balanced:p.rec_bid_p50!=null&&Number(p.rec_bid_p50)<=Number(match.bp)&&Number(p.rec_bid_p50)>=Number(match.xp)*Number(match.fr)/100,
-        conservative:p.rec_bid_p75!=null&&Number(p.rec_bid_p75)<=Number(match.bp)&&Number(p.rec_bid_p75)>=Number(match.xp)*Number(match.fr)/100
-      })}:{})})
+      // ★ rec_1st_possible: 각 전략이 1위 가능했는지 판정 — 서버 cron과 동일 정의(rec1stPossible.js 단일 정의)
+      ...(()=>{const r1=rec1stPossible(p,match);return r1?{rec_1st_possible:JSON.stringify(r1)}:{}})()})
   }
   for(const u of updates){
     const{id,...data}=u;
