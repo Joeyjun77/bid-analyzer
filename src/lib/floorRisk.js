@@ -1,7 +1,8 @@
 // Mode B 실격위험% + 안전투찰선 (Phase 1, 표시 전용 — Evaluator)
 // 근거: .scratch/mode-b-disqual-risk/spec.md v2 (predict-architect 검토 반영)
-// 정의: 실격위험% = P(실현 낙찰하한가 > 투찰금) — grain별 floor_price/ba 경험분포(365d, current era)와 직접 비교
+// 정의: 실격위험% = P(실현 낙찰하한가 > 투찰금) — grain별 floor_price/ba 경험분포(era_v2='current')와 직접 비교
 // 데이터: DB floor_rate_distribution (m38, jobid 7 일배치 갱신) — 클라이언트는 조회·보간만 (단일 정의)
+//   윈도우는 grain별 적응(m50): 레짐 변화가 확인된 grain은 180d, 그 외 365d. 행의 window_days 참조.
 // 소비 규칙: 위험% n>=60, 안전투찰선(q95) n>=100. fallback AG_BA → AT_BA ("표본 부족" 배지)
 // 문구 규정: 안전투찰선은 "탈락 회피 하한선" — 추천 투찰가 아님 (상향 투찰 유도 금지, 추첨 천장)
 
