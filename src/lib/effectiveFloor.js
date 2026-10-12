@@ -6,10 +6,18 @@
 export function calcEffectiveFloorRate(at, baseFloor, score = 20) {
   const base = Number(baseFloor);
   if (!Number.isFinite(base)) return baseFloor;
-  const raw = Number(score);
-  const s = Number.isFinite(raw) ? Math.max(0, Math.min(20, raw)) : 20;
-  const shortfall = 20 - s;
+  const shortfall = 20 - parseOwnScore(score, 20);
   return base + shortfall * 0.05;
+}
+
+// 자사 비가격 점수 해석 (0~20 정수). 값이 없거나(null·빈칸) 음수·비수치면 fallback.
+// Number(null)·Number('')는 0이라 "값 없음"이 0점(하한율 +1.0%p)으로 계산된다 —
+// 2026-05-20~10-12 localStorage 키 부재로 업로드 예측 788건이 0점 처리된 결함의 재발 방지.
+export function parseOwnScore(raw, fallback) {
+  if (raw == null || (typeof raw === "string" && raw.trim() === "")) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.min(20, Math.round(n));
 }
 
 // 표준/자사 듀얼 표기 — score=20 시 표준만, 부족 시 화살표 표기

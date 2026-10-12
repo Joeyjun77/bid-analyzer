@@ -12,7 +12,7 @@ import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
 import G2BSheetTab from "./components/G2BSheetTab.jsx";
 import OwnScoreInput from "./components/OwnScoreInput.jsx";
-import { calcEffectiveFloorRate, formatFloorDual } from "./lib/effectiveFloor.js";
+import { calcEffectiveFloorRate, formatFloorDual, parseOwnScore } from "./lib/effectiveFloor.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH, predConfidence, predConfidenceV2 } from "./lib/utils.js";
 import { resolveMode, resolveFloorErrDist } from "./lib/modeResolver.js";
 import { sbFetchFloorRateDistMap, resolveFloorDist, floorRiskPct, floorSafeBid, floorModeOf, riskColor, riskLabel, floorRiskSnapshot } from "./lib/floorRisk.js";
@@ -450,9 +450,15 @@ export default function App(){
   const[pcFilter,setPcFilter]=useState(""); // 예측 리스트 참가자수 버킷 필터 (""=전체, small/mid/large)
   const[basegFinetune,setBasegFinetune]=useState({}); // Phase 23-3: 한전·고양시 (ag,at,seg) median fine-tune
   // V2_DOMAIN_RULES_CHECK #1 — 자사 비가격 점수 (0~20, 디폴트 20=만점)
-  const OWN_SCORE_KEY='bidAnalyzer.ownScore';
+  // v2 키: 구 키에는 초기화 결함(키 없음 → Number(null)=0)이 써 둔 "0"이 남아 있다. 의도한 0과 구분할 수 없어
+  // 구 키의 0은 20으로 보고(사용자 확인: 0 입력 없음, 2026-10-12), 1~20은 사용자가 넣은 값이므로 승계한다.
+  const OWN_SCORE_KEY='bidAnalyzer.ownScore.v2';
   const[ownScore,setOwnScore]=useState(()=>{
-    try{const stored=localStorage.getItem(OWN_SCORE_KEY);const n=Number(stored);return Number.isFinite(n)&&n>=0&&n<=20?n:20;}catch{return 20;}
+    try{
+      const cur=localStorage.getItem(OWN_SCORE_KEY);
+      if(cur!=null)return parseOwnScore(cur,20);
+      return parseOwnScore(localStorage.getItem('bidAnalyzer.ownScore'),20)||20;
+    }catch{return 20;}
   });
   useEffect(()=>{try{localStorage.setItem(OWN_SCORE_KEY,String(ownScore));}catch{}},[ownScore]);
   const[trendMap,setTrendMapState]=useState({}); // Phase 5.4: 추세 맵
