@@ -243,7 +243,7 @@ WHERE tgrelid='public.bid_predictions'::regclass AND tgname='trg_bid_predictions
 - diff에서 보호 컬럼 UPDATE/DELETE 패턴 0건 AND DB suspect_updates=0 (트리거 활성 확인) → **PASS**
 - diff에서 패턴 1건 이상 → **FAIL**
 - diff 0이지만 DB suspect_updates>0 → **WARN** — 실제 변경 기록이므로 원인(어느 경로·어느 역할)을 규명해 보고한다
-- 감사 트리거가 없거나 비활성(`tgenabled='D'`) → DB 측 **판정 불가**로 보고 (WARN)
+- 감사 트리거가 없거나 `tgenabled`가 `'O'`(기본 활성)·`'A'`(항상)가 아님 → DB 측 **판정 불가**로 보고 (WARN). `'D'`는 비활성, `'R'`은 복제 세션 전용이라 일반 세션에서 발화하지 않는다
 - 예외: 매칭 전(`match_status != 'matched'`) row UPDATE는 허용 (감사 대상 아님)
 
 ---

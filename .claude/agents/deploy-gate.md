@@ -28,18 +28,22 @@ npx vite build
 분류는 **변경 줄 단위**로 한다 (2026-10-12 전환). 이전 정의는 "변경 파일 안에 키워드가 있는가"였는데,
 `src/App.jsx`는 파일 어딘가에 항상 키워드가 있어 무관한 수정도 전부 Generator로 읽혔다.
 ```bash
-git diff --name-only HEAD~1 HEAD
-KW='getFinalRecommendation|opt_adj|optAdj|opt_bid|optBid|pred_bias_map|biasFix|getFloorRate|eraFR|isNewEra|RATE_TABLE|WIN_OPT_GAP|TYPE_OFF|ASSUMED_ADJ_TABLE|calcEffectiveFloorRate|parseOwnScore|ownScore|own_score|predictV5|recommendAssumedAdj|recommendBid1st|recommendV2|recommendModeA|recommendModeB|calcFloorPassProb|calcWinProb|floorRiskPct|floorSafeBid|predict_v6'
+# 분류 범위 = push 단위(아직 push하지 않은 커밋 전체). HEAD~1..HEAD로 보면 미push 커밋이 2개 이상일 때 앞 커밋을 놓친다.
+git fetch origin -q; BASE=$(git merge-base origin/main HEAD)
+git diff --name-only $BASE HEAD
+KW='getFinalRecommendation|opt_adj|optAdj|opt_bid|optBid|pred_bias_map|biasFix|getFloorRate|resolveRateTable|getCutoffDate|eraFR|isNewEra|isLhJongsim|RATE_TABLE|WIN_OPT_GAP|TYPE_OFF|ASSUMED_ADJ_TABLE|calcEffectiveFloorRate|parseOwnScore|ownScore|own_score|calcStats|routePrediction|predictV5|simDraws|recommendAssumedAdj|calcBenchmarkAdj|calcWin1stBid|calcRoiBase|calcRoiV2|baSegOf|amountTierOf|normalizeAgencyName|lookupWin1stDist|recommendBid1st|_invertBidCToAdj|recommendV2|recommendModeA|recommendModeB|calcFloorPassProb|calcWinProb|_erf|_phi|floorRiskPct|floorSafeBid|predict_v6'
 # (a) 추가·삭제 줄과 hunk 머리(@@ … 함수 문맥)에 예측 관련 이름이 있는가
-git diff -U0 HEAD~1 HEAD -- 'src/*.js' 'src/*.jsx' 'src/**/*.js' 'src/**/*.jsx' \
-  | grep -E '^(\+|-|@@)' | grep -vE '^(\+\+\+|---)' | grep -cE "$KW"
-# (b) 파일 전체가 예측 상수·산식인 경로가 바뀌었는가
-git diff --name-only HEAD~1 HEAD | grep -cE '^(src/lib/constants-tables\.js|src/lib/effectiveFloor\.js|src/lib/floorRisk\.js)$'
+git diff -U0 $BASE HEAD -- 'src/*.js' 'src/*.jsx' 'src/**/*.js' 'src/**/*.jsx'   | grep -E '^(\+|-|@@)' | grep -vE '^(\+\+\+|---)' | grep -cE "$KW"
+# (b) 파일 전체가 예측 상수·산식·분기인 경로가 바뀌었는가
+git diff --name-only $BASE HEAD | grep -cE '^(src/lib/constants-tables\.js|src/lib/effectiveFloor\.js|src/lib/floorRisk\.js|src/lib/modeResolver\.js|src/lib/agencyClass\.js)$'
+# (c) 분류 근거 기록용 — 바뀐 함수 문맥(hunk 머리). (a)=(b)=0인데 src/lib/utils.js·src/App.jsx가 바뀌었으면 반드시 리포트에 붙인다
+git diff -U0 $BASE HEAD -- 'src/lib/utils.js' 'src/App.jsx' | grep -E '^@@' | sed -E 's/^@@[^@]*@@ ?//' | sort -u | head -20
 ```
 - (a) 또는 (b)가 1 이상 → **Generator**
-- 둘 다 0 → Evaluator/Neutral
-- 호출자가 predict-architect 분류를 전달했고 위 결과와 다르면 **더 엄격한 쪽(Generator)** 을 따른다. 두 결과를 모두 리포트에 적는다.
-- 키워드 목록은 예측 산식·입력에 새 함수가 생기면 함께 갱신한다 (목록에 없는 새 산식은 이 검사가 놓친다).
+- 둘 다 0 → Evaluator/Neutral. 단 (c)에 출력이 있으면 그 함수 이름들을 리포트에 적고, 예측 계산에 쓰이는 함수로 보이면 Generator로 올린다(판단 근거를 한 줄로 적는다)
+- 호출자가 predict-architect 분류를 전달했고 위 결과와 다르면 **더 엄격한 쪽(Generator)** 을 따른다. (a)(b)(c) 결과와 architect 분류를 모두 리포트에 적는다.
+- KW는 이름 목록이라 빠진 것은 놓친다. `src/lib/utils.js`의 예측 계산 함수(추가·개명 포함)가 바뀌면 KW도 함께 갱신한다.
+  2026-10-12 초판은 `calcStats`·`routePrediction`·`resolveRateTable`·`lookupWin1stDist`·`_invertBidCToAdj`·`_erf`·`resolveMode`만 바꾼 커밋을 Neutral로 분류했다(deploy-gate 실측으로 발견, 같은 날 보완).
 
 → Generator 변경 감지 시 게이트 3~5 모두 실행
 → Evaluator/Neutral만 변경 시 게이트 3~5 건너뛰고 PASS
@@ -174,7 +178,10 @@ git log --oneline -5
 - 번들: X kB
 
 ### 2. 변경 분류
+- 범위: {BASE 커밋}..HEAD ({미push 커밋 수}개)
 - 파일: {목록}
+- (a) 키워드 줄: N / (b) 산식 경로: N / (c) 바뀐 함수 문맥: {목록 또는 없음}
+- predict-architect 분류: {전달받은 값 또는 미전달}
 - Generator 변경: {Y / N}
 
 ### 3. 전체 MAE (최근 30일)
