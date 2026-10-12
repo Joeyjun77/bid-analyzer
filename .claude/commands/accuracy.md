@@ -26,7 +26,7 @@ GROUP BY measured_on, route
 ORDER BY measured_on DESC, route;
 ```
 → MAE가 전일 대비 +0.01 이상 악화되면 ⚠ 표시.
-→ floor_safe(메인 추천 하한통과율)가 80% 미만인 날은 ⚠ 표시 (2026-09-24 전체 83.9% 기준).
+→ floor_safe(메인 추천 하한통과율)가 80% 미만인 날은 ⚠ 표시 (2026-09-24 전체 83.9% 기준). 요율표 정정 이후 생성된 예측이 섞인 날에는 이 임계가 맞지 않는다 — 체크 3의 `rate_tier` 층화로 읽는다.
 
 ### 체크 2 — 발주유형(at)별 MAE (최근 14일 vs 이전 14일 드리프트)
 ```sql
@@ -58,6 +58,9 @@ WITH base AS (
     CASE WHEN classify_agency_type(p.ag)='한전' THEN '한전'
          WHEN classify_agency_type(p.ag)='군시설' THEN '군부대'
          WHEN p.ag ILIKE '%고양시%' OR p.ag ILIKE '%고양교육%' THEN '고양시' END AS focus,
+    CASE WHEN COALESCE(NULLIF(p.ep,0),p.ba) >= 3e8 THEN '3억 이상'
+         WHEN p.pred_floor_rate IN (89.745, 87.745) THEN '3억 미만·정정 요율'
+         ELSE '3억 미만·옛 요율' END AS rate_tier,
     p.bid1st_v2_adj - p.actual_adj_rate AS err,
     CASE WHEN r.floor_price IS NULL OR COALESCE(p.ba,0)<=0 OR COALESCE(r.ba,0)<=0 THEN NULL
          WHEN p.bid1st_v2_bid/p.ba >= r.floor_price/r.ba THEN 1 ELSE 0 END AS floor_pass
@@ -69,13 +72,13 @@ WITH base AS (
     AND COALESCE(p.actual_winner,'') NOT IN ('유찰','유찰(무)')
     AND ABS(p.bid1st_v2_adj - p.actual_adj_rate) <= 5
 )
-SELECT focus, COUNT(*) AS n, COUNT(floor_pass) AS n_floor,
+SELECT focus, rate_tier, COUNT(*) AS n, COUNT(floor_pass) AS n_floor,
   ROUND(AVG(floor_pass)*100,1) AS floor_pass_pct,
   ROUND(AVG(err)::numeric,4) AS bias_shown,
   ROUND(AVG(ABS(err))::numeric,4) AS mae_shown
-FROM base WHERE focus IS NOT NULL GROUP BY focus ORDER BY floor_pass_pct;
+FROM base WHERE focus IS NOT NULL GROUP BY focus, rate_tier ORDER BY focus, rate_tier;
 ```
-→ 하한통과율 80% 미만 영역 ⚠.
+→ `3억 미만·옛 요율` 층만 하한통과율 80% 미만 ⚠. `3억 미만·정정 요율`과 `3억 이상` 층은 메인 추천이 1위 평균을 겨냥하므로 설계상 기대값이 약 54%·49%다 — 80% 임계를 적용하지 않고 값과 n만 보고한다(이 두 층의 경고 기준은 릴리스 게이트 `floor_safe_pct ≥ 50` 재정의와 함께 정할 미결 사항). MAE·bias는 층과 무관하게 연속이다.
 → 한전 해석 주의 (2026-09-24 조사 완료): 전체기간 한전 49.2%(n=61)는 **한전 2026 개정 요율(88→90%대, cutoff 2026-02-10)이 RATE_TABLE에 반영되기 전(커밋 e4d26ae, 2026-06-05) 생성된 예측 27건(하한통과 0/27)**이 끌어내린 값이다. 수정 이후 예측은 30/34 = 88.2%로 타 영역과 동급 — 현재 결함 아님. 한전 추이는 `p.created_at >= '2026-06-05'` 조건을 추가해 읽을 것 (30일 창에서는 이미 자연 소멸).
 → 요율표 정정(배포일 = <Task 5에서 기입>) 이후 3억 미만 메인 추천 하한통과율의 기대값은 약 54%다(이전 80%대는 틀린 요율이 만든 +0.505%p 여유). 정정 전후를 직접 비교하지 않는다 — `.claude/commands/evaluate.md` §4 재기준화 참조.
 

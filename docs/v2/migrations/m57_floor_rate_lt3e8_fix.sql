@@ -3,7 +3,7 @@
 --   군시설 구 3~10억도 실측 87.745(n=216). 군시설 구 10억 이상은 미검증이라 불변.
 --   조달청 신 3억 미만은 표본 7건·최빈 87.995로 미확정 — 30건 도달 시 재확인.
 -- 클라이언트 src/lib/constants-tables.js RATE_TABLE과 같은 값이어야 한다(스펙 .scratch/main-rec-passprob/spec.md §4).
--- 롤백: 이 파일의 89.745(3억 미만 분기)→90.25, 87.745(3억 미만 분기)→88.25, 군시설 구 87.745→85.745/86.25 로 되돌려 재적용.
+-- 롤백: m57_rollback_floor_rate_pre_fix.sql 을 적용한다(적용 직전 라이브 정의). 이 파일은 3억 이상/미만 분기를 합쳤으므로 숫자만 바꿔서는 되돌릴 수 없다.
 
 CREATE OR REPLACE FUNCTION public.get_floor_rate_db(p_at text, p_ep numeric, p_od date)
  RETURNS numeric

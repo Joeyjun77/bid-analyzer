@@ -1,10 +1,14 @@
 -- m58 (2026-10-12): refresh_floorerr_distribution이 저장된 pred_floor_rate 대신 정정된 요율 함수로 예상 하한을 다시 계산한다.
 -- 배경: m57로 3억 미만 요율이 90.25 → 89.745가 되면 신규 예측의 예상 하한이 0.505%p 내려간다.
---   분포가 저장값(옛 요율) 기준으로 남으면 Mode A m_star가 옛 편향에 맞춰져 추천가 통과율이 85.0% → 63.7%로 떨어진다(n=300 실측).
+--   분포가 저장값(옛 요율) 기준으로 남으면 Mode A m_star가 옛 편향에 맞춰져 추천가 통과율이 85.0% → 63.0%로 떨어진다(n=300 실측).
 --   과거 행은 수정할 수 없으므로(A안 INSERT-only) 함수가 계산 시점에 정정 요율을 쓴다.
 -- 유형 인자는 저장 at이 아니라 리터럴 '군시설' — 이 함수는 classify_agency_type(ag)='군시설' 행만 다루고 저장 at에는 재분류 이전 값이 남아 있을 수 있다.
 -- 전제: m57(get_floor_rate_db 정정)이 먼저 적용돼 있어야 한다. 적용 직후 SELECT refresh_floorerr_distribution(); 1회 실행.
--- 롤백: 아래 한 줄의 get_floor_rate_db(...) 를 bp.pred_floor_rate 로 되돌려 재적용 후 refresh 1회.
+-- 적용 후 달라지는 것(2026-10-13 사전 측정): current n 300 → 299(id 12789의 floor_err가 9.712 → 10.218%로 ±10% 필터 밖),
+--   그래서 confidence가 medium → insufficient_sample(n>=300 경계). 추천가 계산은 n>=5만 보므로 영향 없고 b_pred_src 문자열의 표본 라벨만 바뀐다.
+--   legacy(n=139)는 p85 −1.182 → +0.817%p — 구 시기 공고에 신요율이 저장돼 있던 것이 바로잡히는 방향. 라이브는 era_v2='current'만 쓴다.
+-- pred_floor_rate IS NOT NULL 조건은 계산에 쓰이지 않지만 표본 집합을 이전 정의와 같게 두려고 남겼다.
+-- 롤백: m36_create_refresh_floorerr_distribution.sql 을 재적용한 뒤 refresh 1회(요율 식만 되돌리면 src 라벨이 사실과 달라진다).
 
 CREATE OR REPLACE FUNCTION public.refresh_floorerr_distribution()
  RETURNS integer
