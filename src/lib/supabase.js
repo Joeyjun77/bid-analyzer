@@ -463,9 +463,17 @@ export async function sbUpdatePredictionsV2(updates){
     for(const k of Object.keys(rawFields)){
       if(ALLOWED_V2_COLUMNS.has(k)) fields[k]=rawFields[k];
     }
-    if(Object.keys(fields).length===0)continue;
+    const keys=Object.keys(fields);
+    if(keys.length===0)continue;
+    // 쓰기 시점 가드 — 호출처가 대상을 고른 뒤(행마다 RPC를 기다려 수 분 걸릴 수 있음) 매칭된 행을
+    // 덮어쓰지 않도록 서버가 조건을 다시 검사한다. 조건 불일치는 0행 갱신(2xx).
+    //   b_pred_*만 쓰는 요청: 안착안이 비어 있거나 대기 상태일 때만 (매칭 행의 빈 안착안 적재는 A안 허용)
+    //   그 외(bid1st_v2_* 포함, own_score 단독): 대기 상태일 때만
+    const guard=keys.some(k=>k.startsWith('b_pred_'))&&!keys.some(k=>k.startsWith('bid1st_v2_'))
+      ?'&or=(b_pred_mode.is.null,match_status.eq.pending)'
+      :'&match_status=eq.pending';
     try{
-      const res=await authedFetch(`/rest/v1/bid_predictions?id=eq.${id}`,{
+      const res=await authedFetch(`/rest/v1/bid_predictions?id=eq.${id}${guard}`,{
         method:"PATCH",
         headers:{...JSON_H,"Prefer":"return=minimal"},
         body:JSON.stringify(fields)

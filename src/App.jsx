@@ -951,7 +951,7 @@ ${baseInfo}
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭 · 신규 ${newPreds.length}건`})}
       else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:`업로드 완료 · 신규 ${newPreds.length}건`})}
     }catch(e){setMsg({type:"err",text:"DB 재로드 실패"})}
-    setSel({});setBusy(false)},[refreshStats,allS,bidDetails,agencyPred,floorBench,agAss,floorDistMap,pcDistMap]);
+    setSel({});setBusy(false)},[refreshStats,allS,bidDetails,agencyPred,floorBench,agAss,ownScore,floorDistMap,pcDistMap]);
 
   // 입찰서류함 예측 (복수 파일 지원)
   const loadPredFiles=useCallback(async(fileList)=>{
@@ -1220,16 +1220,19 @@ ${baseInfo}
             {distMap:win1stDistMap,modeResolution:modeRes,floorErrDist,predExpectedPrice:Number(p.pred_expected_price)||null,ownScore}
           );
           if(!v2||v2.adj==null)continue;
-          updates.push({
+          const u={
             id:p.id,
             b_pred_mode:v2.mode,
             b_pred_adj:Number(Number(v2.adj).toFixed(4)),
             b_pred_bid_amount:v2.bid,
             b_pred_floor_pass_prob:v2.floor_pass_prob!=null?Number(Number(v2.floor_pass_prob).toFixed(4)):null,
             b_pred_grain:v2.grain,
-            b_pred_src:v2.src,
-            own_score:ownScore // 라운드 11 권고: 적재 시점 score 기록
-          });
+            b_pred_src:v2.src
+          };
+          // 라운드 11 권고: 적재 시점 score 기록 — 대기 행만. 매칭 행은 빈 안착안만 채우고 own_score는 두지 않는다
+          // (m22: matched row의 own_score는 UPDATE 안 함. 덮어쓰면 매칭 당시 점수로 계산된 bid1st_v2_*·opt_bid에 현재 점수 라벨이 붙음)
+          if(p.match_status==='pending')u.own_score=ownScore;
+          updates.push(u);
         }catch(e){/* row 단위 실패 무시, 다음 진행 */}
       }
       if(!updates.length)return;
