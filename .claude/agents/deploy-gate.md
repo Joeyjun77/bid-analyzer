@@ -25,11 +25,21 @@ npx vite build
 - 성공 시 번들 크기 기록
 
 ### 게이트 2 — 변경 파일 분류
+분류는 **변경 줄 단위**로 한다 (2026-10-12 전환). 이전 정의는 "변경 파일 안에 키워드가 있는가"였는데,
+`src/App.jsx`는 파일 어딘가에 항상 키워드가 있어 무관한 수정도 전부 Generator로 읽혔다.
 ```bash
 git diff --name-only HEAD~1 HEAD
+KW='getFinalRecommendation|opt_adj|optAdj|opt_bid|optBid|pred_bias_map|biasFix|getFloorRate|eraFR|isNewEra|RATE_TABLE|WIN_OPT_GAP|TYPE_OFF|ASSUMED_ADJ_TABLE|calcEffectiveFloorRate|parseOwnScore|ownScore|own_score|predictV5|recommendAssumedAdj|recommendBid1st|recommendV2|recommendModeA|recommendModeB|calcFloorPassProb|calcWinProb|floorRiskPct|floorSafeBid|predict_v6'
+# (a) 추가·삭제 줄과 hunk 머리(@@ … 함수 문맥)에 예측 관련 이름이 있는가
+git diff -U0 HEAD~1 HEAD -- 'src/*.js' 'src/*.jsx' 'src/**/*.js' 'src/**/*.jsx' \
+  | grep -E '^(\+|-|@@)' | grep -vE '^(\+\+\+|---)' | grep -cE "$KW"
+# (b) 파일 전체가 예측 상수·산식인 경로가 바뀌었는가
+git diff --name-only HEAD~1 HEAD | grep -cE '^(src/lib/constants-tables\.js|src/lib/effectiveFloor\.js|src/lib/floorRisk\.js)$'
 ```
-변경 파일에 다음 키워드가 포함된 src/*.js, src/*.jsx 가 있는지 확인:
-- `getFinalRecommendation`, `opt_adj`, `pred_bias_map`, `getFloorRate`, `predict_v6`
+- (a) 또는 (b)가 1 이상 → **Generator**
+- 둘 다 0 → Evaluator/Neutral
+- 호출자가 predict-architect 분류를 전달했고 위 결과와 다르면 **더 엄격한 쪽(Generator)** 을 따른다. 두 결과를 모두 리포트에 적는다.
+- 키워드 목록은 예측 산식·입력에 새 함수가 생기면 함께 갱신한다 (목록에 없는 새 산식은 이 검사가 놓친다).
 
 → Generator 변경 감지 시 게이트 3~5 모두 실행
 → Evaluator/Neutral만 변경 시 게이트 3~5 건너뛰고 PASS

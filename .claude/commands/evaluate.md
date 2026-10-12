@@ -219,23 +219,32 @@ git diff -U0 HEAD~1 -- '*.sql' '*.js' '*.jsx' \
 
 **검출 — DB 측면**:
 ```sql
--- 최근 24시간 내 matched row 중 보호 컬럼이 변경된 흔적 (audit trigger 또는 created_at 대비)
-SELECT COUNT(*) AS suspect_updates
-FROM bid_predictions
-WHERE match_status='matched'
-  AND matched_at IS NOT NULL
-  AND matched_at < (NOW() - INTERVAL '24 hours')
-  AND created_at < (NOW() - INTERVAL '24 hours')
-  -- 매칭 24시간 후 row가 최근 24시간 내 어떤 식으로든 갱신되었으면 의심
-  -- (audit table이 있으면 그걸로 정확 측정, 없으면 manual review 표시)
-;
+-- 매칭된 행의 보호 컬럼(opt_adj, opt_bid, bid1st_v2_*)이 실제로 바뀐 이력 — 감사 트리거 m56 (2026-10-12).
+-- 값이 달라진 UPDATE만 기록된다(동일값·비보호 컬럼·대기 행은 미기록). 이력 시작 = 2026-10-12, 그 이전은 측정 불가.
+SELECT COUNT(*) AS suspect_updates,
+       COUNT(DISTINCT pred_id) AS rows_touched,
+       MIN(changed_at) AS first_at, MAX(changed_at) AS last_at
+FROM bid_predictions_protected_audit
+WHERE changed_at > NOW() - INTERVAL '7 days';
+
+-- suspect_updates > 0 이면 무엇이 누구에 의해 바뀌었는지 함께 보고한다
+SELECT changed_at, pred_id, db_user, jwt_role, changed_cols
+FROM bid_predictions_protected_audit
+WHERE changed_at > NOW() - INTERVAL '7 days'
+ORDER BY changed_at DESC LIMIT 20;
+
+-- 감사 수단 자체가 살아 있는지 (0행이면 이 DB 점검은 "판정 불가"로 보고 — 0건을 PASS로 읽지 않는다)
+SELECT tgname, tgenabled FROM pg_trigger
+WHERE tgrelid='public.bid_predictions'::regclass AND tgname='trg_bid_predictions_protected_audit';
 ```
+> 2026-10-12 이전 정의는 "매칭 후 24시간 지난 행 수"를 세어 항상 수천 건을 반환했다(변경 여부와 무관). `bid_predictions`에 `updated_at`·이력이 없어서였고, m56으로 실측 수단을 만들었다.
 
 **판정**:
-- diff에서 보호 컬럼 UPDATE/DELETE 패턴 0건 AND DB suspect_updates=0 → **PASS**
+- diff에서 보호 컬럼 UPDATE/DELETE 패턴 0건 AND DB suspect_updates=0 (트리거 활성 확인) → **PASS**
 - diff에서 패턴 1건 이상 → **FAIL**
-- diff 0이지만 DB suspect_updates>0 → **WARN** (audit trigger 도입 권고)
-- 예외: 매칭 전(`match_status != 'matched'`) row UPDATE는 허용
+- diff 0이지만 DB suspect_updates>0 → **WARN** — 실제 변경 기록이므로 원인(어느 경로·어느 역할)을 규명해 보고한다
+- 감사 트리거가 없거나 비활성(`tgenabled='D'`) → DB 측 **판정 불가**로 보고 (WARN)
+- 예외: 매칭 전(`match_status != 'matched'`) row UPDATE는 허용 (감사 대상 아님)
 
 ---
 
@@ -260,27 +269,29 @@ git diff -U10 HEAD~1 -- '*.js' '*.jsx' \
 
 **검출 — DB 측면**:
 ```sql
--- 동일 (canonical_ag, baSeg) row에 둘 이상 bias 레이어 적용 흔적
-WITH bias_layers AS (
-  SELECT 'predictor_bias_correction' AS src, canonical_ag, NULL::text AS baSeg
-  FROM predictor_bias_correction WHERE canonical_ag IS NOT NULL
-  UNION ALL
-  SELECT 'pred_bias_map', canonical_ag, ba_seg
-  FROM pred_bias_map WHERE canonical_ag IS NOT NULL
-  -- 신규 V2 영역별 bias 테이블이 추가되면 여기 UNION 추가
-)
-SELECT canonical_ag,
-       COUNT(DISTINCT src) AS bias_layer_count,
-       STRING_AGG(DISTINCT src, ',') AS sources
-FROM bias_layers
-GROUP BY canonical_ag
-HAVING COUNT(DISTINCT src) > 1
-ORDER BY bias_layer_count DESC
-LIMIT 20;
+-- 같은 기관유형(at)에 둘 이상 bias 레이어가 걸려 있는지.
+--   predictor_bias_correction : at 단위 (컬럼 at, correction_offset). 서버 예측 predict_v6_1/predict_v6_2가 opt_adj에 반영.
+--   pred_bias_map (VIEW)      : grain/key1/key2. grain='AT'이면 key1=at. 클라이언트 getFinalRecommendation의 biasFix(표시 단계).
+-- 신규 V2 영역별 bias 테이블이 추가되면 여기 JOIN/UNION 추가.
+SELECT b.at,
+       b.correction_offset AS server_offset, b.n_samples AS server_n,
+       m.bias AS display_bias, m.n AS display_n
+FROM predictor_bias_correction b
+JOIN pred_bias_map m ON m.grain = 'AT' AND m.key1 = b.at
+ORDER BY b.at;
+
+-- 두 레이어가 실제로 같은 행에 겹치는 표본 규모: 서버 보정이 들어간 자동 예측 중, 표시 단계 biasFix 경로를 타는 행
+-- (bid1st_v2_adj가 있으면 getFinalRecommendation이 그 값을 먼저 반환하므로 biasFix를 타지 않는다)
+SELECT source, COUNT(*) AS n, COUNT(*) FILTER (WHERE bid1st_v2_adj IS NULL) AS n_biasfix_path
+FROM bid_predictions
+WHERE created_at >= CURRENT_DATE - 120 AND opt_adj IS NOT NULL
+GROUP BY source ORDER BY source;
 ```
+> 2026-10-12 이전 정의는 `predictor_bias_correction.canonical_ag`(없는 컬럼)를 참조해 실행 자체가 오류였다.
+> 정정 시점의 실측: 6개 유형(LH·교육청·군시설·조달청·지자체·한전)에서 두 레이어가 겹치고, `g2b_auto` 최근 120일 2,077건(opt_adj 보유) 전부가 biasFix 경로(bid1st_v2_adj NULL)이며(`file_upload`는 699건 중 14건), 코드에 적용 순서·격리 가드 주석은 없다 → 아래 규칙상 **FAIL 상태**. 이 변경이 만든 것이 아니어도 FAIL로 보고하고 push 여부는 사용자에게 확인한다(표본 0 처리와 같은 방식). 해소 과제는 별도.
 
 **판정**:
-- 동일 canonical_ag에 2개 이상 bias 레이어가 적용되지 않음 → **PASS**
+- 같은 at에 2개 이상 bias 레이어가 적용되지 않음(첫 쿼리 0행) → **PASS**
 - 2개 이상이지만 코드에 적용 순서·영역 격리 가드(`// 적용 순서: X→Y→Z`, `// 격리: 조달청 only`)가 명시됨 → **WARN** (수동 QA 권고)
 - 2개 이상이고 가드 없음 → **FAIL** (이중 보정 위험)
 
@@ -302,13 +313,20 @@ git diff --diff-filter=AM -U10 HEAD~1 -- '*.jsx' '*.tsx' '*.js' \
 
 B) **전체 파일 스캔** — 기존 코드 회귀 검출 (App.jsx 일률 표시 포함):
 ```bash
-# B-1: 모드 분기가 도입된 컴포넌트에서 Mode B 안에 낙찰확률 문구
-git ls-files 'src/**/*.jsx' 'src/**/*.js' 2>/dev/null \
+# B-1: "낙찰 확률" 표시 문구가 Mode A 조건 없이 나오는 줄 (줄 단위, src 전체)
+#   - 주석(//, /* */, {/* */})은 지운 뒤 검사한다 — 금지 문구를 설명하는 주석에 반응하지 않기 위함
+#   - 같은 줄에 Mode A 조건(mode==='A', isModeA, "Mode A", 공략)이나 모드 미확정 분기(!effMode)가 있으면 허용
+#   - 식별자(win_prob, winProb)는 화면 문구가 아니므로 B-1 대상이 아니다 (신규 변경분은 A) diff 스캔이 계속 검사)
+#   2026-10-12 이전 정의는 "파일 안에 모드 분기와 낙찰확률 문자열이 함께 있는가"만 봐서
+#   금지 주석·Mode A 전용 라벨이 있는 파일 3개에 영구 반응했고, 정작 App.jsx는 검사 대상에서 빠져 있었다.
+git ls-files 'src/*.jsx' 'src/*.js' 'src/**/*.jsx' 'src/**/*.js' 2>/dev/null \
   | while read -r f; do \
-      if grep -q "mode\s*===\?\s*['\"]B['\"]\|isModeB\|안착\s*모드" "$f" \
-        && grep -q "낙찰\s*확률\|낙찰확률\|예상\s*낙찰\|win[_-]?prob" "$f"; then \
-        echo "SUSPECT (mode branch + win-prob): $f"; \
-      fi; \
+      grep -nE "낙찰\s*확률|낙찰확률|예상\s*낙찰|win\s*probability" "$f" 2>/dev/null \
+        | sed -E 's#\{/\*.*\*/\}##g; s#/\*.*\*/##g; s#//.*$##' \
+        | grep -E "낙찰\s*확률|낙찰확률|예상\s*낙찰|win\s*probability" \
+        | grep -vE "^[0-9]+:\s*\*" \
+        | grep -vE "[Mm]ode\s*===?\s*['\"]A['\"]|isModeA|Mode\s*A|공략|!effMode" \
+        | sed "s|^|SUSPECT (win-prob text without Mode A guard): $f:|"; \
     done
 
 # B-2: src/App.jsx 단일 파일이 모드 분기 없이 일률 표시 중인지 (V2 전환 전 상태 감지)
@@ -360,6 +378,7 @@ grep -rn "안착.*낙찰\s*확률\|Mode\s*B.*낙찰\s*확률" docs/ src/ 2>/dev/
 **판정**:
 - 모든 검출 0건 → **PASS**
 - A·B-1 SUSPECT 1건 이상 → **FAIL** (Mode B 분기에서 "낙찰 확률" 문구 제거 또는 메인 숫자를 하한 통과 확률로 교체)
+  - 2026-10-12 정정 시점의 실측: B-1 1건 — `src/lib/utils.js` `buildAiContext`의 `낙찰확률:sc.win_prob…`(AI 조언 입력에 모드 구분 없이 전달). 기존 코드지만 실제 위반 후보이므로 FAIL로 보고하고 push 여부는 사용자에게 확인한다. 해소 과제는 별도.
 - B-2 WARN-PRE-V2만 (모드 분기 미도입 + 낙찰확률) → **WARN** (V2 분기 도입 시 즉시 FAIL 전환 — U2 시점부터 enforcement)
 - B-3 SUSPECT-NULL → **WARN** (b_pred_mode NULL row 게이트 우회 위험, effMode/at-fallback 도입 필요)
 - C-1 STALE-BUILD → **WARN** (빌드 재실행 후 재검증)
