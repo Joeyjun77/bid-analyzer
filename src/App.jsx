@@ -559,6 +559,9 @@ export default function App(){
     const ba=p.ba?Number(p.ba):0;
     const av=p.av?Number(p.av):0;
     const fr=Number(p.pred_floor_rate||0);
+    // 격리: 이 함수는 업로드 예측(source='file_upload') 행만 받는다 — 호출처는 compList와 거기서 여는 상세 모달뿐.
+    // 자동 예측(g2b_auto·g2b_manual)의 opt_adj에는 서버 보정(predictor_bias_correction)이 이미 들어 있어,
+    // 그 행을 여기로 넘기면 아래 biasFix와 보정이 2겹이 된다. 호출처를 늘릴 때는 출처 필터를 유지할 것.
     // Phase 23-2 (2026-04-19): 동적 편향 보정 (AG×금액대 다층 lookup)
     // 우선순위: AG×BA(n≥10) > AG(n≥15) > AT×BA(n≥20) > AT(n≥30) > 보정 없음
     // 핵심 영역(고양시 +0.10, 한전 -0.03, 군부대 -0.04)에서 고정 +0.09 적용 시 정확도 악화 → 영역별 역보정

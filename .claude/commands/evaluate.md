@@ -280,18 +280,24 @@ FROM predictor_bias_correction b
 JOIN pred_bias_map m ON m.grain = 'AT' AND m.key1 = b.at
 ORDER BY b.at;
 
--- 두 레이어가 실제로 같은 행에 겹치는 표본 규모: 서버 보정이 들어간 자동 예측 중, 표시 단계 biasFix 경로를 타는 행
--- (bid1st_v2_adj가 있으면 getFinalRecommendation이 그 값을 먼저 반환하므로 biasFix를 타지 않는다)
-SELECT source, COUNT(*) AS n, COUNT(*) FILTER (WHERE bid1st_v2_adj IS NULL) AS n_biasfix_path
+-- 두 레이어가 실제로 같은 행에 함께 걸리는가.
+--   표시 단계 보정(getFinalRecommendation의 biasFix)은 업로드 예측 목록(compList, source='file_upload')과 그 상세 화면에서만 호출된다.
+--   서버 보정이 들어간 행은 pred_source에 'bc*강도'가 남는다. 따라서 "file_upload인데 서버 보정 표기가 있고 biasFix 경로(bid1st_v2_adj NULL)"인 행이 실제 2겹이다.
+SELECT COUNT(*) AS real_double_layer_rows
 FROM bid_predictions
-WHERE created_at >= CURRENT_DATE - 120 AND opt_adj IS NOT NULL
-GROUP BY source ORDER BY source;
+WHERE source = 'file_upload' AND bid1st_v2_adj IS NULL AND opt_adj IS NOT NULL AND pred_source ~ 'bc\*';
 ```
 > 2026-10-12 이전 정의는 `predictor_bias_correction.canonical_ag`(없는 컬럼)를 참조해 실행 자체가 오류였다.
-> 정정 시점의 실측: 6개 유형(LH·교육청·군시설·조달청·지자체·한전)에서 두 레이어가 겹치고, `g2b_auto` 최근 120일 2,077건(opt_adj 보유) 전부가 biasFix 경로(bid1st_v2_adj NULL)이며(`file_upload`는 699건 중 14건), 코드에 적용 순서·격리 가드 주석은 없다 → 아래 규칙상 **FAIL 상태**. 이 변경이 만든 것이 아니어도 FAIL로 보고하고 push 여부는 사용자에게 확인한다(표본 0 처리와 같은 방식). 해소 과제는 별도.
+> 정정 시점의 실측: 첫 쿼리는 6개 유형(LH·교육청·군시설·조달청·지자체·한전)에서 두 레이어 정의가 겹친다. 그러나 **실제 2겹 행은 0건**이다 —
+> 서버 보정은 자동 예측(g2b_auto·g2b_manual)에만, 표시 보정은 업로드 예측에만 적용되고, 자동 예측은 공고 탭에서 서버 계산값(`pred_bid_amount`)을 그대로 보여 준다.
+> (같은 날 초판 주석은 "g2b_auto 2,077건 전부가 biasFix 경로"라고 적었으나 틀렸다. 그 행들은 getFinalRecommendation에 전달되지 않는다.)
+> 이 격리는 호출처의 `source==='file_upload'` 필터에 의존한다. 가드 주석은 `src/App.jsx` `getFinalRecommendation` 안의 `// 격리:` 줄(2026-10-12 추가) — 따라서 현재 판정은 **WARN**(정의 중첩 + 가드 명시 + 실제 2겹 0건).
+> 별개의 실제 결합: `pred_bias_map`·`agency_accuracy_map`이 출처 구분 없이 계산돼 자동 예측 오차(정정 시점 178행, 전체의 8%)가 업로드 예측용 보정·신뢰도에 섞인다.
 
 **판정**:
 - 같은 at에 2개 이상 bias 레이어가 적용되지 않음(첫 쿼리 0행) → **PASS**
+- 정의는 겹치지만(첫 쿼리 1행 이상) `real_double_layer_rows = 0` → 아래 두 줄의 '가드 명시 여부'로 WARN/FAIL을 가른다
+- `real_double_layer_rows > 0` → **FAIL** (실제 이중 보정)
 - 2개 이상이지만 코드에 적용 순서·영역 격리 가드(`// 적용 순서: X→Y→Z`, `// 격리: 조달청 only`)가 명시됨 → **WARN** (수동 QA 권고)
 - 2개 이상이고 가드 없음 → **FAIL** (이중 보정 위험)
 
