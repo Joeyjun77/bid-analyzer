@@ -650,8 +650,7 @@ export function buildAiContext(prediction,scoringMap,biasMap,trendMap,records){
   const at=prediction.at||"기타";
   const ag=prediction.ag||"";
   const amt=Number(prediction.ep||prediction.ba||0);
-  const sc=scoringMap[prediction.id]||{};
-  
+
   // 같은 기관 최근 5건
   const agencyHistory=(records||[])
     .filter(r=>r.ag===ag&&r.actual_adj_rate!=null)
@@ -673,8 +672,8 @@ export function buildAiContext(prediction,scoringMap,biasMap,trendMap,records){
     현재예측:{
       추천사정률:Number(prediction.opt_adj||prediction.pred_adj_rate||0),
       추천투찰금액:Number(prediction.opt_bid||prediction.pred_bid_amount||0),
-      낙찰확률:sc.win_prob?(Number(sc.win_prob)*100).toFixed(1)+"%":"미산정",
-      등급:sc.roi_grade||"D",
+      // 낙찰확률·등급 항목은 넣지 않는다 — scoringMap이 적재되지 않아 항상 "미산정"·"D"만 전달됐다
+      // (낙찰확률은 G-모드표시 위반: 안착 모드에 낙찰 확률 약속 금지, 등급 "D"는 틀린 정보).
       하한율:Number(prediction.pred_floor_rate||0)
     },
     기관히스토리:agencyHistory,
