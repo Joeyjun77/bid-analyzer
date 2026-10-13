@@ -112,6 +112,21 @@ const h60 = buildAdjHistory(mk("육십시", "수자원공사", 60), TODAY);
 const snap60 = passRiskSnapshot(h60, { at: "수자원공사", canonicalAg: "육십시", ba: 2e8, av: 0, effFr: 89.745, bid: 1.8e8, jongsim: false, withSafeLine: true });
 eq(snap60.floor_risk_grain, "AG", "60건 → 위험은 AG");
 eq(snap60.safe_bid, null, "60건 → 안전선 없음(100건 미만)");
+// 발주기관 60건 + 같은 유형 100건 이상: 위험은 발주기관 기준, 안전선은 기관유형 기준 — 화면이 두 기준이 다름을 표기하는 근거
+const hX = buildAdjHistory([...mk("육십시", "지자체", 60), ...mk("큰시", "지자체", 140)], TODAY);
+const keyX = { at: "지자체", canonicalAg: "육십시" };
+eq(resolveAdjHistory(hX, keyX).grain, "AG", "위험 기준 = 발주기관(60건)");
+eq(resolveAdjHistory(hX, keyX, SAFE_LINE_MIN_N).grain, "AT", "안전선 기준 = 기관유형(200건)");
+eq(resolveAdjHistory(hX, keyX, SAFE_LINE_MIN_N).n, 200, "안전선 기준 n = 유형 전체");
+const snapX = passRiskSnapshot(hX, { ...keyX, ba: 2e8, av: 0, effFr: 89.745, bid: 1.8e8, jongsim: false, withSafeLine: true });
+eq(snapX.floor_risk_grain, "AG", "교차 기준: 저장 grain은 위험 쪽");
+eq(Number.isInteger(snapX.safe_bid), true, "교차 기준: 안전선은 유형 기준으로 산출");
+// 투찰금 없이 호출하면 위험은 비우고 기준 정보·안전선은 남긴다 (화면에 보일 투찰금을 모르는 저장 경로용)
+const snapNoBid = passRiskSnapshot(h, { at: "지자체", canonicalAg: "A시", ba: 2e8, av: 0, effFr: 89.745, jongsim: false, withSafeLine: true });
+eq(snapNoBid.disq_risk_pct, null, "투찰금 없음 → 위험 null");
+eq(snapNoBid.floor_risk_n, 200, "투찰금 없음 → n 유지");
+eq(snapNoBid.floor_risk_grain, "AG", "투찰금 없음 → grain 유지");
+eq(Number.isInteger(snapNoBid.safe_bid), true, "투찰금 없음 → 안전선 유지");
 
 console.log(bad === 0 ? "OK passProb all cases" : `FAIL ${bad}`);
 process.exit(bad === 0 ? 0 : 1);
