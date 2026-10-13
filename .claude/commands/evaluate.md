@@ -146,6 +146,27 @@ Generator가 변경한 로직이 결정론적이면 여기서 샘플로 재현. 
 
 결정론적 재현이 어려우면 "수동 QA 필요"로 표시.
 
+### 5-b. 하한 통과 확률 캘리브레이션 (2026-10 통일 이후 저장분)
+화면의 통과 확률(= 100 − `disq_risk_pct`)이 실제 통과율과 맞는지 본다. 메인 추천은 1위 평균을 겨냥하므로 통과율 **수준**(약 54%)이 아니라 **추정과 실제의 차이**가 품질 지표다.
+```sql
+SELECT COALESCE(p.floor_risk_grain,'(전체)') AS grain, count(*) AS n,
+       round(avg(100 - p.disq_risk_pct)::numeric, 1) AS predicted_pass,
+       round(100.0 * avg((COALESCE(p.bid1st_v2_bid, p.opt_bid, p.pred_bid_amount) >= r.floor_price)::int), 1) AS realized_pass
+FROM bid_predictions p JOIN bid_records r ON r.id = p.matched_record_id
+WHERE p.source='file_upload' AND p.match_status='matched' AND p.disq_risk_pct IS NOT NULL
+  AND p.floor_risk_grain IN ('AG','AT') AND r.floor_price IS NOT NULL
+  AND COALESCE(p.own_score,20) = 20
+  AND COALESCE(p.actual_winner,'') NOT IN ('유찰','유찰(무)')
+GROUP BY ROLLUP (p.floor_risk_grain) ORDER BY 1;
+```
+- n < 30 → "판정 불가(표본 부족)". 보고만 한다.
+- n ≥ 30 이고 |predicted_pass − realized_pass| ≤ 10 → 통과. 초과 → **WARN** (원인 규명: 요율표·자사 점수·A값·최근 사정률 이동 중 무엇이 어긋났는지).
+- `floor_risk_grain`이 `'AG'`·`'AT'`인 행만 본다(이전 방식 `'AG_BA'`·`'AT_BA'`와 섞지 않는다). 자사 점수 20점 행만 채점한다 — 20점 미만은 유효 하한이 법정 하한보다 높아 실제 통과율이 추정보다 높게 나온다.
+- 핵심 영역(한전·고양시·군부대)은 위 쿼리에 `classify_agency_type(p.ag)`·`p.ag ILIKE '%고양시%'` 조건을 붙여 보고만 한다(판정은 n ≥ 30부터).
+- 배포 전 워크포워드(2026-10-13, n=812, 현재 요율표 기준): 메인 추천 위치 추정 51.5% / 실제 54.8%. 메인에서 ±1.5%p 범위 전 구간에서 추정이 실제보다 0~3.3%p 낮았다(조심스러운 방향). 고양시는 최근 사정률이 3년 평균보다 낮아(180일 −0.40 vs 3년 −0.13) 추정이 약 12%p 낮게 나온다(n=22).
+- 불변식: `floor_risk_grain='AT'`인데 그 `canonical_ag`의 최근 3년 기록이 30건 이상인 행은 0건이어야 한다(저장 시 기관명 정규화가 화면과 어긋났다는 신호).
+- 릴리스 게이트의 `floor_safe_pct ≥ 50`(절대 기준)은 메인 추천 통과율이 설계상 약 54%라 14일 창에서 우연히 깨질 수 있다. 기준 재정의는 별도 결정 사항이다.
+
 ---
 
 ## V2 재설계 5대 게이트 (Phase 23-9 → V2 전환기 강제 검증)

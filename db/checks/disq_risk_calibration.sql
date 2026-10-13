@@ -1,17 +1,23 @@
--- disq_risk 캘리브레이션 점검 (Mode B 실격위험% Phase 1 후속)
--- 근거: src/lib/floorRisk.js — disq_risk_pct = P(실현 floor_price > 투찰금)
--- 기준 투찰금 = INSERT 시점 COALESCE(bid1st_v2_bid, opt_bid, pred_bid_amount) (App.jsx:906,981)
--- 실행 조건: 2026-07-17 배포 이후 file_upload 예측이 개찰 매칭된 뒤 (matched + floor_price 존재)
+-- disq_risk 캘리브레이션 점검 (실격위험% = 100 − 하한 통과 확률)
+-- 정의(2026-10 통일, src/lib/passProb.js): 통과 확률 = 발주기관(30건 미만이면 기관유형)의 최근 3년 발주처 사정율 중
+--   투찰금이 전제하는 사정률 이하였던 비율. floor_risk_grain 'AG'|'AT' 행이 이 방식이다.
+--   이전 방식(금액대별 하한 분포, src/lib/floorRisk.js 구버전)은 floor_risk_grain 'AG_BA'|'AT_BA' — 두 방식을 섞어 해석하지 말 것.
+--   1번·3번 쿼리는 새 방식 행만 채점한다. 2번은 grain별로 나눠 보여 준다.
+-- 기준 투찰금 = INSERT 시점 COALESCE(bid1st_v2_bid, opt_bid, pred_bid_amount). 대기 중 자사 점수가 바뀌어 bid1st_v2_bid가 재계산된 행은 스냅샷과 어긋날 수 있다.
+-- 자사 점수 20점 미만 행은 유효 하한(요율 + 가산)이 법정 하한보다 높다 — 확률은 유효 하한 기준이고 실측은 법정 하한(floor_price) 기준이라
+--   실제 통과율이 추정보다 높게 나온다. 1번 쿼리는 20점 행만 채점한다.
 -- read-only. 표본 권장: 전체 n>=30부터 해석, bin별 n>=10부터 신뢰.
 
 -- ── 0) 표본 현황 ─────────────────────────────────────────────
 SELECT
+  COALESCE(p.floor_risk_grain,'(전체)')                           AS grain,
   count(*)                                                        AS preds_with_risk,
   count(*) FILTER (WHERE p.matched_record_id IS NOT NULL)         AS matched,
   count(*) FILTER (WHERE r.floor_price IS NOT NULL)               AS with_actual_floor
 FROM bid_predictions p
 LEFT JOIN bid_records r ON r.id = p.matched_record_id
-WHERE p.disq_risk_pct IS NOT NULL AND p.source = 'file_upload';
+WHERE p.disq_risk_pct IS NOT NULL AND p.source = 'file_upload'
+GROUP BY ROLLUP (p.floor_risk_grain) ORDER BY 1;
 
 -- ── 1) 신뢰도(reliability) 빈별 예측 vs 실측 ──────────────────
 -- 예측 disq_risk_pct 빈 평균 ≈ 실측 실격률이면 캘리브레이션 양호
@@ -26,6 +32,8 @@ WITH base AS (
   JOIN bid_records r ON r.id = p.matched_record_id
   WHERE p.disq_risk_pct IS NOT NULL
     AND p.source = 'file_upload'
+    AND p.floor_risk_grain IN ('AG','AT')
+    AND COALESCE(p.own_score,20) = 20
     AND r.floor_price IS NOT NULL
 ), scored AS (
   SELECT *,
@@ -76,7 +84,7 @@ WITH base AS (
     (r.floor_price > p.safe_bid)::int AS safe_line_disq
   FROM bid_predictions p
   JOIN bid_records r ON r.id = p.matched_record_id
-  WHERE p.safe_bid IS NOT NULL AND p.source = 'file_upload' AND r.floor_price IS NOT NULL
+  WHERE p.safe_bid IS NOT NULL AND p.source = 'file_upload' AND p.floor_risk_grain IN ('AG','AT') AND r.floor_price IS NOT NULL
 )
 SELECT
   COALESCE(at, '(전체)') AS at,
