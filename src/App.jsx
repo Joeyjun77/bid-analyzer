@@ -15,12 +15,20 @@ import OwnScoreInput from "./components/OwnScoreInput.jsx";
 import { calcEffectiveFloorRate, formatFloorDual, parseOwnScore } from "./lib/effectiveFloor.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH, predConfidence, predConfidenceV2 } from "./lib/utils.js";
 import { resolveMode, resolveFloorErrDist } from "./lib/modeResolver.js";
-import { sbFetchFloorRateDistMap, resolveFloorDist, floorRiskPct, floorSafeBid, floorModeOf, riskColor, riskLabel, floorRiskSnapshot } from "./lib/floorRisk.js";
+import { floorModeOf, riskColor, riskLabel } from "./lib/floorRisk.js";
+import { buildAdjHistory, resolveAdjHistory, impliedAdjOfBid, passProbPct, bidAtPassProb, passRiskSnapshot, SAFE_LINE_MIN_N, SAFE_LINE_Q } from "./lib/passProb.js";
 import { floorPassPct, floorPassLabel } from "./lib/floorLabels.js";
 import { sbFetchPcDistMap, resolvePcDist, pcBucketOf, pcColor, pcSnapshot } from "./lib/participantCount.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbRefreshParticipantDistFor, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
 import { sbFetchAllCached } from "./lib/bidCache.js";
 import { useAuth, getSession } from "./auth.js";
+
+// 하한 통과 확률 계산의 공통 입력 — 저장 스냅샷·상세·목록이 같은 기준 기록·같은 요율을 쓰게 한다.
+//   기준 기록 키: DB가 저장 시 붙이는 canonical_ag와 같은 값(normalizeAgencyName = DB normalize_agency_name과 같은 규칙).
+//     업로드 직후의 행에는 canonical_ag가 아직 없다 — ag를 그대로 쓰면 교육청·조달청 13%가 기관유형 기준으로 떨어진다.
+//   요율: 개찰일 기준 현재 요율표 + 현재 자사 점수. bid_predictions에는 공고일이 저장되지 않아 세 곳 모두 개찰일로 통일한다.
+const passKeyOf=(x)=>({at:x.at,canonicalAg:x.canonical_ag||normalizeAgencyName(x.ag)});
+const passEffFrOf=(x,ownScore)=>calcEffectiveFloorRate(x.at,eraFR(x.at,Number(x.ep)||Number(x.ba),x.open_date||new Date().toISOString().slice(0,10)),ownScore);
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
 function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
@@ -445,7 +453,8 @@ export default function App(){
   const[biasMap,setBiasMapState]=useState({agency:{},at:{}}); // Phase 5.4: 편차 보정 맵
   const[predBiasMap,setPredBiasMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Phase 23-2: 동적 편향 보정 (AG×금액대 다층)
   const[accuracyMap,setAccuracyMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Track2: 실측 정확도(n/bias/mae/sd) — 신뢰도 V2 표시용
-  const[floorDistMap,setFloorDistMap]=useState(null); // Mode B 실격위험 Phase 1: 실현 하한율 분포 (m38, 표시 전용)
+  // 하한 통과 확률용 과거 발주처 사정율 기록 (발주기관·기관유형별, 최근 3년) — passProb.js. recs가 바뀔 때만 다시 만든다.
+  const adjHist=useMemo(()=>buildAdjHistory(recs,new Date().toISOString().slice(0,10)),[recs]);
   const[pcDistMap,setPcDistMap]=useState(null); // Phase ①: 예상 참가자수 분포 (m41, 표시 전용)
   const[pcFilter,setPcFilter]=useState(""); // 예측 리스트 참가자수 버킷 필터 (""=전체, small/mid/large)
   const[basegFinetune,setBasegFinetune]=useState({}); // Phase 23-3: 한전·고양시 (ag,at,seg) median fine-tune
@@ -807,7 +816,6 @@ ${baseInfo}
     try{const agStats=await sbFetchAgAssumedStats();setAgAss(agStats||{})}catch(e){setAgAss({})}
     try{const pbm=await sbFetchPredBiasMap();if(pbm)setPredBiasMap(pbm)}catch(e){}
     try{const acc=await sbFetchAccuracyMap();if(acc)setAccuracyMap(acc)}catch(e){}
-    try{const fdm=await sbFetchFloorRateDistMap();if(fdm)setFloorDistMap(fdm)}catch(e){}
     try{const pdm=await sbFetchPcDistMap();if(pdm)setPcDistMap(pdm)}catch(e){}
     try{const fb=await sbFetchFloorBench();if(fb)setFloorBench(fb)}catch(e){}
     try{const wd=await sbFetchWin1stDistMap();if(wd)setWin1stDistMap(wd)}catch(e){}
@@ -920,7 +928,7 @@ ${baseInfo}
           const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore,od:item.notice_date||item.open_date},allS.ts,allS.as,bidDetails,agencyPred,floorBench);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore,od:item.notice_date||item.open_date},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
           if(!results.length)throw new Error("예측 결과 0건");
           accPredResults=accPredResults.concat(results);setPredResults([...accPredResults]); // ★ 누적 표시
-          const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,own_score:ownScore,source:"file_upload",match_status:"pending",...floorRiskSnapshot(floorDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,bid:r.pred.optBid||r.pred.bid,jongsim:isLhJongsim(r.at,r.ba,r.pn)}),...pcSnapshot(pcDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,jongsim:isLhJongsim(r.at,r.ba,r.pn)})}));
+          const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,own_score:ownScore,source:"file_upload",match_status:"pending",...passRiskSnapshot(adjHist,{...passKeyOf(r),ba:r.ba,av:r.av,effFr:passEffFrOf(r,ownScore),bid:r.pred.optBid||r.pred.bid,jongsim:isLhJongsim(r.at,r.ba,r.pn),withSafeLine:floorModeOf(r.at)==="B"}),...pcSnapshot(pcDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,jongsim:isLhJongsim(r.at,r.ba,r.pn)})}));
           await sbSavePredictions(dbRows);
           logs.push({name:file.name,type:"ok",text:`[예측] ${results.length}건 예측 완료`});
           setUploadLog([...logs]);continue}
@@ -954,7 +962,7 @@ ${baseInfo}
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭 · 신규 ${newPreds.length}건`})}
       else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:`업로드 완료 · 신규 ${newPreds.length}건`})}
     }catch(e){setMsg({type:"err",text:"DB 재로드 실패"})}
-    setSel({});setBusy(false)},[refreshStats,allS,bidDetails,agencyPred,floorBench,agAss,ownScore,floorDistMap,pcDistMap]);
+    setSel({});setBusy(false)},[refreshStats,allS,bidDetails,agencyPred,floorBench,agAss,ownScore,adjHist,pcDistMap]);
 
   // 입찰서류함 예측 (복수 파일 지원)
   const loadPredFiles=useCallback(async(fileList)=>{
@@ -995,7 +1003,7 @@ ${baseInfo}
       }catch(e){logs.push({name:file.name,ok:false,msg:e.message});failCount++}}
     if(totalResults.length>0){
       setPredResults(prev=>{const dkSet=new Set(totalResults.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...totalResults]});
-      const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,bid1st_v2_adj:r.v2?.auto?.adj??null,bid1st_v2_bid:r.v2?.auto?.bid??null,bid1st_v2_win_prob:r.v2?.auto?.winProb??null,bid1st_v2_floor_safe:r.v2?.auto?.floorSafe??null,bid1st_v2_grain:r.v2?.distribution?.grain??null,bid1st_v2_src:r.v2?.distribution?.src??null,own_score:ownScore,source:"file_upload",match_status:"pending",...floorRiskSnapshot(floorDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,bid:r.v2?.auto?.bid??r.pred.optBid??r.pred.bid,jongsim:isLhJongsim(r.at,r.ba,r.pn)}),...pcSnapshot(pcDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,jongsim:isLhJongsim(r.at,r.ba,r.pn)})}));
+      const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,bid1st_v2_adj:r.v2?.auto?.adj??null,bid1st_v2_bid:r.v2?.auto?.bid??null,bid1st_v2_win_prob:r.v2?.auto?.winProb??null,bid1st_v2_floor_safe:r.v2?.auto?.floorSafe??null,bid1st_v2_grain:r.v2?.distribution?.grain??null,bid1st_v2_src:r.v2?.distribution?.src??null,own_score:ownScore,source:"file_upload",match_status:"pending",...passRiskSnapshot(adjHist,{...passKeyOf(r),ba:r.ba,av:r.av,effFr:passEffFrOf(r,ownScore),bid:r.v2?.auto?.bid??r.pred.optBid??r.pred.bid,jongsim:isLhJongsim(r.at,r.ba,r.pn),withSafeLine:floorModeOf(r.at)==="B"}),...pcSnapshot(pcDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,jongsim:isLhJongsim(r.at,r.ba,r.pn)})}));
       await sbSavePredictions(dbRows);const preds=await sbFetchPredictions();setPredictions(preds);
       const existingIds=new Set(Object.keys(scoringMap).map(Number));
       const newPreds=preds.filter(p=>!existingIds.has(p.id));
@@ -1006,7 +1014,7 @@ ${baseInfo}
     }
     const summary=fileList.length===1?logs[0]?.ok?`${totalResults.length}건 예측 완료 · DB 저장`:logs[0]?.msg
       :`${fileList.length}개 파일 처리: 성공 ${successCount} · 실패 ${failCount} · 총 ${totalResults.length}건 예측`;
-    setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap,ownScore,floorDistMap,pcDistMap]);
+    setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap,ownScore,adjHist,pcDistMap]);
 
   // ★ 마크다운 → HTML 변환 (공통)
   const md2html=(text)=>{if(!text)return"";
@@ -1703,10 +1711,17 @@ ${baseInfo}
         const finalBid1st=finalRec.bid1st;
         // Phase 23-5: 실측 방향 힌트 (pred_bias_map 기반 화살표)
         const biasArrow=getBiasArrow(predBiasMap,{at:d.at,ag:d.ag,ba:d.ba});
-        // Mode B 실격위험 Phase 1 (표시 전용): 실현 하한율 분포 vs 추천 투찰금
-        const frDistM=floorDistMap?resolveFloorDist(floorDistMap,{at:d.at,canonicalAg:d.canonical_ag||d.ag,ba:d.ba}):null;
-        const dRiskM=(!finalRec.jongsim&&frDistM&&(finalBid1st||finalBid)&&ba)?floorRiskPct(frDistM,Number(finalBid1st||finalBid),ba):null;
-        const safeBidM=(!finalRec.jongsim&&floorDistMap&&floorModeOf(d.at)==="B")?floorSafeBid(resolveFloorDist(floorDistMap,{at:d.at,canonicalAg:d.canonical_ag||d.ag,ba:d.ba},100),ba):null;
+        // 하한 통과 확률 (표시 전용): 발주기관의 과거 발주처 사정율 vs 투찰금이 전제하는 사정률 — passProb.js (스펙 .scratch/main-rec-passprob §5)
+        // 요율·자사 점수는 행의 저장값이 아니라 현재 값으로 계산한다(옛 요율·0점 결함 행도 실제 통과 가능성을 보여 주기 위함).
+        const keyM=passKeyOf(d);
+        const effFrM=passEffFrOf(d,ownScore);
+        const adjDistM=finalRec.jongsim?null:resolveAdjHistory(adjHist,keyM);
+        const passOfM=(bid)=>(adjDistM&&bid&&ba)?passProbPct(adjDistM,impliedAdjOfBid({bid:Number(bid),ba,av:Number(d.av)||0,effFr:effFrM})):null;
+        const passM=passOfM(finalBid1st||finalBid);
+        const dRiskM=passM==null?null:100-passM;
+        const safeDistM=(!finalRec.jongsim&&floorModeOf(d.at)==="B")?resolveAdjHistory(adjHist,keyM,SAFE_LINE_MIN_N):null;
+        const safeBidM=(safeDistM&&ba)?bidAtPassProb(safeDistM,SAFE_LINE_Q,{ba,av:Number(d.av)||0,effFr:effFrM}):null;
+        const anchakPassM=d.b_pred_mode==='B'?passOfM(d.b_pred_bid_amount):null;
         const finalSource=finalRec.source==="추천"?"통계 예측 + 편향 보정":
                           finalRec.source==="순수예측"?"순수 통계 예측":"—";
         const fr2=Number(d.pred_floor_rate||0);
@@ -1796,11 +1811,11 @@ ${baseInfo}
                     )}
                   </div>
                   <div style={{fontSize:10,color:C.txd,marginTop:3}}>이 예정가격을 기초금액으로 계산한 값</div>
-                  {/* B2.5b: V2 보조 표시 — 사정률. Mode B '안착안'은 메인 추천과 다른 투찰금이며 95%는 측정값이 아닌 목표값 (P1 2026-09-24) */}
+                  {/* B2.5b: V2 보조 표시 — 사정률. Mode B '안착안'은 메인 추천과 다른 투찰금. 통과 확률은 메인과 같은 방식(passProb.js)으로 계산한 값 */}
                   {d.b_pred_adj!=null&&(
                     <div style={{fontSize:10,color:d.b_pred_mode==='A'?"#d28b16":"#1a7a4a",marginTop:4,fontFamily:"monospace"}}>
                       V2 {d.b_pred_mode==='A'?'공략':'안착안'}: {fmtAdj(d.b_pred_adj)}
-                      {d.b_pred_mode==='B'&&d.b_pred_floor_pass_prob!=null&&<span style={{marginLeft:6,color:C.txd}}>· 목표 통과 {(Number(d.b_pred_floor_pass_prob)*100).toFixed(0)}%</span>}
+                      {anchakPassM!=null&&<span style={{marginLeft:6,color:C.txd}}>· 통과 {floorPassLabel(100-anchakPassM)}</span>}
                       {d.b_pred_grain&&<span style={{color:C.txd,marginLeft:6}}>({d.b_pred_grain})</span>}
                     </div>
                   )}
@@ -1819,8 +1834,8 @@ ${baseInfo}
                   {d.b_pred_bid_amount!=null&&(
                     <div style={{fontSize:10,color:d.b_pred_mode==='A'?"#d28b16":"#1a7a4a",marginTop:4,fontFamily:"monospace"}}>
                       V2{d.b_pred_mode==='B'?' 안착안':''}: {tc(Number(d.b_pred_bid_amount))}원
-                      {d.b_pred_mode==='B'&&d.b_pred_floor_pass_prob!=null&&(
-                        <span style={{marginLeft:6,color:C.txd}}>· 목표 통과 {(Number(d.b_pred_floor_pass_prob)*100).toFixed(0)}%</span>
+                      {anchakPassM!=null&&(
+                        <span style={{marginLeft:6,color:C.txd}}>· 통과 {floorPassLabel(100-anchakPassM)}</span>
                       )}
                     </div>
                   )}
@@ -1828,14 +1843,14 @@ ${baseInfo}
               </div>
               {/* B2.5c: V2 메인 메트릭 행 — Mode A=예상 낙찰 확률(winProb, 변경 없음)
                   Mode B=하한 통과 확률 (추천 투찰금 기준) = 100 − 같은 화면 실격위험%(dRiskM). 두 숫자 합 100이 구조적으로 보장된다.
-                  P1(2026-09-24): 이전 고정값 0.95는 다른 투찰금(안착안) 기준의 목표값이어서 보조 줄로 이동. */}
+                  2026-10 통일: 확률은 발주기관의 과거 발주처 사정율 기록으로 계산(passProb.js) — 금액대별 하한 분포는 3억 이상의 57%에서 표본 부족으로 표시되지 않았다. */}
               {d.b_pred_mode&&(()=>{
                 const isModeA=d.b_pred_mode==='A';
                 const barPct=isModeA?(winProb!=null?Math.round(Number(winProb)*100):null):floorPassPct(dRiskM);
                 const valText=isModeA?(barPct!=null?barPct+"%":"—"):floorPassLabel(dRiskM);
                 const accent=isModeA?"#d28b16":"#1a7a4a";
                 const label=isModeA?'🎯 예상 낙찰 확률':'🛡️ 하한 통과 확률 (추천 투찰금 기준)';
-                const basis=isModeA?null:(dRiskM==null?(finalRec.jongsim?'종심제 미지원':'표본 부족'):(frDistM?`표본 ${frDistM.n}건 · 최근 ${frDistM.window}일`:null));
+                const basis=isModeA?null:(dRiskM==null?(finalRec.jongsim?'종심제 미지원':'과거 기록 부족'):`${adjDistM.grain==='AG'?'이 발주기관':'기관유형 전체'} 과거 ${adjDistM.n}건 · 최근 3년 · 추정`);
                 return(
                   <div style={{padding:"10px 16px",background:"rgba(0,0,0,0.1)",borderTop:"1px solid "+C.bdr+"33",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                     <div>
@@ -2131,10 +2146,10 @@ ${baseInfo}
                 safeBidM!=null?<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,padding:"6px 8px",background:C.bg,borderRadius:6}}>
                   <span style={{fontSize:10,color:C.txm}}>탈락 회피 하한선 <span style={{fontSize:9,color:C.txd}}>(이 금액 이상이면 하한 통과확률 ≈95% — 추천가 아님)</span></span>
                   <span style={{fontSize:13,fontWeight:700,fontFamily:"monospace",color:"#5dca96"}}>{tc(safeBidM)}원</span>
-                </div>:<div style={{fontSize:10,color:C.txd,padding:"4px 0"}}>안전선 비표시 — 분포 표본 부족 (n&lt;100)</div>
+                </div>:<div style={{fontSize:10,color:C.txd,padding:"4px 0"}}>안전선 비표시 — 과거 기록 100건 미만</div>
               ):<div style={{fontSize:10,color:"#a8b4ff",padding:"4px 0"}}>Mode A 전략(군시설): WIN-zone 노림 — 하한 근접 투찰은 의도적이며 안전선을 표시하지 않습니다</div>}
-              {frDistM?<div style={{fontSize:9,color:C.txd,marginTop:6}}>근거: 표본 {frDistM.n}건 · 최근 {frDistM.window}일 · 현행 era · {frDistM.grain==='AG_BA'?'발주기관×금액대':'기관유형×금액대 (표본 부족 fallback)'} · 실현 하한율 분포(정보 제공용)</div>
-              :<div style={{fontSize:9,color:C.txd,marginTop:6}}>분포 표본 부족 — 위험 미산출</div>}
+              {adjDistM?<div style={{fontSize:9,color:C.txd,marginTop:6}}>근거: {adjDistM.grain==='AG'?'이 발주기관':'기관유형 전체 (발주기관 기록 30건 미만)'}의 과거 발주처 사정율 {adjDistM.n}건 · 최근 3년 · 추정값(정보 제공용)</div>
+              :<div style={{fontSize:9,color:C.txd,marginTop:6}}>과거 기록 부족 — 위험 미산출</div>}
             </div>}
             {/* 예측 vs 실제 비교 테이블 (pa는 편향 보정 전 순수 통계 예측값) */}
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
@@ -2814,7 +2829,7 @@ ${baseInfo}
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 사정률(100%)</th>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 투찰금</th>
-              <th title="실격위험 — 추천 투찰금이 실제 낙찰하한가에 미달할 확률. 최근 실현 하한율 분포(기관유형×금액대, 기본 365일·드리프트 시 180일) 기반, 정보 제공용" style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실격위험</th>
+              <th title="실격위험 — 추천 투찰금이 실제 낙찰하한가에 미달할 확률. 발주기관(기록 30건 미만이면 기관유형 전체)의 최근 3년 발주처 사정율 기록 기반 추정, 정보 제공용" style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실격위험</th>
               <SortTh label="예상참가" sortKey="exp_pc" current={predSort} setCurrent={setPredSort} align="right"/>
               <SortTh label="개찰일" sortKey="open_date" current={predSort} setCurrent={setPredSort} align="right"/>
               <th title="1순위사정율(br1) 기준 — 1순위 투찰금에서 역산한 사정률. 예가/기초(ar1) 아님. 오차도 br1 기준." style={{padding:"7px 4px",textAlign:"right",color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>실제 1위 사정률(100%)</th>
@@ -2828,9 +2843,10 @@ ${baseInfo}
               // Phase 5.6: 통합 최종 추천 (모달과 동일 로직: AI > Enhanced > opt_adj > pred)
               const finalRec=getFinalRecommendation(p);
               const finalAdj=finalRec.adj;const finalBid=finalRec.bid;const finalBid1st=finalRec.bid1st;
-              // Mode B 실격위험 Phase 1 (표시 전용): 실현 하한율 분포 vs 추천 투찰금
-              const frDist=floorDistMap?resolveFloorDist(floorDistMap,{at:p.at,canonicalAg:p.canonical_ag||p.ag,ba:p.ba}):null;
-              const dRisk=(!finalRec.jongsim&&frDist&&(finalBid1st||finalBid)&&p.ba)?floorRiskPct(frDist,Number(finalBid1st||finalBid),Number(p.ba)):null;
+              // 실격위험 (표시 전용): 발주기관의 과거 발주처 사정율 vs 투찰금이 전제하는 사정률 — passProb.js (상세 화면과 같은 계산)
+              const adjDist=finalRec.jongsim?null:resolveAdjHistory(adjHist,passKeyOf(p));
+              const passL=(adjDist&&(finalBid1st||finalBid)&&p.ba)?passProbPct(adjDist,impliedAdjOfBid({bid:Number(finalBid1st||finalBid),ba:Number(p.ba),av:Number(p.av)||0,effFr:passEffFrOf(p,ownScore)})):null;
+              const dRisk=passL==null?null:100-passL;
               // Phase ①: 예상 참가자수 (과거 동일 grain 개찰 실측 p50, 표시 전용 — 낙찰 보장 아님). 종심제는 "—" (spec §2-3)
               const pcD=(!finalRec.jongsim&&pcDistMap)?resolvePcDist(pcDistMap,{at:p.at,canonicalAg:p.canonical_ag||p.ag,ba:p.ba}):null;
               // 신뢰도: 모달과 동일한 공유 헬퍼(predConfidenceV2, 실측 정확도 기반) — badge·강조 정합
@@ -2885,7 +2901,7 @@ ${baseInfo}
                 </td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:(isHighConf&&!finalRec.jongsim&&finalRec.floorSafe!==false)?"#5dca96":C.gold,fontWeight:700}}>
                   {finalRec.jongsim?<span style={{fontSize:10,color:C.txd}}>—</span>:((finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):"")}</td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,fontWeight:600,color:dRisk!=null?riskColor(dRisk):C.txd}} title={dRisk!=null?`실격위험 ${riskLabel(dRisk)} — 추천 투찰금이 실제 하한 미달일 확률\n표본 ${frDist.n}건 · 최근 ${frDist.window}일 · ${frDist.grain==='AG_BA'?'발주기관×금액대':'기관유형×금액대 (표본 부족 fallback)'}`:(finalRec.jongsim?"종심제 — 미적용":"분포 표본 부족")}>{dRisk!=null?riskLabel(dRisk):<span style={{fontSize:10,color:C.txd}}>—</span>}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,fontWeight:600,color:dRisk!=null?riskColor(dRisk):C.txd}} title={dRisk!=null?`실격위험 ${riskLabel(dRisk)} — 추천 투찰금이 실제 하한 미달일 확률\n${adjDist.grain==='AG'?'이 발주기관':'기관유형 전체'} 과거 ${adjDist.n}건 · 최근 3년`:(finalRec.jongsim?"종심제 — 미적용":"과거 기록 부족")}>{dRisk!=null?riskLabel(dRisk):<span style={{fontSize:10,color:C.txd}}>—</span>}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:(pcD&&pcColor(pcD.p50))||C.txm}} title={pcD?`예상 참가자수 ~${tc(pcD.p50)}개 (p25~p75: ${tc(pcD.p25)}~${tc(pcD.p75)})\n표본 ${pcD.n}건 · 최근 365일 · ${pcD.grain==='AG_BA'?'발주기관×금액대':'기관유형×금액대'} · 개찰 실측 분포\n참가자가 적을수록 추첨 모수가 작아집니다 (낙찰 보장 아님)`:(finalRec.jongsim?"종심제 — 미적용":"분포 표본 부족")}>{pcD?"~"+tc(pcD.p50):<span style={{fontSize:10,color:C.txd}}>—</span>}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11,whiteSpace:"nowrap"}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":isDataWait?"#8a93a8":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:isDataWait?<span style={{fontSize:10}}>데이터대기</span>:actBr1!=null?actBr1.toFixed(4)+"%":""}</td>

@@ -58,7 +58,7 @@ export function pcColor(p50) {
 }
 
 // 저장 스냅샷 필드 3개 (bid_predictions INSERT payload용, UPDATE 금지 — G-A안)
-// 종심제(jongsim)는 예측 미지원이라 스냅샷도 null (floorRiskSnapshot 선례, spec §2-3)
+// 종심제(jongsim)는 예측 미지원이라 스냅샷도 null (passRiskSnapshot 선례, spec §2-3)
 export function pcSnapshot(map, { at, canonicalAg, ba, jongsim }) {
   if (jongsim) return { exp_participants: null, exp_participants_n: null, exp_participants_grain: null };
   const d = resolvePcDist(map, { at, canonicalAg, ba });
