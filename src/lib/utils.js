@@ -1088,16 +1088,8 @@ export function recommendV2(bid, context, options) {
   // V2_DOMAIN_RULES_CHECK #1 — 자사 유효 낙찰하한율 (context.ownScore 없으면 디폴트 20=만점)
   const effFr = calcEffectiveFloorRate(at, fr, context?.ownScore);
 
-  // V2_DOMAIN_RULES_CHECK #6 (m24) — agency_mode_lookup의 adj_range_min/max로 grid 범위 클램프
-  // predict-architect 라운드 11 권고: 메타가 1.5보다 좁으면 좁히고, 넓으면 1.5 유지 (보수적)
-  const metaRangeMin = context?.modeResolution?.adj_range_min;
-  const metaRangeMax = context?.modeResolution?.adj_range_max;
-  if (metaRangeMin != null && metaRangeMax != null) {
-    const metaWidth = Math.max(Math.abs(Number(metaRangeMin)), Math.abs(Number(metaRangeMax)));
-    if (Number.isFinite(metaWidth) && metaWidth > 0) {
-      opt.gridRange = Math.min(opt.gridRange, metaWidth);
-    }
-  }
+  // adj_range_min/max(m24) grid 클램프는 쓰지 않는다: 폭이 1.645σ보다 좁으면 95% 목표에 못 미치는 더 공격적인 값이 나온다.
+  // (RPC 400으로 라이브에서 한 번도 적용된 적 없음 — 재설계는 별도 과제, 2026-10-18)
 
   // 투찰금액 계산식 (recommendBid1st와 동일 — A값 보정, effFr 사용)
   const xpC = (adj) => ba * (1 + adj / 100);

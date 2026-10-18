@@ -14,7 +14,7 @@ import G2BSheetTab from "./components/G2BSheetTab.jsx";
 import OwnScoreInput from "./components/OwnScoreInput.jsx";
 import { calcEffectiveFloorRate, formatFloorDual, parseOwnScore } from "./lib/effectiveFloor.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH, predConfidence, predConfidenceV2 } from "./lib/utils.js";
-import { resolveMode, resolveFloorErrDist } from "./lib/modeResolver.js";
+import { resolveMode } from "./lib/modeResolver.js";
 import { floorModeOf, riskColor, riskLabel } from "./lib/floorRisk.js";
 import { buildAdjHistory, resolveAdjHistory, impliedAdjOfBid, passProbPct, bidAtPassProb, passRiskSnapshot, SAFE_LINE_MIN_N, SAFE_LINE_Q } from "./lib/passProb.js";
 import { floorPassPct, floorPassLabel } from "./lib/floorLabels.js";
@@ -1223,13 +1223,11 @@ ${baseInfo}
       for(const p of targets){
         try{
           const modeRes=await resolveMode({at:p.at,canonicalAg:p.ag,ba:Number(p.ba)});
-          // Phase 2a: Mode A (군시설) row만 floorErr 분포 추가 조회 (era=current, 불필요한 RPC 차단)
-          const floorErrDist=(modeRes?.mode_recommend==='A')
-            ?await resolveFloorErrDist({at:p.at,canonicalAg:p.ag,ba:Number(p.ba),era:'current'})
-            :null;
+          // Mode A(군시설)는 종형 fallback을 쓴다. floorErr 경로(Phase 2a)는 분포 요율(get_floor_rate_db)과 pred_floor_rate 불일치·자사 점수 미반영이
+          // 풀릴 때까지 넘기지 않는다 — RPC 400으로 라이브에서 한 번도 실행된 적 없음(2026-10-18 확인).
           const v2=recommendV2(
             {at:p.at,agName:p.ag,ba:Number(p.ba),ep:Number(p.ep)||Number(p.ba),av:Number(p.av)||0,fr:Number(p.pred_floor_rate)},
-            {distMap:win1stDistMap,modeResolution:modeRes,floorErrDist,predExpectedPrice:Number(p.pred_expected_price)||null,ownScore}
+            {distMap:win1stDistMap,modeResolution:modeRes,predExpectedPrice:Number(p.pred_expected_price)||null,ownScore}
           );
           if(!v2||v2.adj==null)continue;
           const u={

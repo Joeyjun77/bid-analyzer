@@ -15,19 +15,30 @@ const AT_LEVEL_STATIC_FALLBACK = {
   "LH":       { matched_grain: "AT", mode_recommend: "B", confidence: "low",    n: 11,  median_gap: 0.0012, p90_gap: 0.0060 },
 };
 
-// 본 함수는 U0 시점에 mock으로 동작하고, U1에서 실제 RPC와 연결
+// RPC 인자는 JSON body로 보낸다. POST에 붙인 URL 쿼리는 PostgREST가 결과 필터로 해석해 400(PGRST100)을 낸다.
+// 값이 없는 인자는 키를 빼서 DB DEFAULT를 쓴다 — null을 명시하면 DEFAULT 대신 NULL이 들어간다(p_era NULL → 0행).
+function rpcArgs({ at, canonicalAg, ba }) {
+  const args = { p_at: at };
+  if (canonicalAg) args.p_canonical_ag = canonicalAg;
+  if (ba != null) args.p_ba = ba;
+  return args;
+}
+
+function postRpc(fn, args) {
+  return authedFetch(`/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+}
+
 export async function resolveMode({ at, canonicalAg, ba }) {
   if (!at) {
     return { matched_grain: null, mode_recommend: "B", confidence: "low", n: 0, median_gap: null, p90_gap: null, source: "no_at" };
   }
 
   try {
-    const params = new URLSearchParams({
-      p_at: at,
-      ...(canonicalAg ? { p_canonical_ag: canonicalAg } : {}),
-      ...(ba != null ? { p_ba: String(ba) } : {}),
-    });
-    const res = await authedFetch(`/rest/v1/rpc/lookup_agency_mode?${params}`, { method: "POST" });
+    const res = await postRpc("lookup_agency_mode", rpcArgs({ at, canonicalAg, ba }));
     if (!res.ok) throw new Error(`RPC ${res.status}`);
     const rows = await res.json();
     if (Array.isArray(rows) && rows.length > 0) {
@@ -49,12 +60,7 @@ export async function resolveMode({ at, canonicalAg, ba }) {
 export async function resolveGapDist({ at, canonicalAg, ba }) {
   if (!at) return null;
   try {
-    const params = new URLSearchParams({
-      p_at: at,
-      ...(canonicalAg ? { p_canonical_ag: canonicalAg } : {}),
-      ...(ba != null ? { p_ba: String(ba) } : {}),
-    });
-    const res = await authedFetch(`/rest/v1/rpc/lookup_gap_distribution?${params}`, { method: "POST" });
+    const res = await postRpc("lookup_gap_distribution", rpcArgs({ at, canonicalAg, ba }));
     if (!res.ok) return null;
     const rows = await res.json();
     if (Array.isArray(rows) && rows.length > 0) return rows[0];
@@ -71,13 +77,7 @@ export async function resolveGapDist({ at, canonicalAg, ba }) {
 export async function resolveFloorErrDist({ at, canonicalAg, ba, era = "current" }) {
   if (!at) return null;
   try {
-    const params = new URLSearchParams({
-      p_at: at,
-      ...(canonicalAg ? { p_canonical_ag: canonicalAg } : {}),
-      ...(ba != null ? { p_ba: String(ba) } : {}),
-      p_era: era,
-    });
-    const res = await authedFetch(`/rest/v1/rpc/lookup_floorerr_distribution?${params}`, { method: "POST" });
+    const res = await postRpc("lookup_floorerr_distribution", { ...rpcArgs({ at, canonicalAg, ba }), p_era: era });
     if (!res.ok) return null;
     const rows = await res.json();
     if (Array.isArray(rows) && rows.length > 0) return rows[0];
