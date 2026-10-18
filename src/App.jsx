@@ -1223,11 +1223,10 @@ ${baseInfo}
       for(const p of targets){
         try{
           const modeRes=await resolveMode({at:p.at,canonicalAg:p.ag,ba:Number(p.ba)});
-          // Mode A(군시설)는 종형 fallback을 쓴다. floorErr 경로(Phase 2a)는 분포 요율(get_floor_rate_db)과 pred_floor_rate 불일치·자사 점수 미반영이
-          // 풀릴 때까지 넘기지 않는다 — RPC 400으로 라이브에서 한 번도 실행된 적 없음(2026-10-18 확인).
+          // Mode A(군시설)는 종형 fallback. floorErr 분포는 분포 요율(get_floor_rate_db)·pred_floor_rate 불일치와 자사 점수 미반영이 풀릴 때까지 넘기지 않는다.
           const v2=recommendV2(
             {at:p.at,agName:p.ag,ba:Number(p.ba),ep:Number(p.ep)||Number(p.ba),av:Number(p.av)||0,fr:Number(p.pred_floor_rate)},
-            {distMap:win1stDistMap,modeResolution:modeRes,predExpectedPrice:Number(p.pred_expected_price)||null,ownScore}
+            {distMap:win1stDistMap,modeResolution:modeRes,ownScore}
           );
           if(!v2||v2.adj==null)continue;
           const u={

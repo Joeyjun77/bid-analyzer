@@ -1134,7 +1134,8 @@ export function recommendV2(bid, context, options) {
   }
 
   // Mode A: 군시설 공략 — Phase 2a floorErr m_star 기반 (recommendModeA)
-  // floorErrDist는 context에서 전달 (App.jsx의 lookup_floorerr_distribution RPC 결과, era=current)
+  // floorErrDist는 context에서 전달 (lookup_floorerr_distribution RPC 결과, era=current)
+  // 현재 App.jsx는 넘기지 않아 이 분기는 운영에서 타지 않는다 — floorErr 경로 재활성 과제에서 다시 연결
   // 표본 부족(n<5)·미전달·predExpectedPrice 부재 시 기존 종형 fallback
   const floorErrDist = context?.floorErrDist;
   const predEp = Number(context?.predExpectedPrice);
