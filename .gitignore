@@ -46,3 +46,6 @@ scripts/
 
 # 프로젝트 로컬 MCP 설정 (Power BI 모델링 — 이 폴더 한정, 커밋 불필요)
 .mcp.json
+
+# claude-verify Stop 훅 상태 파일
+claude-verify/.verify-state.json

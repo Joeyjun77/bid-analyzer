@@ -1,0 +1,9 @@
+{
+  "$comment": "Stop 훅(claude-verify/verify-on-stop.mjs)이 읽는 검사 목록. paths 에 해당하는 파일이 바뀌었을 때만 그 검사를 실행합니다.",
+  "watch": ["src", "api", "tests"],
+  "timeoutSec": 300,
+  "checks": [
+    { "name": "Vite build", "cmd": "npx vite build", "paths": ["src/", "api/"] },
+    { "name": "Unit test", "cmd": "node --test tests/*.test.mjs", "paths": ["src/", "tests/"] }
+  ]
+}
