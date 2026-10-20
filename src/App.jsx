@@ -927,11 +927,12 @@ ${baseInfo}
           const items=parseBidDoc(raw);if(!items.length)throw new Error("입찰서류함: 예측 대상 0건");
           const results=items.map(item=>{const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore,od:item.notice_date||item.open_date},allS.ts,allS.as,bidDetails,agencyPred,floorBench);const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore,od:item.notice_date||item.open_date},allS.ts,allS.as,curAgAss);return{...item,pred:p,rec}}).filter(r=>r.pred);
           if(!results.length)throw new Error("예측 결과 0건");
-          accPredResults=accPredResults.concat(results);setPredResults([...accPredResults]); // ★ 누적 표시
           // 이 경로는 메인 추천(bid1st_v2)을 저장하지 않아 화면에 보일 투찰금을 아직 모른다 — 실격위험 스냅샷은 비우고(기준 건수·안전선만 저장) 캘리브레이션 채점에서 빠지게 한다.
           const dbRows=results.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,own_score:ownScore,source:"file_upload",match_status:"pending",...passRiskSnapshot(adjHist,{...passKeyOf(r),ba:r.ba,av:r.av,effFr:passEffFrOf(r,ownScore),jongsim:isLhJongsim(r.at,r.ba,r.pn),withSafeLine:floorModeOf(r.at)==="B"}),...pcSnapshot(pcDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,jongsim:isLhJongsim(r.at,r.ba,r.pn)})}));
-          await sbSavePredictions(dbRows);
-          logs.push({name:file.name,type:"ok",text:`[예측] ${results.length}건 예측 완료`});
+          // 이미 매칭된 건은 DB에서 보호되어 갱신되지 않는다 — 화면에도 재계산값을 띄우지 않는다
+          const protectedKeys=await sbSavePredictions(dbRows);
+          accPredResults=accPredResults.concat(results.filter(r=>!protectedKeys.has(r.dedup_key)));setPredResults([...accPredResults]); // ★ 누적 표시
+          logs.push({name:file.name,type:"ok",text:`[예측] ${results.length-protectedKeys.size}건 예측 완료`+(protectedKeys.size?` · 이미 매칭된 ${protectedKeys.size}건은 보호되어 갱신하지 않음`:"")});
           setUploadLog([...logs]);continue}
         // 3) 낙찰정보리스트
         if(!hdr0.some(v=>v.includes("공고명")))throw new Error("지원하지 않는 파일 형식");
@@ -1002,10 +1003,13 @@ ${baseInfo}
         totalResults=totalResults.concat(results);
         logs.push({name:file.name,ok:true,msg:`${results.length}건 예측`});successCount++;
       }catch(e){logs.push({name:file.name,ok:false,msg:e.message});failCount++}}
+    let protectedKeys=new Set();
     if(totalResults.length>0){
-      setPredResults(prev=>{const dkSet=new Set(totalResults.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...totalResults]});
       const dbRows=totalResults.map(r=>({dedup_key:r.dedup_key,pn:r.pn,pn_no:r.pn_no,ag:r.ag,at:r.at,ep:r.ep,ba:r.ba,av:r.av,raw_cost:r.raw_cost,cat:r.cat,open_date:r.open_date,pred_adj_rate:r.pred.adj,pred_expected_price:r.pred.xp,pred_floor_rate:r.pred.fr,pred_bid_amount:r.pred.bid,pred_source:r.pred.src,pred_base_adj:r.pred.baseAdj,opt_adj:r.pred.optAdj,opt_bid:r.pred.optBid,opt_adj_router:r.pred.route,benchmark_bid:r.pred.benchmarkBid,benchmark_rate:r.pred.benchmarkRate,benchmark_n:r.pred.benchmarkN,rec_adj_p25:r.rec?.aggressive?.adj,rec_adj_p50:r.rec?.balanced?.adj,rec_adj_p75:r.rec?.conservative?.adj,rec_bid_p25:r.rec?.aggressive?.bid,rec_bid_p50:r.rec?.balanced?.bid,rec_bid_p75:r.rec?.conservative?.bid,rec_strategy:r.rec?.strategy,bid1st_v2_adj:r.v2?.auto?.adj??null,bid1st_v2_bid:r.v2?.auto?.bid??null,bid1st_v2_win_prob:r.v2?.auto?.winProb??null,bid1st_v2_floor_safe:r.v2?.auto?.floorSafe??null,bid1st_v2_grain:r.v2?.distribution?.grain??null,bid1st_v2_src:r.v2?.distribution?.src??null,own_score:ownScore,source:"file_upload",match_status:"pending",...passRiskSnapshot(adjHist,{...passKeyOf(r),ba:r.ba,av:r.av,effFr:passEffFrOf(r,ownScore),bid:r.v2?.auto?.bid??r.pred.optBid??r.pred.bid,jongsim:isLhJongsim(r.at,r.ba,r.pn),withSafeLine:floorModeOf(r.at)==="B"}),...pcSnapshot(pcDistMap,{at:r.at,canonicalAg:r.ag,ba:r.ba,jongsim:isLhJongsim(r.at,r.ba,r.pn)})}));
-      try{await sbSavePredictions(dbRows)}catch(e){setMsg({type:"err",text:"예측 DB 저장 실패: "+e.message});setBusy(false);return}
+      try{protectedKeys=await sbSavePredictions(dbRows)}catch(e){setMsg({type:"err",text:"예측 DB 저장 실패: "+e.message});setBusy(false);return}
+      // 저장된 건만 화면 결과에 반영 — 이미 매칭돼 보호된 건은 재계산값을 띄우지 않는다(DB 값과 화면이 어긋나지 않게)
+      const shown=totalResults.filter(r=>!protectedKeys.has(r.dedup_key));
+      setPredResults(prev=>{const dkSet=new Set(shown.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...shown]});
       const preds=await sbFetchPredictions();setPredictions(preds);
       const existingIds=new Set(Object.keys(scoringMap).map(Number));
       const newPreds=preds.filter(p=>!existingIds.has(p.id));
@@ -1016,7 +1020,8 @@ ${baseInfo}
     }
     const summary=fileList.length===1?logs[0]?.ok?`${totalResults.length}건 예측 완료 · DB 저장`:logs[0]?.msg
       :`${fileList.length}개 파일 처리: 성공 ${successCount} · 실패 ${failCount} · 총 ${totalResults.length}건 예측`;
-    setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary});setBusy(false)},[allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap,ownScore,adjHist,pcDistMap]);
+    const protectedNote=protectedKeys.size?` · 이미 매칭된 ${protectedKeys.size}건은 보호되어 갱신하지 않음`:"";
+    setMsg({type:failCount>0&&successCount===0?"err":"ok",text:summary+protectedNote});setBusy(false)},[allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap,ownScore,adjHist,pcDistMap]);
 
   // ★ 마크다운 → HTML 변환 (공통)
   const md2html=(text)=>{if(!text)return"";

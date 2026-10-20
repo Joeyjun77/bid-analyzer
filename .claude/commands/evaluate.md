@@ -247,31 +247,38 @@ git diff -U0 HEAD~1 -- '*.sql' '*.js' '*.jsx' \
 
 **검출 — DB 측면**:
 ```sql
--- 매칭된 행의 보호 컬럼(opt_adj, opt_bid, bid1st_v2_*)이 실제로 바뀐 이력 — 감사 트리거 m56 (2026-10-12).
--- 값이 달라진 UPDATE만 기록된다(동일값·비보호 컬럼·대기 행은 미기록). 이력 시작 = 2026-10-12, 그 이전은 측정 불가.
-SELECT COUNT(*) AS suspect_updates,
+-- 매칭된 행의 보호 컬럼(opt_adj, opt_bid, bid1st_v2_*) 이력 — 감사 트리거 m56 (2026-10-12) + 가드 트리거 m60 (2026-10-20).
+--   suspect_updates : 값이 실제로 바뀐 기록(AFTER 감사). m60 이후에는 가드를 우회(app.allow_protected_update)한 변경만 남는다.
+--   blocked_attempts: m60 가드가 막은 시도(changed_cols[1]='BLOCKED'). 값은 바뀌지 않았다 — 어느 경로가 매칭 행을 쓰려 하는지의 신호.
+-- 비보호 컬럼·대기 행·동일값은 기록되지 않는다. 이력 시작 = 2026-10-12, 그 이전은 측정 불가.
+SELECT COUNT(*) FILTER (WHERE changed_cols[1] IS DISTINCT FROM 'BLOCKED') AS suspect_updates,
+       COUNT(*) FILTER (WHERE changed_cols[1] = 'BLOCKED')                 AS blocked_attempts,
        COUNT(DISTINCT pred_id) AS rows_touched,
        MIN(changed_at) AS first_at, MAX(changed_at) AS last_at
 FROM bid_predictions_protected_audit
 WHERE changed_at > NOW() - INTERVAL '7 days';
 
--- suspect_updates > 0 이면 무엇이 누구에 의해 바뀌었는지 함께 보고한다
+-- 0보다 크면 무엇이 누구에 의해 바뀌었는지(또는 막혔는지) 함께 보고한다
+-- jwt_role은 구버전 클레임 키라 현재 항상 NULL — 경로 구분은 db_user(authenticator=REST 클라이언트, postgres=cron·SQL)로 한다
 SELECT changed_at, pred_id, db_user, jwt_role, changed_cols
 FROM bid_predictions_protected_audit
 WHERE changed_at > NOW() - INTERVAL '7 days'
 ORDER BY changed_at DESC LIMIT 20;
 
--- 감사 수단 자체가 살아 있는지 (0행이면 이 DB 점검은 "판정 불가"로 보고 — 0건을 PASS로 읽지 않는다)
+-- 감사·가드 수단이 살아 있는지 (2행이 아니면 이 DB 점검은 "판정 불가"로 보고 — 0건을 PASS로 읽지 않는다)
 SELECT tgname, tgenabled FROM pg_trigger
-WHERE tgrelid='public.bid_predictions'::regclass AND tgname='trg_bid_predictions_protected_audit';
+WHERE tgrelid='public.bid_predictions'::regclass
+  AND tgname IN ('trg_bid_predictions_protected_audit','trg_bid_predictions_guard_matched');
 ```
 > 2026-10-12 이전 정의는 "매칭 후 24시간 지난 행 수"를 세어 항상 수천 건을 반환했다(변경 여부와 무관). `bid_predictions`에 `updated_at`·이력이 없어서였고, m56으로 실측 수단을 만들었다.
+> 2026-10-20: 업로드 upsert가 매칭 행 18건을 덮은 사고(감사 147행) 뒤 m59로 원복(승인 예외, 감사 13행)하고 m60 가드를 붙였다. 그 이후 감사 행에는 BLOCKED 시도가 섞이므로 두 수를 나눠 센다.
 
 **판정**:
 - diff에서 보호 컬럼 UPDATE/DELETE 패턴 0건 AND DB suspect_updates=0 (트리거 활성 확인) → **PASS**
 - diff에서 패턴 1건 이상 → **FAIL**
-- diff 0이지만 DB suspect_updates>0 → **WARN** — 실제 변경 기록이므로 원인(어느 경로·어느 역할)을 규명해 보고한다
-- 감사 트리거가 없거나 `tgenabled`가 `'O'`(기본 활성)·`'A'`(항상)가 아님 → DB 측 **판정 불가**로 보고 (WARN). `'D'`는 비활성, `'R'`은 복제 세션 전용이라 일반 세션에서 발화하지 않는다
+- diff 0이지만 DB suspect_updates>0 → **WARN** — 실제 변경 기록이므로 원인(어느 경로·어느 역할)을 규명해 보고한다. 사용자가 승인한 원복(예: m59)이면 그 근거를 함께 적는다
+- blocked_attempts>0만 있음 → 판정에 영향 없음(정보 표기). 값은 지켜졌지만 매칭 행을 쓰려는 경로가 남아 있다는 뜻이므로 db_user·시각을 보고한다
+- 감사·가드 트리거 중 하나라도 없거나 `tgenabled`가 `'O'`(기본 활성)·`'A'`(항상)가 아님 → DB 측 **판정 불가**로 보고 (WARN). `'D'`는 비활성, `'R'`은 복제 세션 전용이라 일반 세션에서 발화하지 않는다
 - 예외: 매칭 전(`match_status != 'matched'`) row UPDATE는 허용 (감사 대상 아님)
 
 ---

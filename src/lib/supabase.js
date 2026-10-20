@@ -81,15 +81,17 @@ export async function sbDeleteAll(){await authedFetch("/rest/v1/bid_records?id=g
 // 매칭된 행은 다시 쓰지 않는다(A안 INSERT-only): merge-duplicates upsert는 같은 dedup_key의 기존 행을 통째로 덮어
 // 매칭 행을 pending으로 되돌리고 보호값·스냅샷을 개찰 후 재계산값으로 바꿨다(2026-10-20 사후 업로드, m59 원복).
 // 기존 상태를 확인하지 못한 배치는 저장하지 않는다 — 가드 없이 쓰는 쪽으로 물러서지 않기 위해. DB 가드는 m60 트리거.
-export async function sbSavePredictions(preds){const BATCH=50;let skipped=0;for(let i=0;i<preds.length;i+=BATCH){const batch=preds.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}
+// 반환: 건너뛴(이미 매칭된) dedup_key Set — 호출부는 이 건들의 화면 결과를 재계산값으로 바꾸지 않고 사용자에게 알린다.
+export async function sbSavePredictions(preds){const BATCH=50;const skipped=new Set();for(let i=0;i<preds.length;i+=BATCH){const batch=preds.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}
   const keys=unique.map(r=>r.dedup_key).filter(Boolean);let matched=new Set();
   if(keys.length){const chk=await authedFetch("/rest/v1/bid_predictions?select=dedup_key&match_status=eq.matched&dedup_key=in.("+keys.join(",")+")");
     if(!chk.ok)throw new Error(`예측 저장 전 매칭 상태 확인 실패: ${chk.status}`);
     matched=new Set((await chk.json()).map(r=>r.dedup_key))}
-  const toSave=unique.filter(r=>!matched.has(r.dedup_key));skipped+=unique.length-toSave.length;
+  const toSave=unique.filter(r=>!matched.has(r.dedup_key));for(const k of matched)skipped.add(k);
   if(!toSave.length)continue;
-  const body=sanitizeJson(JSON.stringify(toSave));await authedFetch("/rest/v1/bid_predictions?on_conflict=dedup_key",{method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body})}
-  if(skipped)console.info(`[sbSavePredictions] 이미 매칭된 예측 ${skipped}건은 덮어쓰지 않았습니다`)}
+  const body=sanitizeJson(JSON.stringify(toSave));const res=await authedFetch("/rest/v1/bid_predictions?on_conflict=dedup_key",{method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body});
+  if(!res.ok)throw new Error(`예측 저장 실패: ${res.status}`)}
+  return skipped}
 // order에 고유 tiebreaker(id) 필수: created_at 동률(배치 임포트 50건씩)이 offset 페이지 경계에 걸치면
 // created_at.desc 단독 정렬은 비결정적이라 같은 row가 두 페이지에 중복 페치됨 → 예측 리스트 중복 행 버그.
 // id 보조정렬로 전역 결정적 순서 보장 + 마지막에 id dedup(안전망).
