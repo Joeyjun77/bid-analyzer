@@ -78,7 +78,18 @@ export async function sbDeleteIds(ids){const BATCH=50;for(let i=0;i<ids.length;i
 export async function sbDeleteAll(){await authedFetch("/rest/v1/bid_records?id=gt.0",{method:"DELETE"})}
 
 // 예측 DB
-export async function sbSavePredictions(preds){const BATCH=50;for(let i=0;i<preds.length;i+=BATCH){const batch=preds.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}const body=sanitizeJson(JSON.stringify(unique));await authedFetch("/rest/v1/bid_predictions?on_conflict=dedup_key",{method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body})}}
+// 매칭된 행은 다시 쓰지 않는다(A안 INSERT-only): merge-duplicates upsert는 같은 dedup_key의 기존 행을 통째로 덮어
+// 매칭 행을 pending으로 되돌리고 보호값·스냅샷을 개찰 후 재계산값으로 바꿨다(2026-10-20 사후 업로드, m59 원복).
+// 기존 상태를 확인하지 못한 배치는 저장하지 않는다 — 가드 없이 쓰는 쪽으로 물러서지 않기 위해. DB 가드는 m60 트리거.
+export async function sbSavePredictions(preds){const BATCH=50;let skipped=0;for(let i=0;i<preds.length;i+=BATCH){const batch=preds.slice(i,i+BATCH);const seen=new Set(),unique=[];for(const r of batch){if(!seen.has(r.dedup_key)){seen.add(r.dedup_key);unique.push(r)}}
+  const keys=unique.map(r=>r.dedup_key).filter(Boolean);let matched=new Set();
+  if(keys.length){const chk=await authedFetch("/rest/v1/bid_predictions?select=dedup_key&match_status=eq.matched&dedup_key=in.("+keys.join(",")+")");
+    if(!chk.ok)throw new Error(`예측 저장 전 매칭 상태 확인 실패: ${chk.status}`);
+    matched=new Set((await chk.json()).map(r=>r.dedup_key))}
+  const toSave=unique.filter(r=>!matched.has(r.dedup_key));skipped+=unique.length-toSave.length;
+  if(!toSave.length)continue;
+  const body=sanitizeJson(JSON.stringify(toSave));await authedFetch("/rest/v1/bid_predictions?on_conflict=dedup_key",{method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body})}
+  if(skipped)console.info(`[sbSavePredictions] 이미 매칭된 예측 ${skipped}건은 덮어쓰지 않았습니다`)}
 // order에 고유 tiebreaker(id) 필수: created_at 동률(배치 임포트 50건씩)이 offset 페이지 경계에 걸치면
 // created_at.desc 단독 정렬은 비결정적이라 같은 row가 두 페이지에 중복 페치됨 → 예측 리스트 중복 행 버그.
 // id 보조정렬로 전역 결정적 순서 보장 + 마지막에 id dedup(안전망).
@@ -99,7 +110,9 @@ export async function sbMatchPredictions(predictions,records){
   }
   // ★ 이미 매칭된 record_id 수집 (중복 매칭 방지)
   // matched + actual_adj_rate 채워진 경우만 used로 등록. matched but actual NULL은 재매칭 대상이라 record 풀로 환원
-  const usedRecIds=new Set(predictions.filter(p=>p.match_status==="matched"&&p.matched_record_id&&p.actual_adj_rate!=null).map(p=>p.matched_record_id));
+  // 소유는 source 단위(서버 m47과 동일): g2b_auto 예측이 잡은 record를 file_upload 예측이 못 쓰던 결함 제거(2026-10-20)
+  const usedKey=(src,recId)=>(src||"")+"|"+recId;
+  const usedRecIds=new Set(predictions.filter(p=>p.match_status==="matched"&&p.matched_record_id&&p.actual_adj_rate!=null).map(p=>usedKey(p.source,p.matched_record_id)));
   const updates=[];
   for(const p of predictions){
     // matched이지만 actual_adj_rate가 NULL이면 재매칭 시도 (ar1 늦게 도착 케이스 백필)
@@ -123,7 +136,7 @@ export async function sbMatchPredictions(predictions,records){
       let bestDist=Infinity, bestHasAr1=false;
       for(const c of candidates){
         if(!c.od)continue;
-        if(usedRecIds.has(c.id))continue; // ★ 중복 방지
+        if(usedRecIds.has(usedKey(p.source,c.id)))continue; // ★ 중복 방지
         // prefix fallback일 때 ag 일치 검증 (발주기관 첫 4자 이상 공통)
         if(isPfxFallback&&p.ag&&c.ag){
           const p4=p.ag.replace(/\s/g,'').slice(0,4),c4=c.ag.replace(/\s/g,'').slice(0,4);
@@ -141,7 +154,7 @@ export async function sbMatchPredictions(predictions,records){
       match=null;
     }
     if(!match)continue;
-    usedRecIds.add(match.id); // ★ 사용된 record 등록
+    usedRecIds.add(usedKey(p.source,match.id)); // ★ 사용된 record 등록
     // 실측 사정률은 ar1(예가 사정률, xp/ba*100)만 사용. br1은 별도 정의의 비율 컬럼이라 사용 금지.
     // ar1 단위 자동 감지: 50 이상이면 100% 기준(통상 84~110), 50 미만이면 0% 기준(통상 -2~+2)
     const actualAdj=match.ar1!=null?Math.round((match.ar1>=50?match.ar1-100:match.ar1)*10000)/10000:null;
