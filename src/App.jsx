@@ -13,7 +13,7 @@ import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
 import G2BSheetTab from "./components/G2BSheetTab.jsx";
 import OwnScoreInput from "./components/OwnScoreInput.jsx";
 import { calcEffectiveFloorRate, formatFloorDual, parseOwnScore } from "./lib/effectiveFloor.js";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH, predConfidence, predConfidenceV2 } from "./lib/utils.js";
+import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendMain, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH, predConfidence, predConfidenceV2 } from "./lib/utils.js";
 import { resolveMode } from "./lib/modeResolver.js";
 import { floorModeOf, riskColor, riskLabel } from "./lib/floorRisk.js";
 import { buildAdjHistory, resolveAdjHistory, impliedAdjOfBid, passProbPct, bidAtPassProb, passRiskSnapshot, SAFE_LINE_MIN_N, SAFE_LINE_Q } from "./lib/passProb.js";
@@ -990,12 +990,11 @@ ${baseInfo}
         const results=items.map(item=>{
           const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore,od:item.notice_date||item.open_date},allS.ts,allS.as,bidDetails,agencyPred,floorBench);
           const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore,od:item.notice_date||item.open_date},allS.ts,allS.as,curAgAss);
-          // Phase 23-9: 신규 추천 (1위 확률 최대 위치)
+          // 메인 추천: 군시설 외 = 하한 통과 95% 안착안, 군시설 = 1위 평균 (recommendMain, 2026-10-21)
           const fr=p?p.fr:eraFR(item.at,item.ep||item.ba,item.notice_date||item.open_date||new Date().toISOString().slice(0,10));
-          const v2=recommendBid1st(
+          const v2=recommendMain(
             {at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,fr},
-            {distMap:win1stDistMap,ownScore},
-            {enableMonteCarlo:false}
+            {distMap:win1stDistMap,ownScore}
           );
           return{...item,pred:p,rec,v2};
         }).filter(r=>r.pred);
@@ -1172,10 +1171,9 @@ ${baseInfo}
     (async()=>{
       const updates=[];
       for(const p of targets){
-        const v2=recommendBid1st(
+        const v2=recommendMain(
           {at:p.at,agName:p.ag,ba:Number(p.ba),ep:Number(p.ep)||Number(p.ba),av:Number(p.av)||0,fr:Number(p.pred_floor_rate)},
-          {distMap:win1stDistMap,ownScore},
-          {enableMonteCarlo:false}
+          {distMap:win1stDistMap,ownScore}
         );
         if(!v2)continue;
         updates.push({
@@ -1816,7 +1814,8 @@ ${baseInfo}
                   </div>
                   <div style={{fontSize:10,color:C.txd,marginTop:3}}>이 예정가격을 기초금액으로 계산한 값</div>
                   {/* B2.5b: V2 보조 표시 — 사정률. Mode B '안착안'은 메인 추천과 다른 투찰금. 통과 확률은 메인과 같은 방식(passProb.js)으로 계산한 값 */}
-                  {d.b_pred_adj!=null&&(
+                  {/* 2026-10-21: Mode B 메인 추천이 안착안으로 바뀌어 같은 값이면 보조 줄을 숨긴다 */}
+                  {d.b_pred_adj!=null&&!(d.b_pred_mode==='B'&&Number(d.b_pred_bid_amount)===Number(winBid))&&(
                     <div style={{fontSize:10,color:d.b_pred_mode==='A'?"#d28b16":"#1a7a4a",marginTop:4,fontFamily:"monospace"}}>
                       V2 {d.b_pred_mode==='A'?'공략':'안착안'}: {fmtAdj(d.b_pred_adj)}
                       {anchakPassM!=null&&<span style={{marginLeft:6,color:C.txd}}>· 통과 {floorPassLabel(100-anchakPassM)}</span>}
@@ -1835,7 +1834,7 @@ ${baseInfo}
                   <div style={{fontSize:28,fontWeight:700,color:C.gold,fontFamily:"monospace",lineHeight:1}}>{winBid?tc(winBid)+"원":"—"}</div>
                   <div style={{fontSize:10,color:C.txd,marginTop:3}}>낙찰하한율 {d.pred_floor_rate||"—"}% 적용{d.av&&Number(d.av)>0?" (A값 "+tc(Number(d.av))+"원)":""}</div>
                   {/* B2.5b: V2 보조 표시 — 안착안 투찰금액 (메인 추천 투찰금과 다른 값, P1 2026-09-24) */}
-                  {d.b_pred_bid_amount!=null&&(
+                  {d.b_pred_bid_amount!=null&&!(d.b_pred_mode==='B'&&Number(d.b_pred_bid_amount)===Number(winBid))&&(
                     <div style={{fontSize:10,color:d.b_pred_mode==='A'?"#d28b16":"#1a7a4a",marginTop:4,fontFamily:"monospace"}}>
                       V2{d.b_pred_mode==='B'?' 안착안':''}: {tc(Number(d.b_pred_bid_amount))}원
                       {anchakPassM!=null&&(

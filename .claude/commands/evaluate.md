@@ -138,6 +138,13 @@ SELECT * FROM evaluate_model_release(
 > `/evaluate`의 저장 행 채점은 이 변경을 볼 수 없다(요율 정정은 저장 행을 바꾸지 않는다). 검증 근거는 재현 백테스트와 클라이언트·DB 대조 격자다.
 > ⚠ 릴리스 게이트의 절대 기준 `floor_safe_pct ≥ 50`은 정정 이후 메인 추천의 기대값(약 54%, 3억 이상 49%)과 가깝다. 표본이 작은 창에서는 회귀가 없어도 passes=false가 날 수 있다 — 그때는 `pred_floor_rate` 층화 수치를 함께 보고한다(기준 재정의는 미결).
 
+> **재기준화 (메인 추천 → 안착안, 2026-10-21, 사용자 승인)**: 군시설 외(Mode B) 메인 추천을 1위 평균 겨냥(recommendBid1st)에서 하한 통과 95% 안착안(recommendV2 Mode B, `recommendMain`)으로 바꿨다. 스펙 `.scratch/main-rec-anchor/spec.md`.
+> - **경계 = 예측 생성 시점, 층화 키 = `bid1st_v2_src LIKE 'modeB(%'`** (새 정의). 대기 62건은 m63으로 옮겨 `bid1st_v2_grain='m63'`이고 실격위험 스냅샷이 비어 있다. 군시설(Mode A)은 변경 없음.
+> - **사정률 MAE·bias는 연속이 아니다.** 안착안은 분포 평균 위로 약 1.6σ 여유를 둔 값이라 shown MAE가 약 0.57 → 1.30, bias가 약 +0.09 → +1.28로 바뀐다(설계상). 경계 양쪽을 섞은 shown MAE 비교와 "핵심 영역 MAE +0.02 즉시 FAIL"은 이 경계를 넘어 적용하지 않는다. Mode B의 1차 KPI는 **하한 통과율**(기대 약 95%)과 5-b 캘리브레이션이다.
+> - `evaluate_model_release('v6.2_shown',...)`의 MAE 상대 허용 5%는 새·옛 정의가 섞이는 수 주간 passes=false를 낸다 → 그 기간에는 위 층화 키로 나눈 통과율·1순위 수를 보고한다. `floor_safe_pct ≥ 50`의 통과는 정의 변경의 결과이므로 개선 증거로 쓰지 않는다.
+> - 배포 근거(실측 n929, 같은 행 비교): 통과 71.4 → 95.2%, 1순위 가능 9 → 13(추첨 수준 — 이득 주장 금지), 개찰 전 생성분 77.3 → 93.7%. 화면 통과 확률 워크포워드는 예측 92.8%, 실제 95.0%.
+> - 배포 후 점검: 새 Mode B 행의 `bid1st_v2_bid = b_pred_bid_amount`가 100%여야 한다(같은 recommendV2 Mode B, mismatch 0).
+
 ### 5. 변경 로직 직접 시뮬레이션 (Generator가 변경한 공식을 재현)
 Generator가 변경한 로직이 결정론적이면 여기서 샘플로 재현. 예:
 - `getFinalRecommendation`에서 보정값 변경 → SQL로 동일 공식 적용 후 MAE 측정

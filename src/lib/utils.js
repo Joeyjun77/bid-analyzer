@@ -3,6 +3,7 @@ import { CHO } from "./constants.js";
 import { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./constants-tables.js";
 import { ceilToWon, ceilToThousand } from "./fmtAdj.js";
 import { calcEffectiveFloorRate } from "./effectiveFloor.js";
+import { floorModeOf } from "./floorRisk.js";
 // 도메인 상수 테이블은 constants-tables.js에 분리. 아래는 App.jsx 호환을 위한 re-export.
 export { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH };
 
@@ -954,6 +955,16 @@ export function lookupWin1stDist(at,agName,baSeg,distMap){
   return null;
 }
 
+// ─── 메인 추천 (2026-10-21 안착안 교체, .scratch/main-rec-anchor/spec.md) ───
+// Mode B(군시설 외): 하한 통과 95% 안착안(recommendV2 Mode B). 1위 평균 겨냥은 1순위를 못 늘리고(추첨) 통과율만 71%로 낮췄다.
+// Mode A(군시설): 기존 recommendBid1st 그대로. 반환 형태는 recommendBid1st와 같다(auto·distribution) — 저장 매핑 무변경.
+export function recommendMain(bid,context){
+  if(floorModeOf(bid?.at)!=="B")return recommendBid1st(bid,context,{enableMonteCarlo:false});
+  const v=recommendV2(bid,{distMap:context?.distMap,ownScore:context?.ownScore});
+  if(!v||v.adj==null)return null;
+  return{auto:{adj:v.adj,bid:v.bid,winProb:null,floorSafe:v.floor_safe},distribution:{grain:v.dist_grain,src:v.src}};
+}
+
 // ─── Phase 23-9 메인: recommendBid1st ───────────────────────────
 // bid: {at, agName, ba, ep, av, fr}
 // context: {distMap}  // 1단계는 distMap만 사용. bidDetails는 2단계.
@@ -1110,11 +1121,11 @@ export function recommendV2(bid, context, options) {
     let distribution = context?.agencyDist || null;
     if (!distribution || distribution.mean == null) {
       const lookup = lookupWin1stDist(at, agName, baSeg, context?.distMap);
-      if (lookup) distribution = { mean: Number(lookup.mean) || 0, std: Number(lookup.std) || 0.642, n: lookup.n };
+      if (lookup) distribution = { mean: Number(lookup.mean) || 0, std: Number(lookup.std) || 0.642, n: lookup.n, grain: lookup.grain };
     }
     if (!distribution || distribution.mean == null) {
       // 분포 lookup 완전 실패 — at-level 기본값 (mean=0, 노이즈 플로어)
-      distribution = { mean: 0, std: 0.642, n: 0 };
+      distribution = { mean: 0, std: 0.642, n: 0, grain: 'fallback' };
     }
 
     const result = recommendModeB(distribution, opt);
@@ -1129,7 +1140,8 @@ export function recommendV2(bid, context, options) {
       grain,
       src: `modeB(${distribution.n||0}건 · μ=${distribution.mean?.toFixed?.(4) ?? '?'} · σ=${distribution.std?.toFixed?.(4) ?? '?'})`,
       source: 'modeB',
-      floor_safe: floorSafeC(adjRaw)
+      floor_safe: floorSafeC(adjRaw),
+      dist_grain: distribution.grain || null  // 1위 분포를 찾은 단위 (grain은 모드 조회 단위라 다름)
     };
   }
 
