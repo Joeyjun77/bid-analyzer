@@ -1,4 +1,4 @@
-import { buildPcDistMap, resolvePcDist, pcSnapshot, PC_MIN_N } from "../src/lib/participantCount.js";
+import { buildPcDistMap, resolvePcDist, pcSnapshot, pcBucketOf, PC_MIN_N } from "../src/lib/participantCount.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${JSON.stringify(got)} expect ${JSON.stringify(exp)}`); bad++; } };
@@ -45,6 +45,8 @@ const map = buildPcDistMap(recs, TODAY);
   eq(pcSnapshot(map, { at: "LH", canonicalAg: "X", ba: 7e7, jongsim: true }).exp_participants, null, "jongsim → null");
 }
 eq(PC_MIN_N, 3, "min n");
+// 6. 버킷 경계 100/400 (1순위 확률 실측 구간)
+eq(pcBucketOf(99), "small", "99 → small"); eq(pcBucketOf(100), "mid", "100 → mid"); eq(pcBucketOf(399), "mid", "399 → mid"); eq(pcBucketOf(400), "large", "400 → large"); eq(pcBucketOf(null), null, "null bucket");
 
 if (bad) { console.error(`${bad} failed`); process.exit(1); }
 console.log("OK participantCount all cases");

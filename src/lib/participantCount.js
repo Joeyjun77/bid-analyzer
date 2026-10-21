@@ -70,15 +70,16 @@ export function resolvePcDist(map, { at, canonicalAg, ba }, minN = PC_MIN_N) {
 
 export const PC_GRAIN_LABELS = { AG_BA: "발주기관×금액대", AG: "발주기관(전 금액대)", AT_BA: "기관유형×금액대" };
 
-// 3버킷 (p50 기준): 소(<1000) / 중(1000~2999) / 대(>=3000)
+// 3버킷 (p50 기준): 소(<100) / 중(100~399) / 대(>=400)
+// 2026-10-21 경계 100/400 — 사전 선별 후 실측 1순위 확률(지자체 2024~26): 예측<100 1.2~2.9%, 100~399 약 0.6~0.7%, 400+ 약 0.6%
 export function pcBucketOf(p50) {
   if (p50 == null || !isFinite(p50)) return null;
-  if (p50 < 1000) return "small";
-  if (p50 < 3000) return "mid";
+  if (p50 < 100) return "small";
+  if (p50 < 400) return "mid";
   return "large";
 }
 
-export const PC_BUCKET_LABELS = { small: "<1,000", mid: "1,000~3,000", large: "≥3,000" };
+export const PC_BUCKET_LABELS = { small: "<100", mid: "100~400", large: "≥400" };
 
 // 소규모만 초록 강조 (추첨 모수 작음 — 낙찰 보장 아님), 그 외 기본색
 export function pcColor(p50) {

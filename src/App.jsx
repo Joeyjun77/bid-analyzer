@@ -2675,12 +2675,12 @@ ${baseInfo}
             <datalist id="agFilterOptions">{agOptions.map(a=><option key={a} value={a}/>)}</datalist>
             {agFilter&&<button onClick={()=>{setAgFilter("");setPredListShow(50)}} title="전체 보기" style={{padding:"4px 8px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txd,cursor:"pointer"}}>✕</button>}
             {/* Phase ①: 예상 참가자수 버킷 필터 — 팩트 필터일 뿐, 낙찰 보장 아님 */}
-            <select value={pcFilter} onChange={e=>{setPcFilter(e.target.value);setPredListShow(50)}} title="예상 참가자수 필터 — 과거 동일 기관·금액대 개찰 실측 분포(p50) 기준. 참가자가 적을수록 추첨 모수가 작아집니다 (낙찰 보장 아님)"
+            <select value={pcFilter} onChange={e=>{setPcFilter(e.target.value);setPredListShow(50)}} title="예상 참가자수 필터 — 같은 발주기관·금액대의 직전 1년 개찰 실측 중앙값 기준. 참가자가 적을수록 1순위 구간이 넓어집니다 (100명 미만 실측 1~3%, 그 외 약 0.6% — 낙찰 보장 아님)"
               style={{padding:"6px 10px",fontSize:12,background:C.bg3,border:"1px solid "+(pcFilter?"#5dca9666":C.bdr),borderRadius:5,color:pcFilter?"#5dca96":C.txt,cursor:"pointer"}}>
               <option value="">참가자수 전체</option>
-              <option value="small">{"<1,000"}</option>
-              <option value="mid">{"1,000~3,000"}</option>
-              <option value="large">{"≥3,000"}</option>
+              <option value="small">{"<100"}</option>
+              <option value="mid">{"100~400"}</option>
+              <option value="large">{"≥400"}</option>
             </select>
           </span>
           <label style={{display:"flex",alignItems:"center",gap:4,marginLeft:8,cursor:"pointer",fontSize:10,color:hideYuchal?C.txd:"#e24b4a"}}>
