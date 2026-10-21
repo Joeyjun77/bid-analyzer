@@ -2939,6 +2939,7 @@ ${baseInfo}
       setFocusedPredId={setFocusedPredId}
       setTab={setTab}
       refreshPredictions={refreshPredictions}
+      pcDistMap={pcDistMap}
     />}
 
     {/* ═══ Phase 20: 작전 대시보드 탭 ═══ */}

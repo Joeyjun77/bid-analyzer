@@ -1,7 +1,8 @@
 import React from 'react';
 import { C } from '../lib/constants.js';
-import { WIN_OPT_GAP, tc, calcBenchmarkAdj } from '../lib/utils.js';
+import { WIN_OPT_GAP, tc, calcBenchmarkAdj, normalizeAgencyName } from '../lib/utils.js';
 import { sbPredictNotice } from '../lib/supabase.js';
+import { resolvePcDist, pcWinRateOf, pcColor, PC_GRAIN_LABELS } from '../lib/participantCount.js';
 
 const AT_COLOR = {
   "지자체": "#a8b4ff", "교육청": "#ffb86c", "군시설": "#ff79c6",
@@ -33,11 +34,21 @@ export default function NoticesTab({
   noticeLoadingIds, setNoticeLoadingIds,
   setFocusedPredId, setTab,
   refreshPredictions,
+  pcDistMap,
 }) {
   const today = new Date().toISOString().slice(0, 10);
+  // 예상 참가자수 (발주기관×금액대 직전 1년 중앙값) — 공고 선별용. 적을수록 1순위 구간이 넓다 (낙찰 보장 아님)
+  // 공고의 ba는 전부 0이라 서버 auto_predict와 같은 규칙(ba 없으면 ep×1.1, m42b)으로 금액대를 잡는다
+  const amtOf = (n) => Number(n.ba) > 0 ? Number(n.ba) : Number(n.ep) > 0 ? Number(n.ep) * 1.1 : null;
+  const pcOf = (n) => pcDistMap && n.at && amtOf(n) ? resolvePcDist(pcDistMap, { at: n.at, canonicalAg: normalizeAgencyName(n.ag), ba: amtOf(n) }) : null;
+  // 1순위율 실측은 지자체 공고 기준 — 다른 유형(조달청 위탁 등)은 참가자수만 표시
+  const winRateOf = (n, d) => n.at === "지자체" && d ? pcWinRateOf(d.p50) : null;
   const allSorted = [...notices].sort((a, b) => a.od > b.od ? 1 : -1);
+  const upcoming = allSorted.filter(n => n.od && n.od.slice(0, 10) >= today);
+  const lowPc = upcoming.filter(n => { const d = pcOf(n); return n.at === "지자체" && d && d.p50 < 100; });
   const filtered =
-    noticeFilter === "upcoming" ? allSorted.filter(n => n.od && n.od.slice(0, 10) >= today) :
+    noticeFilter === "upcoming" ? upcoming :
+      noticeFilter === "lowpc" ? lowPc :
       noticeFilter === "registered" ? allSorted.filter(n => n.prediction_id) :
         allSorted;
   const regCnt = notices.filter(n => n.prediction_id).length;
@@ -75,10 +86,11 @@ export default function NoticesTab({
         <span style={{ fontSize: 10, color: C.txd }}>※ 과거 샘플 3건 미만 발주사는 "⚠ 데이터 부족"으로 표시 (배지 Hover 시 상세 안내)</span>
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center" }}>
-        {[{ k: "upcoming", l: "개찰 예정" }, { k: "all", l: "전체 공고" }, { k: "registered", l: "예측 등록됨" }].map(f => (
+        {[{ k: "upcoming", l: "개찰 예정" }, { k: "lowpc", l: "저경쟁 (<100명)" }, { k: "all", l: "전체 공고" }, { k: "registered", l: "예측 등록됨" }].map(f => (
           <button key={f.k} onClick={() => setNoticeFilter(f.k)}
+            title={f.k === "lowpc" ? "개찰 예정 지자체 공고 중 예상 참가자수 100명 미만 — 실측 1순위율 1~3% (그 외 약 0.6%). 참가자 적음 = 1순위 구간 넓음, 낙찰 보장 아님" : ""}
             style={{ padding: "5px 12px", fontSize: 11, borderRadius: 6, border: "1px solid " + (noticeFilter === f.k ? C.gold : C.bdr), background: noticeFilter === f.k ? "rgba(212,168,52,0.12)" : C.bg3, color: noticeFilter === f.k ? C.gold : C.txm, cursor: "pointer", fontWeight: noticeFilter === f.k ? 600 : 400 }}>
-            {f.l}{f.k === "upcoming" ? ` (${allSorted.filter(n => n.od && n.od.slice(0, 10) >= today).length})` : f.k === "registered" ? ` (${regCnt})` : `(${notices.length})`}
+            {f.l}{f.k === "upcoming" ? ` (${upcoming.length})` : f.k === "lowpc" ? ` (${lowPc.length})` : f.k === "registered" ? ` (${regCnt})` : `(${notices.length})`}
           </button>
         ))}
         <span style={{ fontSize: 10, color: C.txd, marginLeft: 4 }}>30분마다 자동 업데이트</span>
@@ -86,12 +98,13 @@ export default function NoticesTab({
       <div style={{ border: "1px solid " + C.bdr, borderRadius: 8, overflowX: "auto", maxWidth: "100%" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 900 }}>
           <thead><tr style={{ background: C.bg3 }}>
-            {["개찰일시", "공고명", "발주기관", "유형", "추정가격", "예측 사정률", "추천 투찰금", "벤치마크(%)", "액션"].map((h, i) => (
-              <th key={i} style={{ padding: "8px 10px", textAlign: i >= 4 && i <= 7 ? "right" : "left", color: h.includes("벤치마크") ? "#a8b4ff" : C.txd, fontWeight: 600, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap", fontSize: 10 }} title={h.includes("벤치마크") ? "SUCVIEW 기반 1위 투찰률에서 역산한 사정률 (100% 기준, n≥5)" : ""}>{h}</th>
+            {["개찰일시", "공고명", "발주기관", "유형", "추정가격", "예상참가", "1순위율(실측)", "예측 사정률", "추천 투찰금", "벤치마크(%)", "액션"].map((h, i) => (
+              <th key={i} style={{ padding: "8px 10px", textAlign: i >= 4 && i <= 9 ? "right" : "left", color: h.includes("벤치마크") ? "#a8b4ff" : C.txd, fontWeight: 600, borderBottom: "1px solid " + C.bdr, whiteSpace: "nowrap", fontSize: 10 }}
+                title={h.includes("벤치마크") ? "SUCVIEW 기반 1위 투찰률에서 역산한 사정률 (100% 기준, n≥5)" : h === "예상참가" ? "같은 발주기관·금액대의 직전 1년 개찰 실측 참가자수 중앙값" : h.startsWith("1순위율") ? "예상 참가자수 구간별 실측 1순위율 (지자체 2024~26, 사전 선별 기준). 사정률은 추첨이라 어떤 값으로 내도 비슷하고, 참가자가 적은 공고일수록 1순위 구간이 넓다 — 낙찰 보장 아님" : ""}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={9} style={{ padding: "24px", textAlign: "center", color: C.txd, fontSize: 12 }}>공고 없음</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={11} style={{ padding: "24px", textAlign: "center", color: C.txd, fontSize: 12 }}>공고 없음</td></tr>}
             {filtered.map(n => {
               const p = n.prediction_id ? predMap[n.prediction_id] : null;
               const hasPred = p?.pred_adj_rate != null;
@@ -115,6 +128,19 @@ export default function NoticesTab({
                   <td style={{ padding: "8px 10px", color: C.txm, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={n.ag}>{n.ag}</td>
                   <td style={{ padding: "8px 10px" }}><span style={{ fontSize: 9, padding: "1px 5px", background: atClr + "18", border: "1px solid " + atClr + "44", borderRadius: 4, color: atClr }}>{n.at}</span></td>
                   <td style={{ padding: "8px 10px", color: C.txt, textAlign: "right", fontFamily: "monospace", fontSize: 10 }}>{n.ep ? Number(n.ep).toLocaleString() : "-"}</td>
+                  {(() => {
+                    const d = pcOf(n); const wr = winRateOf(n, d); const clr = (d && pcColor(d.p50)) || C.txm;
+                    return (<>
+                      <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "monospace", fontSize: 10, color: clr, fontWeight: d && d.p50 < 100 ? 700 : 400 }}
+                        title={d ? `예상 참가자수 ~${tc(d.p50)}개 (p25~p75: ${tc(d.p25)}~${tc(d.p75)})\n표본 ${d.n}건 · 최근 365일 · ${PC_GRAIN_LABELS[d.grain] || d.grain}` : "과거 기록 부족"}>
+                        {d ? tc(d.p50) : "—"}
+                      </td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "monospace", fontSize: 10, color: clr, fontWeight: d && d.p50 < 100 ? 700 : 400 }}
+                        title={wr != null ? "참가자수 구간별 실측 1순위율 (지자체 2024~26)" : d ? "지자체 공고만 실측값이 있습니다" : "과거 기록 부족"}>
+                        {wr != null ? wr.toFixed(1) + "%" : "—"}
+                      </td>
+                    </>);
+                  })()}
                   <td style={{ padding: "8px 10px", textAlign: "right", color: hasPred ? "#5dca96" : C.txd, fontFamily: "monospace", fontWeight: hasPred ? 700 : 400, fontSize: 10 }}>
                     {hasPred ? (100 + Number(p.pred_adj_rate)).toFixed(4) + "%" : "—"}
                   </td>

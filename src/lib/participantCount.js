@@ -81,6 +81,15 @@ export function pcBucketOf(p50) {
 
 export const PC_BUCKET_LABELS = { small: "<100", mid: "100~400", large: "≥400" };
 
+// 예측 참가자수 구간별 실측 1순위율(%) — 지자체 2024-01~2026-10, 사전 예측값으로 선별한 뒤 실제 결과(고정 사정률 71개 평균).
+// 사정률은 추첨이라 어떤 값으로 내도 비슷하다. 차이를 만드는 건 1순위 구간 폭(∝1/참가자수)뿐 — 문구는 "1순위율", "낙찰 확률" 금지(G-모드표시).
+export const PC_WIN_RATE_BANDS = [[50, 2.9], [100, 1.2], [200, 0.7], [400, 0.6], [Infinity, 0.6]];
+export function pcWinRateOf(p50) {
+  if (p50 == null || !isFinite(p50)) return null;
+  for (const [lt, rate] of PC_WIN_RATE_BANDS) if (p50 < lt) return rate;
+  return null;
+}
+
 // 소규모만 초록 강조 (추첨 모수 작음 — 낙찰 보장 아님), 그 외 기본색
 export function pcColor(p50) {
   return pcBucketOf(p50) === "small" ? "#5dca96" : null;
