@@ -42,10 +42,12 @@ export default function NoticesTab({
   const amtOf = (n) => Number(n.ba) > 0 ? Number(n.ba) : Number(n.ep) > 0 ? Number(n.ep) * 1.1 : null;
   const pcOf = (n) => pcDistMap && n.at && amtOf(n) ? resolvePcDist(pcDistMap, { at: n.at, canonicalAg: normalizeAgencyName(n.ag), ba: amtOf(n) }) : null;
   // 1순위율 실측은 지자체 공고 기준 — 다른 유형(조달청 위탁 등)은 참가자수만 표시
-  const winRateOf = (n, d) => n.at === "지자체" && d ? pcWinRateOf(d.p50) : null;
+  // 기관유형 평균(AT_BA)은 정확도 측정(발주기관×금액대→발주기관) 범위 밖 — 1순위율·저경쟁 선별에서 제외
+  const agLevel = (d) => d && d.grain !== "AT_BA";
+  const winRateOf = (n, d) => n.at === "지자체" && agLevel(d) ? pcWinRateOf(d.p50) : null;
   const allSorted = [...notices].sort((a, b) => a.od > b.od ? 1 : -1);
   const upcoming = allSorted.filter(n => n.od && n.od.slice(0, 10) >= today);
-  const lowPc = upcoming.filter(n => { const d = pcOf(n); return n.at === "지자체" && d && d.p50 < 100; });
+  const lowPc = upcoming.filter(n => { const d = pcOf(n); return n.at === "지자체" && agLevel(d) && d.p50 < 100; });
   const filtered =
     noticeFilter === "upcoming" ? upcoming :
       noticeFilter === "lowpc" ? lowPc :
@@ -86,9 +88,9 @@ export default function NoticesTab({
         <span style={{ fontSize: 10, color: C.txd }}>※ 과거 샘플 3건 미만 발주사는 "⚠ 데이터 부족"으로 표시 (배지 Hover 시 상세 안내)</span>
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center" }}>
-        {[{ k: "upcoming", l: "개찰 예정" }, { k: "lowpc", l: "저경쟁 (<100명)" }, { k: "all", l: "전체 공고" }, { k: "registered", l: "예측 등록됨" }].map(f => (
+        {[{ k: "upcoming", l: "개찰 예정" }, { k: "lowpc", l: "저경쟁 지자체 (<100명)" }, { k: "all", l: "전체 공고" }, { k: "registered", l: "예측 등록됨" }].map(f => (
           <button key={f.k} onClick={() => setNoticeFilter(f.k)}
-            title={f.k === "lowpc" ? "개찰 예정 지자체 공고 중 예상 참가자수 100명 미만 — 실측 1순위율 1~3% (그 외 약 0.6%). 참가자 적음 = 1순위 구간 넓음, 낙찰 보장 아님" : ""}
+            title={f.k === "lowpc" ? "개찰 예정 지자체 공고 중 발주기관 기록 기준 예상 참가자수 100명 미만 — 실측 1순위율 1~3% (그 외 약 0.6%). 참가자 적음 = 1순위 구간 넓음, 낙찰 보장 아님" : ""}
             style={{ padding: "5px 12px", fontSize: 11, borderRadius: 6, border: "1px solid " + (noticeFilter === f.k ? C.gold : C.bdr), background: noticeFilter === f.k ? "rgba(212,168,52,0.12)" : C.bg3, color: noticeFilter === f.k ? C.gold : C.txm, cursor: "pointer", fontWeight: noticeFilter === f.k ? 600 : 400 }}>
             {f.l}{f.k === "upcoming" ? ` (${upcoming.length})` : f.k === "lowpc" ? ` (${lowPc.length})` : f.k === "registered" ? ` (${regCnt})` : `(${notices.length})`}
           </button>
@@ -129,14 +131,14 @@ export default function NoticesTab({
                   <td style={{ padding: "8px 10px" }}><span style={{ fontSize: 9, padding: "1px 5px", background: atClr + "18", border: "1px solid " + atClr + "44", borderRadius: 4, color: atClr }}>{n.at}</span></td>
                   <td style={{ padding: "8px 10px", color: C.txt, textAlign: "right", fontFamily: "monospace", fontSize: 10 }}>{n.ep ? Number(n.ep).toLocaleString() : "-"}</td>
                   {(() => {
-                    const d = pcOf(n); const wr = winRateOf(n, d); const clr = (d && pcColor(d.p50)) || C.txm;
+                    const d = pcOf(n); const wr = winRateOf(n, d); const ag = agLevel(d); const clr = !d ? C.txm : !ag ? C.txd : pcColor(d.p50) || C.txm;
                     return (<>
-                      <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "monospace", fontSize: 10, color: clr, fontWeight: d && d.p50 < 100 ? 700 : 400 }}
+                      <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "monospace", fontSize: 10, color: clr, fontWeight: ag && d.p50 < 100 ? 700 : 400 }}
                         title={d ? `예상 참가자수 ~${tc(d.p50)}개 (p25~p75: ${tc(d.p25)}~${tc(d.p75)})\n표본 ${d.n}건 · 최근 365일 · ${PC_GRAIN_LABELS[d.grain] || d.grain}` : "과거 기록 부족"}>
                         {d ? tc(d.p50) : "—"}
                       </td>
-                      <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "monospace", fontSize: 10, color: clr, fontWeight: d && d.p50 < 100 ? 700 : 400 }}
-                        title={wr != null ? "참가자수 구간별 실측 1순위율 (지자체 2024~26)" : d ? "지자체 공고만 실측값이 있습니다" : "과거 기록 부족"}>
+                      <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "monospace", fontSize: 10, color: clr, fontWeight: ag && d.p50 < 100 ? 700 : 400 }}
+                        title={wr != null ? "참가자수 구간별 실측 1순위율 (지자체 2024~26)" : d && !ag ? "발주기관 기록 부족 — 기관유형 평균이라 1순위율 미표시" : d ? "지자체 공고만 실측값이 있습니다" : "과거 기록 부족"}>
                         {wr != null ? wr.toFixed(1) + "%" : "—"}
                       </td>
                     </>);

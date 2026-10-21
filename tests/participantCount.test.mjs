@@ -48,7 +48,7 @@ eq(PC_MIN_N, 3, "min n");
 // 6. 버킷 경계 100/400 (1순위 확률 실측 구간)
 eq(pcBucketOf(99), "small", "99 → small"); eq(pcBucketOf(100), "mid", "100 → mid"); eq(pcBucketOf(399), "mid", "399 → mid"); eq(pcBucketOf(400), "large", "400 → large"); eq(pcBucketOf(null), null, "null bucket");
 // 7. 구간별 실측 1순위율: <50 2.9 / 50~99 1.2 / 100~199 0.7 / 200~399 0.6 / 400+ 0.6
-eq(pcWinRateOf(28), 2.9, "28 → 2.9"); eq(pcWinRateOf(50), 1.2, "50 → 1.2"); eq(pcWinRateOf(99), 1.2, "99 → 1.2"); eq(pcWinRateOf(231), 0.6, "231 → 0.6"); eq(pcWinRateOf(3300), 0.6, "3300 → 0.6"); eq(pcWinRateOf(null), null, "null → null");
+eq(pcWinRateOf(28), 2.9, "28 → 2.9"); eq(pcWinRateOf(50), 1.2, "50 → 1.2"); eq(pcWinRateOf(99), 1.2, "99 → 1.2"); eq(pcWinRateOf(100), 0.7, "100 → 0.7"); eq(pcWinRateOf(199), 0.7, "199 → 0.7"); eq(pcWinRateOf(200), 0.6, "200 → 0.6"); eq(pcWinRateOf(231), 0.6, "231 → 0.6"); eq(pcWinRateOf(3300), 0.6, "3300 → 0.6"); eq(pcWinRateOf(null), null, "null → null");
 
 if (bad) { console.error(`${bad} failed`); process.exit(1); }
 console.log("OK participantCount all cases");
