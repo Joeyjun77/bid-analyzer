@@ -1125,7 +1125,7 @@ export function recommendV2(bid, context, options) {
     }
     if (!distribution || distribution.mean == null) {
       // 분포 lookup 완전 실패 — at-level 기본값 (mean=0, 노이즈 플로어)
-      distribution = { mean: 0, std: 0.642, n: 0, grain: 'fallback' };
+      distribution = { mean: 0, std: 0.642, n: 0, grain: null };  // recommendBid1st와 같이 분포 미발견은 grain null
     }
 
     const result = recommendModeB(distribution, opt);

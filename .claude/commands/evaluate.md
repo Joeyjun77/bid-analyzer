@@ -144,6 +144,8 @@ SELECT * FROM evaluate_model_release(
 > - `evaluate_model_release('v6.2_shown',...)`의 MAE 상대 허용 5%는 새·옛 정의가 섞이는 수 주간 passes=false를 낸다 → 그 기간에는 위 층화 키로 나눈 통과율·1순위 수를 보고한다. `floor_safe_pct ≥ 50`의 통과는 정의 변경의 결과이므로 개선 증거로 쓰지 않는다.
 > - 배포 근거(실측 n929, 같은 행 비교): 통과 71.4 → 95.2%, 1순위 가능 9 → 13(추첨 수준 — 이득 주장 금지), 개찰 전 생성분 77.3 → 93.7%. 화면 통과 확률 워크포워드는 예측 92.8%, 실제 95.0%.
 > - 배포 후 점검: 새 Mode B 행의 `bid1st_v2_bid = b_pred_bid_amount`가 100%여야 한다(같은 recommendV2 Mode B, mismatch 0).
+> - 메인 추천의 모드는 정적 규칙(`floorModeOf(at)`, 군시설=A), 안착안(b_pred)의 모드는 `agency_mode_lookup` RPC로 정한다. 지금은 두 값이 같다(군시설 외 29행 전부 B, 군시설 12행 전부 A). 이 테이블에 군시설 외 A나 군시설 B 행이 생기면 두 값이 갈라져 위 mismatch 점검이 깨지므로, **lookup 변경은 Generator 변경으로 다룬다.**
+> - 알려진 한계(기록만): 대기 행 자동채움은 bid1st_v2_*만 다시 계산하고 disq_risk_pct 스냅샷은 갱신하지 않는다(자사 점수 변경 시 어긋남). Mode B(recommendModeB)는 σ 하한이 없어서 σ<0.3인 AG·AG_BA 9셀은 '95%'가 실제로 더 낮을 수 있다(화면 통과 확률은 별도 분포로 계산하므로 표시값은 정직하다). AI 컨텍스트의 추천투찰금액은 opt_bid라 헤드라인과 다르다.
 
 ### 5. 변경 로직 직접 시뮬레이션 (Generator가 변경한 공식을 재현)
 Generator가 변경한 로직이 결정론적이면 여기서 샘플로 재현. 예:

@@ -88,6 +88,7 @@ FROM base;
 ```
 - 1차(shown): 직전 push 시 기록된 shown MAE와 비교 (없으면 14일 전 shown MAE를 baseline으로)
   - 신규 MAE > baseline + 0.005 → WARN / > baseline + 0.02 → FAIL
+  - **재기준화 2026-10-21(사용자 승인)**: 군시설 외 메인 추천이 안착안으로 바뀌어 `bid1st_v2_src LIKE 'modeB(%'`(또는 `bid1st_v2_grain='m63'`) 행은 shown MAE가 설계상 약 1.30이다. shown 비교는 이 표지로 **새 정의 / 옛 정의를 나눠 같은 정의끼리만** 하고, 경계를 넘는 비교(옛 baseline 대 새 정의 섞인 값)는 FAIL 사유로 쓰지 않는다. 새 정의 행의 1차 지표는 하한통과율(기대 약 95%, 85% 미만 WARN)이다. 근거 evaluate.md §4.
 - 보조(opt): 같은 방식으로 opt끼리 비교하되 악화는 WARN까지만
 - n=0이면 "판정 불가(표본 0)"로 명시 보고
 
@@ -135,6 +136,7 @@ SELECT focus, COUNT(*) AS n, ROUND(AVG(ABS(err))::numeric,4) AS mae
 FROM base WHERE focus IS NOT NULL GROUP BY focus ORDER BY mae DESC;
 ```
 - 1차(shown) 기준, 어느 영역이라도 직전 shown 측정 대비 MAE +0.02 이상 악화 → 즉시 FAIL / +0.005~+0.02 → WARN
+  - 단 2026-10-21 재기준화 이후에는 위 게이트 3과 같이 `bid1st_v2_src LIKE 'modeB(%'`(또는 grain `'m63'`) 여부로 나눠 **같은 정의끼리만** 비교한다. 한전·고양시는 새 정의에서 MAE가 설계상 커지므로 경계를 넘는 +0.02는 FAIL이 아니다. 새 정의 행은 하한통과율 85% 미만을 WARN으로 본다. 군부대(Mode A)는 정의가 바뀌지 않았으므로 기존 규칙을 그대로 적용한다.
 - 참고(opt) 악화는 WARN까지만 (같은 정의끼리 비교)
 - 하한통과율은 기록·보고 (이 게이트의 FAIL 사유 아님). 참고: 한전 전체기간 49.2%는 개정 요율 반영(e4d26ae, 2026-06-05) 전 예측 27건(0/27) 때문이며 수정 후 88.2% — 60일 창에서는 해당 코호트가 이미 빠져 있다
 
