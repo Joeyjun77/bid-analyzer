@@ -18,7 +18,7 @@ import { resolveMode } from "./lib/modeResolver.js";
 import { floorModeOf, riskColor, riskLabel } from "./lib/floorRisk.js";
 import { buildAdjHistory, resolveAdjHistory, impliedAdjOfBid, passProbPct, bidAtPassProb, passRiskSnapshot, SAFE_LINE_MIN_N, SAFE_LINE_Q } from "./lib/passProb.js";
 import { floorPassPct, floorPassLabel } from "./lib/floorLabels.js";
-import { sbFetchPcDistMap, resolvePcDist, pcBucketOf, pcColor, pcSnapshot } from "./lib/participantCount.js";
+import { buildPcDistMap, resolvePcDist, pcBucketOf, pcColor, pcSnapshot, PC_GRAIN_LABELS } from "./lib/participantCount.js";
 import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbRefreshParticipantDistFor, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
 import { sbFetchAllCached } from "./lib/bidCache.js";
 import { useAuth, getSession } from "./auth.js";
@@ -455,7 +455,7 @@ export default function App(){
   const[accuracyMap,setAccuracyMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Track2: 실측 정확도(n/bias/mae/sd) — 신뢰도 V2 표시용
   // 하한 통과 확률용 과거 발주처 사정율 기록 (발주기관·기관유형별, 최근 3년) — passProb.js. recs가 바뀔 때만 다시 만든다.
   const adjHist=useMemo(()=>buildAdjHistory(recs,new Date().toISOString().slice(0,10)),[recs]);
-  const[pcDistMap,setPcDistMap]=useState(null); // Phase ①: 예상 참가자수 분포 (m41, 표시 전용)
+  const pcDistMap=useMemo(()=>buildPcDistMap(recs,new Date().toISOString().slice(0,10)),[recs]); // 예상 참가자수: 발주기관×금액대 직전 365일 중앙값 (2026-10-21, 표시·선별 전용)
   const[pcFilter,setPcFilter]=useState(""); // 예측 리스트 참가자수 버킷 필터 (""=전체, small/mid/large)
   const[basegFinetune,setBasegFinetune]=useState({}); // Phase 23-3: 한전·고양시 (ag,at,seg) median fine-tune
   // V2_DOMAIN_RULES_CHECK #1 — 자사 비가격 점수 (0~20, 디폴트 20=만점)
@@ -816,7 +816,6 @@ ${baseInfo}
     try{const agStats=await sbFetchAgAssumedStats();setAgAss(agStats||{})}catch(e){setAgAss({})}
     try{const pbm=await sbFetchPredBiasMap();if(pbm)setPredBiasMap(pbm)}catch(e){}
     try{const acc=await sbFetchAccuracyMap();if(acc)setAccuracyMap(acc)}catch(e){}
-    try{const pdm=await sbFetchPcDistMap();if(pdm)setPcDistMap(pdm)}catch(e){}
     try{const fb=await sbFetchFloorBench();if(fb)setFloorBench(fb)}catch(e){}
     try{const wd=await sbFetchWin1stDistMap();if(wd)setWin1stDistMap(wd)}catch(e){}
     try{const bf=await sbFetchBasegFinetune();if(bf)setBasegFinetune(bf)}catch(e){}
@@ -2905,7 +2904,7 @@ ${baseInfo}
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:(isHighConf&&!finalRec.jongsim&&finalRec.floorSafe!==false)?"#5dca96":C.gold,fontWeight:700}}>
                   {finalRec.jongsim?<span style={{fontSize:10,color:C.txd}}>—</span>:((finalBid1st||finalBid)?tc(Number(finalBid1st||finalBid)):"")}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,fontWeight:600,color:dRisk!=null?riskColor(dRisk):C.txd}} title={dRisk!=null?`실격위험 ${riskLabel(dRisk)} — 추천 투찰금이 실제 하한 미달일 확률\n${adjDist.grain==='AG'?'이 발주기관':'기관유형 전체'} 과거 ${adjDist.n}건 · 최근 3년`:(finalRec.jongsim?"종심제 — 미적용":"과거 기록 부족")}>{dRisk!=null?riskLabel(dRisk):<span style={{fontSize:10,color:C.txd}}>—</span>}</td>
-                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:(pcD&&pcColor(pcD.p50))||C.txm}} title={pcD?`예상 참가자수 ~${tc(pcD.p50)}개 (p25~p75: ${tc(pcD.p25)}~${tc(pcD.p75)})\n표본 ${pcD.n}건 · 최근 365일 · ${pcD.grain==='AG_BA'?'발주기관×금액대':'기관유형×금액대'} · 개찰 실측 분포\n참가자가 적을수록 추첨 모수가 작아집니다 (낙찰 보장 아님)`:(finalRec.jongsim?"종심제 — 미적용":"분포 표본 부족")}>{pcD?"~"+tc(pcD.p50):<span style={{fontSize:10,color:C.txd}}>—</span>}</td>
+                <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:(pcD&&pcColor(pcD.p50))||C.txm}} title={pcD?`예상 참가자수 ~${tc(pcD.p50)}개 (p25~p75: ${tc(pcD.p25)}~${tc(pcD.p75)})\n표본 ${pcD.n}건 · 최근 365일 · ${PC_GRAIN_LABELS[pcD.grain]||pcD.grain} · 개찰 실측 분포\n참가자가 적을수록 추첨 모수가 작아집니다 (낙찰 보장 아님)`:(finalRec.jongsim?"종심제 — 미적용":"분포 표본 부족")}>{pcD?"~"+tc(pcD.p50):<span style={{fontSize:10,color:C.txd}}>—</span>}</td>
                 <td style={{padding:"6px",textAlign:"right",fontSize:11,whiteSpace:"nowrap"}}>{p.open_date||""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:isYuchal?"#e24b4a":isSuui?"#d4a834":isDataWait?"#8a93a8":"#a8b4ff",fontFamily:"monospace",fontSize:11}}>{isYuchal?<span style={{fontSize:10}}>유찰</span>:isSuui?<span style={{fontSize:10}}>수의</span>:isDataWait?<span style={{fontSize:10}}>데이터대기</span>:actBr1!=null?actBr1.toFixed(4)+"%":""}</td>
                 <td style={{padding:"6px",textAlign:"right",color:errColor,fontWeight:600,fontSize:11}}>{isYuchal||isSuui||isDataWait?"—":isAnomaly?"⚠":optErr!=null?optErr.toFixed(4):""}</td>
