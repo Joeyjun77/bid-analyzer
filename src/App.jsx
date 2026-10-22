@@ -1100,6 +1100,21 @@ ${baseInfo}
   const agencyList=useMemo(()=>Object.keys(allS.as||{}).sort(),[allS.as]);
   const nC=recs.filter(r=>r.era==="new").length,oC=recs.filter(r=>r.era==="old").length;
   const predMap=useMemo(()=>{const m={};predictions.forEach(p=>{m[p.id]=p});return m},[predictions]);
+  // P2 오늘의 공고용 추천 맵 — 예측 리스트 행(compList 렌더)과 같은 계산을 읽기 전용으로 모아 둔다.
+  // 업로드 예측만 getFinalRecommendation(출처 필터 유지 — 함수 격리 주석 참조). 자동 예측은 저장된 안착안(b_pred_*, Mode B)만 읽는다.
+  const todayRecMap=useMemo(()=>{
+    const m={};
+    predictions.forEach(p=>{
+      if(!p||p.match_status==="matched")return;
+      let adj=null,bid=null,jongsim=false,estimated=false;
+      if(p.source==="file_upload"){const r=getFinalRecommendation(p);adj=r.adj;bid=r.bid1st||r.bid;jongsim=!!r.jongsim}
+      else if(p.b_pred_mode==="B"&&p.b_pred_adj!=null&&p.b_pred_bid_amount!=null){adj=Number(p.b_pred_adj);bid=Number(p.b_pred_bid_amount);estimated=true}
+      let passPct=null;
+      if(!jongsim&&bid&&p.ba){const d=resolveAdjHistory(adjHist,passKeyOf(p));if(d)passPct=passProbPct(d,impliedAdjOfBid({bid:Number(bid),ba:Number(p.ba),av:Number(p.av)||0,effFr:passEffFrOf(p,ownScore)}))}
+      m[p.id]={adj,bid,passPct,jongsim,estimated,source:p.source};
+    });
+    return m;
+  },[predictions,adjHist,ownScore,getFinalRecommendation]);
   const fmtRelTime=(iso)=>{if(!iso)return null;const d=Date.now()-new Date(iso).getTime();const m=Math.floor(d/60000);if(m<1)return"방금";if(m<60)return m+"분 전";const h=Math.floor(m/60);if(h<24)return h+"시간 전";return new Date(iso).toLocaleDateString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})};
   const allSel=pagedRecs.length>0&&pagedRecs.every(r=>sel[r.id]);
 
@@ -2936,6 +2951,9 @@ ${baseInfo}
       noticeFilter={noticeFilter}
       setNoticeFilter={setNoticeFilter}
       predMap={predMap}
+      todayRecMap={todayRecMap}
+      predictions={predictions}
+      loadPredFiles={loadPredFiles}
       noticeLoadingIds={noticeLoadingIds}
       setNoticeLoadingIds={setNoticeLoadingIds}
       setFocusedPredId={setFocusedPredId}
