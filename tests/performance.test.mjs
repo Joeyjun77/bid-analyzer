@@ -26,6 +26,7 @@ const R = [
   { pn_no: "r6", od: "2026-01-13", ag: "경기도 고양시", pn: "excluded", pc: "200", co: "기사", is_excluded: true },
   { pn_no: "r7", od: "2026-01-14", ag: "경기도 고양시", pn: "유찰", pc: "0", co: "" },
   { pn_no: "r1", od: "2026-01-10", ag: "경기도 고양시", pn: "x-dup", pc: "230", co: "갑사" },
+  { pn_no: "r8", od: "2026-01-16", ag: "전라남도 해남군", pn: "[(해남군)] 관내 전기", pc: "50", co: "경사" },
 ];
 
 // dedupeByPnNo
@@ -48,6 +49,7 @@ eq(classifyRecord(R[5], KW), null, "is_excluded → null");
 eq(classifyRecord(R[6], KW), null, "co 없음(유찰) → null");
 eq(classifyRecord(R[2], KW).group, "general", "김포 → 일반");
 eq(classifyRecord(R[0], KW).group, "target", "고양 → 대상");
+eq(classifyRecord(R[8], KW).group, "general", "타지역 소경쟁 공고는 자사 자격 밖 → 일반");
 
 // aggregatePerformance
 const dCopy = JSON.stringify(D), rCopy = JSON.stringify(R);
@@ -55,11 +57,11 @@ const out = aggregatePerformance(D, R, KW, "2026-03-20");
 eq(JSON.stringify(D), dCopy, "details 원본 불변"); eq(JSON.stringify(R), rCopy, "records 원본 불변");
 eq(out.months.map(m => m.month).join(","), "2026-03,2026-02,2026-01", "월 범위: details 최소월~오늘, 최신 먼저");
 const jan = out.months[2];
-eq(jan.target.notices, 2, "1월 관내 공고(제외·유찰·중복 제거)"); eq(jan.general.notices, 1, "1월 일반 공고");
-eq(jan.target.bids, 3, "1월 관내 투찰(고양 2 + 소경쟁 1, 중복 A 제거)"); eq(jan.target.passed, 1, "rank 0/null 통과 아님");
+eq(jan.target.notices, 2, "1월 관내 공고(키워드만, 제외·유찰·중복 제거)"); eq(jan.general.notices, 2, "1월 일반 공고(타지역 소경쟁 포함)");
+eq(jan.target.bids, 3, "1월 관내 투찰(고양 2 + 소경쟁 1, 중복 A 제거)"); eq(jan.target.eligibleBids, 2, "1월 키워드 일치 투찰 2"); eq(jan.target.passed, 1, "rank 0/null 통과 아님");
 eq(jan.target.belowFloor, 1, "하한 미달 1"); eq(jan.target.nearBand, 1, "1위 근접 1 (gap 0)");
 eq(jan.target.rank1, 1, "1위 1"); eq(jan.target.top10, 1, "10위 이내 1");
-near(jan.target.coverage, 1.5, 1e-9, "커버리지 3/2"); near(jan.target.passRate, 1 / 3, 1e-9, "통과율 1/3"); near(jan.target.medGap, 0, 1e-9, "간격 중앙값 0");
+near(jan.target.coverage, 1, 1e-9, "커버리지 = 키워드 투찰 2 / 키워드 공고 2"); near(jan.target.passRate, 1 / 3, 1e-9, "통과율 1/3"); near(jan.target.medGap, 0, 1e-9, "간격 중앙값 0");
 eq(jan.noUpload, false, "1월 업로드 있음");
 const feb = out.months[1];
 eq(feb.general.bids, 1, "2월 일반 투찰 1"); near(feb.general.medGap, 0.2192, 1e-4, "간격 0.2192");
@@ -71,7 +73,7 @@ eq(mar.noUpload, true, "3월: 공고 있음·투찰 0 → 업로드 없음"); ne
 eq(out.totals.bids, 4, "od 없는 행·중복 제외"); eq(out.totals.belowFloor, 1, "하한 미달 합");
 eq(out.totals.eligibleBids, 2, "키워드 일치 투찰"); eq(out.totals.eligibleNotPassed, 1, "키워드 일치 중 통과 아님");
 near(out.summary.passRate, 1 / 3, 1e-9, "요약 통과율 1/3 (target만 합산)"); eq(out.summary.n, 3, "요약 n = 1·2월 target bids");
-near(out.summary.coverage, 1, 1e-9, "요약 커버리지 3/3"); near(out.summary.nearRate, 1 / 3, 1e-9, "요약 1위 근접률");
+near(out.summary.coverage, 2 / 3, 1e-9, "요약 커버리지 = 키워드 투찰 2 / 키워드 공고 3"); near(out.summary.nearRate, 1 / 3, 1e-9, "요약 1위 근접률");
 eq(aggregatePerformance([], R, KW, "2026-03-20").months.length, 0, "details 없으면 빈 months");
 eq(aggregatePerformance([], R, KW, "2026-03-20").summary.passRate, null, "details 없으면 요약 null");
 // 연도 넘김

@@ -25,7 +25,7 @@ const CELL_COLS = [
 ];
 
 const SUMMARY_CARDS = [
-  ["커버리지", (s) => s.coverage, "관내·소경쟁 공고 중 자사가 투찰한 비율"],
+  ["커버리지", (s) => s.coverage, "키워드 일치 공고 중 자사가 투찰한 비율"],
   ["통과율", (s) => s.passRate, "하한가 위에 안착한 비율 — 90% 미만이면 가정 사정률을 올려야 합니다"],
   ["1위 근접률", (s) => s.nearRate, `통과 건 중 1위 투찰률과 ${NEAR_GAP_MAX}%p 이내였던 비율`],
 ];
@@ -94,10 +94,10 @@ export default function PerformanceTab({ recs, bidDetails }) {
                 </td>
                 {["target", "general"].map((g) => CELL_COLS.map(([h, get, colorOf], i) => {
                   const c = m[g];
-                  const hide = m.noUpload && i >= 1;
+                  const hide = (m.noUpload && i >= 1) || (g === "general" && h === "커버리지"); // 일반 그룹 커버리지는 정의상 무의미
                   return (
                     <td key={g + h} style={td({ color: hide ? C.txd : colorOf ? colorOf(c) : C.txt, ...(g === "general" && i === 0 ? { borderLeft: "1px solid " + C.bdr } : {}) })}>
-                      {hide ? "" : get(c)}
+                      {hide ? (m.noUpload ? "" : "—") : get(c)}
                     </td>
                   );
                 }))}
@@ -109,7 +109,7 @@ export default function PerformanceTab({ recs, bidDetails }) {
 
       <div style={{ marginTop: 8, fontSize: 10, color: C.txd, lineHeight: 1.6 }}>
         <div>전체 투찰 {totals.bids}건 · 하한 미달 {totals.belowFloor}건 · 키워드 일치 {totals.eligibleBids}건(그중 통과 아님 {totals.eligibleNotPassed}건)</div>
-        <div>커버리지는 분자(실측 참가자수)·분모(공고 pc) 기준이 달라 100%를 넘을 수 있습니다. 간격 = 통과 건의 자사 투찰률 − 1위 투찰률 중앙값(%p).</div>
+        <div>관내·소경쟁 공고 수와 커버리지는 키워드 일치 공고 기준(타지역 소경쟁 공고는 자사 자격 밖). 소경쟁 투찰은 투찰 수·통과율에만 포함. 간격 = 통과 건의 자사 투찰률 − 1위 투찰률 중앙값(%p).</div>
       </div>
     </div>
   );

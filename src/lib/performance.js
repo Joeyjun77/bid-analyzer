@@ -1,7 +1,7 @@
 // 자사 성적표 월별 집계 — 순수 함수. bid_rate 공간 지표만(adj_rate 공간 WIN-zone KPI 금지).
 // 입력 배열(bidDetails·recs)은 예측 엔진과 공유되므로 절대 제자리 변형하지 않는다.
 // 스펙: docs/superpowers/specs/2026-10-22-bid-ops-funnel-redesign-design.md §6.4
-import { isEligible, isSmallField, isTarget } from "./eligibility.js";
+import { isEligible, isSmallField } from "./eligibility.js";
 
 export const NEAR_GAP_MAX = 0.5;   // 1위 근접: 통과 건 중 my_bid_rate − win_bid_rate ≤ 0.5%p
 export const GAP_SANE_MAX = 5;     // 입력 오류 방어(win_bid_rate 66.4 같은 값)
@@ -40,12 +40,13 @@ export function classifyDetail(d, keywords) {
   };
 }
 
+// 공고 모수(분모)는 키워드 일치만 — 타지역 소경쟁 공고는 자사 자격 밖이라 "관내·소경쟁"에 넣지 않는다.
 export function classifyRecord(r, keywords) {
   if (!r?.od || r.is_excluded === true || !r.co || !String(r.co).trim()) return null;
-  return { month: String(r.od).slice(0, 7), group: isTarget({ ag: r.ag, pn: r.pn, pc: r.pc }, keywords) ? "target" : "general" };
+  return { month: String(r.od).slice(0, 7), group: isEligible({ ag: r.ag, pn: r.pn }, keywords) ? "target" : "general" };
 }
 
-const newCell = () => ({ notices: 0, bids: 0, coverage: null, passed: 0, passRate: null, belowFloor: 0, nearBand: 0, top10: 0, rank1: 0, medGap: null, _gaps: [] });
+const newCell = () => ({ notices: 0, bids: 0, eligibleBids: 0, coverage: null, passed: 0, passRate: null, belowFloor: 0, nearBand: 0, top10: 0, rank1: 0, medGap: null, _gaps: [] });
 
 function median(arr) {
   if (!arr.length) return null;
@@ -55,7 +56,7 @@ function median(arr) {
 }
 
 function finishCell(c) {
-  c.coverage = c.notices > 0 ? c.bids / c.notices : null;
+  c.coverage = c.notices > 0 ? c.eligibleBids / c.notices : null;   // 분자·분모 모두 키워드 기준
   c.passRate = c.bids > 0 ? c.passed / c.bids : null;
   c.medGap = median(c._gaps);
   delete c._gaps;
@@ -90,7 +91,7 @@ export function aggregatePerformance(details, records, keywords, todayIso) {
     if (d.eligible) { totals.eligibleBids++; if (!d.passed) totals.eligibleNotPassed++; }
     const row = byMonth.get(d.month); if (!row) continue;
     const c = row[d.group];
-    c.bids++; if (d.passed) c.passed++; if (d.belowFloor) c.belowFloor++; if (d.nearBand) c.nearBand++;
+    c.bids++; if (d.eligible) c.eligibleBids++; if (d.passed) c.passed++; if (d.belowFloor) c.belowFloor++; if (d.nearBand) c.nearBand++;
     if (d.top10) c.top10++; if (d.rank1) c.rank1++; if (d.gapToWin != null) c._gaps.push(d.gapToWin);
   }
 
@@ -102,9 +103,9 @@ export function aggregatePerformance(details, records, keywords, todayIso) {
 
   // 요약: 업로드 있는 최근 3개월의 target 합산
   const recent = months.filter(m => !m.noUpload).slice(0, 3);
-  const sum = recent.reduce((a, m) => ({ notices: a.notices + m.target.notices, bids: a.bids + m.target.bids, passed: a.passed + m.target.passed, nearBand: a.nearBand + m.target.nearBand }), { notices: 0, bids: 0, passed: 0, nearBand: 0 });
+  const sum = recent.reduce((a, m) => ({ notices: a.notices + m.target.notices, bids: a.bids + m.target.bids, eligibleBids: a.eligibleBids + m.target.eligibleBids, passed: a.passed + m.target.passed, nearBand: a.nearBand + m.target.nearBand }), { notices: 0, bids: 0, eligibleBids: 0, passed: 0, nearBand: 0 });
   const summary = recent.length ? {
-    coverage: sum.notices > 0 ? sum.bids / sum.notices : null,
+    coverage: sum.notices > 0 ? sum.eligibleBids / sum.notices : null,
     passRate: sum.bids > 0 ? sum.passed / sum.bids : null,
     nearRate: sum.bids > 0 ? sum.nearBand / sum.bids : null,
     n: sum.bids,
