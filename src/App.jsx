@@ -8,6 +8,7 @@ import { fmtAdj as v2FmtAdj, fmtPct as v2FmtPct, fmtKRW as v2FmtKRW } from "./li
 import { getMainMetricLabel, getModeNotice } from "./lib/modeResolver.js";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
+import PerformanceTab from "./components/PerformanceTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
 import G2BSheetTab from "./components/G2BSheetTab.jsx";
@@ -1369,7 +1370,7 @@ ${baseInfo}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:0,flexWrap:"wrap",alignItems:"center"}}>
-          <Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="g2b_sheet" ch="G2B 양식"/>
+          <Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="performance" ch="성과"/><Tb id="g2b_sheet" ch="G2B 양식"/>
           {/* 보조 메뉴 접기 — 접힌 상태에서도 활성 탭은 노출 유지 */}
           {(()=>{
             const SUB=[{id:"feedback",ch:"📈 피드백"},{id:"quality",ch:"🔬 검증"},{id:"agency_predict_v6",ch:"💎 발주처 예측 V6"},{id:"agency_floor",ch:"🎯 발주사 하한"},{id:"v2_preview",ch:"🧪 V2 미리보기"}];
@@ -2928,6 +2929,7 @@ ${baseInfo}
     </div>}
 
     {/* ═══ 나라장터 공고 탭 ═══ */}
+    {tab==="performance"&&<PerformanceTab recs={recs} bidDetails={bidDetails}/>}
     {tab==="notices"&&<NoticesTab
       notices={notices}
       setNotices={setNotices}
