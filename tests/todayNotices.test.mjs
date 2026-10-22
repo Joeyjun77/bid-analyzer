@@ -41,7 +41,9 @@ eq(rows.map(r => r.key).join(","), "n:4,n:2,n:1,n:3,p:600,p:602", "정렬: 마�
 eq(rows.find(r => r.key === "n:4").status, STATUS.CLOSED, "마감 지남(투찰 기록보다 우선)");
 const r1 = rows.find(r => r.key === "n:1");
 eq(r1.predId, 500, "공고1은 file_upload 500 선택(자동 18102 아님)"); eq(r1.source, "file_upload", "출처");
-eq(r1.amountEstimated, true, "공고 ba 없음 → 추정"); near(r1.amount, 776015455 * 1.1, 1, "금액 = ep×1.1");
+eq(r1.amountEstimated, false, "업로드 예측이 붙으면 그 기초금액이 확정값"); near(r1.amount, 850000000, 1, "금액 = 업로드 예측 ba");
+const rAuto = buildTodayRows({ notices: [N[0]], predictions: [P[0]], keywords: ["고양"], pcOf, nowIso: NOW }).find(r => r.key === "n:1");
+eq(rAuto.amountEstimated, true, "자동 예측만 있으면 추정"); near(rAuto.amount, 776015455 * 1.1, 1, "추정 금액 = ep×1.1");
 eq(r1.group, "target", "고양 키워드 → 관내"); eq(r1.status, STATUS.PRED_FILE, "상태 예측(엑셀)");
 eq(r1.p50, 224, "예상 참가자수"); eq(r1.closeAt, "2026-10-23 10:00:00+00", "마감일시 보존");
 const r2 = rows.find(r => r.key === "n:2");
@@ -59,6 +61,10 @@ eq(rows.some(r => r.key === "p:18102"), false, "자동 예측은 단독 행이 �
 eq(filterRows(rows, "target", false).map(r => r.key).join(","), "n:1,n:3", "기본 필터: 관내·소경쟁, 마감·개찰 지난 것 제외");
 eq(filterRows(rows, "all", false).length, 5, "전체: 마감된 n:4만 제외(n:2는 마감 전 투찰 기록)");
 eq(filterRows(rows, "all", true).length, 6, "마감 포함");
+
+// 로컬 날짜(today)를 따로 받는다 — KST 아침(UTC 전날)에 오늘 개찰 단독 예측이 사라지면 안 된다
+const morning = buildTodayRows({ notices: [], predictions: [{ id: 700, pn_no: "UMM0500-1", source: "file_upload", match_status: "pending", open_date: "2026-10-22", created_at: "2026-10-20T01:00:00Z", ba: "100", ag: "제2부대", at: "군시설", pn: "오늘 개찰" }], keywords: [], pcOf: () => null, nowIso: "2026-10-21T23:30:00.000Z", today: "2026-10-22" });
+eq(morning.length, 1, "KST 08:30(UTC 전날 23:30)에도 오늘 개찰 단독 예측 유지");
 
 // statusOf
 eq(statusOf({ openAt: "2026-10-21 11:00:00+00", closeAt: "2026-10-21 10:00:00+00" }, NOW), STATUS.OPENED, "개찰 지남 우선");

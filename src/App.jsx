@@ -1106,12 +1106,12 @@ ${baseInfo}
     const m={};
     predictions.forEach(p=>{
       if(!p||p.match_status==="matched")return;
-      let adj=null,bid=null,jongsim=false,estimated=false;
-      if(p.source==="file_upload"){const r=getFinalRecommendation(p);adj=r.adj;bid=r.bid1st||r.bid;jongsim=!!r.jongsim}
+      let adj=null,bid=null,jongsim=false,estimated=false,floorSafe=null;
+      if(p.source==="file_upload"){const r=getFinalRecommendation(p);adj=r.adj;bid=r.bid1st||r.bid;jongsim=!!r.jongsim;floorSafe=r.floorSafe??null}
       else if(p.b_pred_mode==="B"&&p.b_pred_adj!=null&&p.b_pred_bid_amount!=null){adj=Number(p.b_pred_adj);bid=Number(p.b_pred_bid_amount);estimated=true}
       let passPct=null;
       if(!jongsim&&bid&&p.ba){const d=resolveAdjHistory(adjHist,passKeyOf(p));if(d)passPct=passProbPct(d,impliedAdjOfBid({bid:Number(bid),ba:Number(p.ba),av:Number(p.av)||0,effFr:passEffFrOf(p,ownScore)}))}
-      m[p.id]={adj,bid,passPct,jongsim,estimated,source:p.source};
+      m[p.id]={adj,bid,passPct,jongsim,estimated,floorSafe,source:p.source};
     });
     return m;
   },[predictions,adjHist,ownScore,getFinalRecommendation]);

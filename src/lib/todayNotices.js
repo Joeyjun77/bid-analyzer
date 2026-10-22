@@ -34,8 +34,9 @@ export function statusOf(row, nowIso) {
   return STATUS.NONE;
 }
 
-export function buildTodayRows({ notices, predictions, keywords, pcOf, nowIso }) {
-  const today = String(nowIso).slice(0, 10);
+// today = 로컬 날짜(YYYY-MM-DD). 생략하면 nowIso의 UTC 날짜 — KST 아침엔 전날이 되므로 화면은 반드시 넘긴다.
+export function buildTodayRows({ notices, predictions, keywords, pcOf, nowIso, today }) {
+  today = today || String(nowIso).slice(0, 10);
   const pending = (predictions || []).filter(p => p && p.match_status !== "matched");
   const byKey = new Map(); const byId = new Map();
   for (const p of pending) {
@@ -61,7 +62,9 @@ export function buildTodayRows({ notices, predictions, keywords, pcOf, nowIso })
     if (linked && !cands.includes(linked)) cands.push(linked);
     const pred = pickPrediction(cands, n.od ? String(n.od).slice(0, 10) : null);
     for (const c of cands) consumed.add(c.id);
-    const ba = num(n.ba), ep = num(n.ep);
+    // 업로드 예측(입찰서류함)의 기초금액이 공고의 ep×1.1 추정보다 우선 — 투찰금과 같은 기준이어야 대조가 된다.
+    const predBa = pred?.source === "file_upload" ? num(pred.ba) : null;
+    const ba = predBa > 0 ? predBa : num(n.ba), ep = num(n.ep);
     rows.push(decorate({
       key: "n:" + n.id, pnNo: k, pn: n.pn, ag: n.ag, at: n.at,
       amount: ba > 0 ? ba : ep > 0 ? ep * 1.1 : null, amountEstimated: !(ba > 0),

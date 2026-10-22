@@ -36,14 +36,15 @@ export default function NoticesTab({
   const [shown, setShown] = useState(PAGE);
   const fileRef = useRef(null);
   const nowIso = new Date().toISOString();
-  const today = nowIso.slice(0, 10);
+  const localDay = (d) => new Date(d).toLocaleDateString("sv-SE"); // 로컬(KST) 날짜 — UTC 날짜를 쓰면 아침 9시 전엔 전날이 된다
+  const today = localDay(Date.now());
 
   const pcOf = ({ at, ag, amount }) => pcDistMap && at && amount ? resolvePcDist(pcDistMap, { at, canonicalAg: normalizeAgencyName(ag), ba: amount }) : null;
-  const rows = useMemo(() => buildTodayRows({ notices, predictions: predictions || [], keywords, pcOf, nowIso }), [notices, predictions, pcDistMap, keywords]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rows = useMemo(() => buildTodayRows({ notices, predictions: predictions || [], keywords, pcOf, nowIso, today }), [notices, predictions, pcDistMap, keywords]); // eslint-disable-line react-hooks/exhaustive-deps
   const view = noticeFilter === "all" ? "all" : "target";
   const visible = filterRows(rows, view, includeDone);
   const targetUpcoming = filterRows(rows, "target", false);
-  const dueToday = targetUpcoming.filter(r => r.closeAt && String(new Date(r.closeAt).toISOString()).slice(0, 10) === today).length;
+  const dueToday = targetUpcoming.filter(r => r.closeAt && localDay(r.closeAt) === today).length;
   const noPred = targetUpcoming.filter(r => r.status === STATUS.NONE).length;
 
   const handlePredictNotice = async (noticeId) => {
@@ -114,10 +115,12 @@ export default function NoticesTab({
                     title={r.p50 != null ? `예상 참가자수 ~${tc(r.p50)}개 · ${PC_GRAIN_LABELS[r.grain] || r.grain || ""}` : "과거 기록 부족"}>
                     {r.p50 != null ? tc(r.p50) + (winRate != null ? ` (1순위율 ${winRate.toFixed(1)}%)` : "") : "—"}
                   </td>
-                  <td style={td({ ...mono, color: rec?.adj != null ? (rec.estimated ? C.txm : GREEN) : C.txd, fontWeight: rec?.adj != null ? 700 : 400 })}>
+                  <td style={td({ ...mono, color: rec?.floorSafe === false ? RED : rec?.adj != null ? (rec.estimated ? C.txm : GREEN) : C.txd, fontWeight: rec?.adj != null ? 700 : 400 })}
+                    title={rec?.floorSafe === false ? "자격 미달 — 그대로 투찰 시 자동 탈락 (예측 탭과 같은 판정)" : rec?.estimated ? "추정 기초금액 기준 안착안" : r.status === STATUS.PRED_AUTO && !rec?.adj ? "새로고침 후 표시됩니다" : ""}>
                     {rec?.adj != null ? (100 + Number(rec.adj)).toFixed(4) + "%" : "—"}
                   </td>
-                  <td style={td({ ...mono, color: rec?.bid ? (rec.estimated ? C.txm : C.gold) : C.txd, fontWeight: rec?.bid ? 700 : 400 })}>
+                  <td style={td({ ...mono, color: rec?.floorSafe === false ? RED : rec?.bid ? (rec.estimated ? C.txm : C.gold) : C.txd, fontWeight: rec?.bid ? 700 : 400 })}
+                    title={rec?.floorSafe === false ? "자격 미달" : rec?.estimated ? "추정 기초금액 기준" : ""}>
                     {rec?.bid ? tc(Math.round(Number(rec.bid))) + "원" : "—"}
                   </td>
                   <td style={td({ ...mono, color: passColor, fontWeight: rec?.passPct != null ? 700 : 400 })}>
