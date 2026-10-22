@@ -19,16 +19,18 @@ const CELL_COLS = [
   ["통과율", (c) => pct(c.passRate), (c) => (c.passRate == null ? C.txt : c.passRate < PASS_OK ? RED : GREEN)],
   ["하한미달", (c) => c.belowFloor],
   ["1위근접", (c) => c.nearBand],
-  ["10위↓", (c) => c.top10],
+  ["10위 이내", (c) => c.top10],
   ["1위", (c) => c.rank1],
   ["간격", (c) => num4(c.medGap)],
 ];
 
+// [라벨, 값, 설명, n 표기(분모)]
 const SUMMARY_CARDS = [
-  ["커버리지", (s) => s.coverage, "키워드 일치 공고 중 자사가 투찰한 비율"],
-  ["통과율", (s) => s.passRate, "하한가 위에 안착한 비율 — 90% 미만이면 가정 사정률을 올려야 합니다"],
-  ["1위 근접률", (s) => s.nearRate, `통과 건 중 1위 투찰률과 ${NEAR_GAP_MAX}%p 이내였던 비율`],
+  ["커버리지", (s) => s.coverage, "키워드 일치 공고 중 자사가 투찰한 비율", (s) => `공고 ${s.notices}건`],
+  ["통과율", (s) => s.passRate, "하한가 위에 안착한 비율 — 90% 미만이면 가정 사정률을 올려야 합니다", (s) => `투찰 ${s.n}건`],
+  ["1위 근접률", (s) => s.nearRate, `통과 건 중 1위 투찰률과 ${NEAR_GAP_MAX}%p 이내였던 비율`, (s) => `통과 ${s.passed}건`],
 ];
+const periodLabel = (months) => (months.length ? `${months[months.length - 1]}~${months[0]}` : "업로드 없음");
 
 export default function PerformanceTab({ recs, bidDetails }) {
   const [keywords, setKeywords] = useState(() => loadKeywords());
@@ -57,12 +59,12 @@ export default function PerformanceTab({ recs, bidDetails }) {
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 }}>
-        {SUMMARY_CARDS.map(([label, get, hint]) => {
+        {SUMMARY_CARDS.map(([label, get, hint, nOf]) => {
           const v = get(summary);
           const color = label === "통과율" && v != null ? (v < PASS_OK ? RED : GREEN) : C.gold;
           return (
             <div key={label} style={{ background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 8, padding: "10px 12px" }}>
-              <div style={{ fontSize: 10, color: C.txd }}>최근 3개월 관내·소경쟁 {label} <span style={{ color: C.txd }}>(n={summary.n})</span></div>
+              <div style={{ fontSize: 10, color: C.txd }}>관내·소경쟁 {label} · 업로드 있는 최근 3개월 ({periodLabel(summary.months)}, {nOf(summary)})</div>
               <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "monospace", color, lineHeight: 1.3 }}>{pct(v)}</div>
               <div style={{ fontSize: 10, color: C.txm, lineHeight: 1.4 }}>{hint}</div>
             </div>

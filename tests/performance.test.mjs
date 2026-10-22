@@ -73,7 +73,10 @@ eq(mar.noUpload, true, "3월: 공고 있음·투찰 0 → 업로드 없음"); ne
 eq(out.totals.bids, 4, "od 없는 행·중복 제외"); eq(out.totals.belowFloor, 1, "하한 미달 합");
 eq(out.totals.eligibleBids, 2, "키워드 일치 투찰"); eq(out.totals.eligibleNotPassed, 1, "키워드 일치 중 통과 아님");
 near(out.summary.passRate, 1 / 3, 1e-9, "요약 통과율 1/3 (target만 합산)"); eq(out.summary.n, 3, "요약 n = 1·2월 target bids");
-near(out.summary.coverage, 2 / 3, 1e-9, "요약 커버리지 = 키워드 투찰 2 / 키워드 공고 3"); near(out.summary.nearRate, 1 / 3, 1e-9, "요약 1위 근접률");
+near(out.summary.coverage, 2 / 3, 1e-9, "요약 커버리지 = 키워드 투찰 2 / 키워드 공고 3"); near(out.summary.nearRate, 1, 1e-9, "요약 1위 근접률 = 근접 1 / 통과 1 (분모는 통과 건)");
+eq(out.summary.passed, 1, "요약 통과 수"); eq(out.summary.notices, 3, "요약 공고 수");
+eq(out.summary.months.join(","), "2026-02,2026-01", "요약에 쓰인 달 목록(업로드 있는 달, 최신 먼저)");
+eq(aggregatePerformance([], R, KW, "2026-03-20").summary.months.length, 0, "details 없으면 요약 월 목록 비어 있음");
 eq(aggregatePerformance([], R, KW, "2026-03-20").months.length, 0, "details 없으면 빈 months");
 eq(aggregatePerformance([], R, KW, "2026-03-20").summary.passRate, null, "details 없으면 요약 null");
 // 연도 넘김

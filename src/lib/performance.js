@@ -78,7 +78,7 @@ export function aggregatePerformance(details, records, keywords, todayIso) {
   const ds = dedupeByPnNo(details).map(d => classifyDetail(d, keywords)).filter(Boolean);
   const rs = dedupeByPnNo(records).map(r => classifyRecord(r, keywords)).filter(Boolean);
   const totals = { bids: ds.length, belowFloor: 0, eligibleBids: 0, eligibleNotPassed: 0 };
-  const empty = { coverage: null, passRate: null, nearRate: null, n: 0 };
+  const empty = { coverage: null, passRate: null, nearRate: null, n: 0, passed: 0, notices: 0, months: [] };
   if (!ds.length) return { months: [], summary: empty, totals };
 
   const minMonth = ds.reduce((a, d) => (d.month < a ? d.month : a), ds[0].month);
@@ -107,8 +107,9 @@ export function aggregatePerformance(details, records, keywords, todayIso) {
   const summary = recent.length ? {
     coverage: sum.notices > 0 ? sum.eligibleBids / sum.notices : null,
     passRate: sum.bids > 0 ? sum.passed / sum.bids : null,
-    nearRate: sum.bids > 0 ? sum.nearBand / sum.bids : null,
-    n: sum.bids,
+    nearRate: sum.passed > 0 ? sum.nearBand / sum.passed : null,   // 분모 = 통과 건 (카드 설명문과 일치)
+    n: sum.bids, passed: sum.passed, notices: sum.notices,
+    months: recent.map(m => m.month),
   } : empty;
   return { months, summary, totals };
 }
