@@ -1,6 +1,8 @@
 import { sanitizeJson } from "./utils.js";
 import { authedFetch } from "../auth.js";
 import { rec1stPossible } from "./rec1stPossible.js";
+import { buildNoticesQuery, NOTICE_REGIONS } from "./noticesQuery.js";
+import { loadKeywords } from "./eligibility.js";
 
 // 모든 Supabase REST 호출은 authedFetch 경유 — 401 시 refresh_token으로 자동 재시도.
 // 공통 헤더 스니펫: body 있는 요청에는 Content-Type만, apikey/Authorization은 authedFetch가 주입.
@@ -653,8 +655,9 @@ export async function sbFetchV8Predictions(){
 }
 
 // 나라장터 공고 목록 (bid_notices)
+// 2026-10-22: 개찰 예정 + (경기 지역 OR 자격 키워드)만 서버에서 필터 — 이전엔 가장 오래된 1,000건만 로드돼 예정 공고가 0건으로 보였다.
 export async function sbFetchNotices(){
-  try{const res=await authedFetch("/rest/v1/bid_notices?select=id,pn,pn_no,ag,at,ep,ba,av,od,status,is_target,prediction_id,api_fetched_at&order=od.asc&limit=1000");if(!res.ok)return[];return await res.json()}catch(e){return[]}
+  try{const res=await authedFetch(buildNoticesQuery(new Date().toISOString(),NOTICE_REGIONS,loadKeywords()));if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
 // 단건 공고 예측 등록 (predict_notice DB 함수 호출)
 export async function sbPredictNotice(noticeId){
