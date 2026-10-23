@@ -25,3 +25,13 @@ export function rec1stPossible(pred, rec) {
   }
   return out;
 }
+
+// 투찰금 하나의 개찰 판정 — 예측 기록 표·엑셀·투찰 카드 공용. 위와 같은 정의(실제 하한가 이상, 1위 금액 미만).
+// "possible" = 1위 가능 금액, "above" = 1위 금액 이상(동액 포함), "below_floor" = 하한 미달, null = 판정 불가.
+export function bidVerdict(bid, rec) {
+  if (!rec) return null;
+  const b = num(bid), bp = num(rec.bp), floor = num(rec.floor_price);
+  if (!isFinite(b) || !isFinite(bp) || !isFinite(floor)) return null;
+  if (b >= bp) return "above";
+  return b < floor ? "below_floor" : "possible";
+}
