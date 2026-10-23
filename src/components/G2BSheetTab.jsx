@@ -119,8 +119,8 @@ const DETAIL_COLS = [
   { label: "1순위업체 사업자번호", get: r => r.co_no, fmt: v => v || "—" },
 ];
 
-export default function G2BSheetTab({ recs }){
-  const [agency, setAgency] = useState("");
+export default function G2BSheetTab({ recs, initialAgency }){
+  const [agency, setAgency] = useState(initialAgency || "");
   const [agSearch, setAgSearch] = useState("");
   const [cat, setCat] = useState("");
   const [seg, setSeg] = useState("");
