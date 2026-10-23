@@ -104,3 +104,8 @@ export function filterRows(rows, view, includeDone, trades) {
     (includeDone || (r.status !== STATUS.OPENED && r.status !== STATUS.CLOSED)) &&
     (!trades || r.trades == null || hasUserSignal(r) || r.trades.some(t => trades.includes(t))));
 }
+
+// 오늘의 공고 탭 배지 = 기본 화면(관내·소경쟁·개찰 예정·전기) 중 예측이 없는 공고 수 — 할 일 수.
+export function countTodayActions(rows) {
+  return filterRows(rows, "target", false, ["elec"]).filter(r => r.status === STATUS.NONE).length;
+}

@@ -1,4 +1,4 @@
-import { basePnNo, pickPrediction, STATUS, statusOf, buildTodayRows, filterRows, tradesOf } from "../src/lib/todayNotices.js";
+import { basePnNo, pickPrediction, STATUS, statusOf, buildTodayRows, filterRows, tradesOf, countTodayActions } from "../src/lib/todayNotices.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${got} expect ${exp}`); bad++; } };
@@ -112,6 +112,14 @@ eq(r600.trades, null, "단독 엑셀 예측 행은 업종 판정 안 함(null)")
 eq(statusOf({ openAt: "2026-10-21 11:00:00+00", closeAt: "2026-10-21 10:00:00+00" }, NOW), STATUS.OPENED, "개찰 지남 우선");
 eq(statusOf({ openAt: "2026-10-23 11:00:00+00", closeAt: "2026-10-22 08:00:00+00", participated: true }, NOW), STATUS.CLOSED, "마감 지남 > 투찰 기록");
 eq(statusOf({ openAt: "2026-10-23", closeAt: null, predId: 7, source: "g2b_auto" }, NOW), STATUS.PRED_AUTO, "자동 예측");
+
+// countTodayActions — 오늘의 공고 탭 배지: 기본 화면(관내·소경쟁, 개찰 예정, 전기) 중 예측 없음
+{
+  const A = (o) => ({ group: "target", status: STATUS.NONE, trades: ["elec"], ...o });
+  const rows = [A({}), A({}), A({ status: STATUS.PRED_FILE }), A({ group: "general" }), A({ status: STATUS.CLOSED }), A({ trades: ["comm"] })];
+  if (countTodayActions(rows) !== 2) { console.error(`XX countTodayActions: got ${countTodayActions(rows)} expect 2`); bad++; }
+  if (countTodayActions([]) !== 0 || countTodayActions(null) !== 0) { console.error("XX countTodayActions 빈 입력"); bad++; }
+}
 
 console.log(bad === 0 ? "OK todayNotices" : `FAIL ${bad}`);
 process.exit(bad === 0 ? 0 : 1);

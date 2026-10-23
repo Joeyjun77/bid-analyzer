@@ -9,6 +9,7 @@ import { calcEffectiveFloorRate, formatFloorDual } from "../lib/effectiveFloor.j
 import { resolvePcDist, pcWinRateOf, PC_GRAIN_LABELS } from "../lib/participantCount.js";
 import { predConfidenceV2 } from "../lib/predConfidence.js";
 import { agencyRecentHistory } from "../lib/bidCard.js";
+import { bidVerdict } from "../lib/rec1stPossible.js";
 import ParticipantMatrixModal from "./ParticipantMatrixModal.jsx";
 
 const RED = "#e24b4a", GREEN = "#5dca96", GOLD = C.gold;
@@ -38,10 +39,11 @@ export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accur
   const hist = agencyRecentHistory(recs, ag, 20);
   const recP100 = r.adj != null ? 100 + Number(r.adj) : null;
   const inRange = recP100 != null && hist.p25 != null ? recP100 >= hist.p25 && recP100 <= hist.p75 : null;
-  // 개찰 후 결과 — 옛 상세 모달과 같은 판정(추천 투찰금 vs 실제 1위 금액·하한선)
-  const ab = Number(d.actual_bid_amount) || null, axp = Number(d.actual_expected_price) || null;
-  const floorLine = axp ? (av > 0 ? av + (axp - av) * fr / 100 : axp * fr / 100) : null;
-  const result = d.match_status === "matched" && ab && r.bid ? (r.bid > ab ? "1위보다 높음" : floorLine && r.bid < floorLine ? "하한 미달" : "1위 가능 금액") : null;
+  // 개찰 후 결과 — 매칭된 낙찰 기록의 실제 1위 금액·하한가로 판정(서버 rec_1st_possible과 같은 정의, 동액은 1위 아님)
+  const ab = Number(d.actual_bid_amount) || null;
+  const matched = d.match_status === "matched" && ab;
+  const verdict = matched && r.bid ? bidVerdict(r.bid, (recs || []).find(x => x.id === d.matched_record_id)) : null;
+  const result = verdict ? { possible: "1위 가능 금액", above: "1위보다 높음", below_floor: "하한 미달" }[verdict] : null;
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -57,9 +59,9 @@ export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accur
           <button onClick={onClose} aria-label="닫기" style={{ background: "transparent", border: "none", color: C.txd, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
         </div>
 
-        {result && (
-          <div style={{ ...box, borderColor: result === "1위 가능 금액" ? GREEN : RED, fontSize: 11, color: C.txm }}>
-            개찰 결과 — 실제 사정률 <span style={mono}>{pct4(d.actual_adj_rate)}</span> · 실제 1위 <span style={mono}>{won(ab)}</span> · 추천 투찰금 판정 <b style={{ color: result === "1위 가능 금액" ? GREEN : RED }}>{result}</b>
+        {matched && (
+          <div style={{ ...box, borderColor: !result ? C.bdr : result === "1위 가능 금액" ? GREEN : RED, fontSize: 11, color: C.txm }}>
+            개찰 결과 — 실제 사정률 <span style={mono}>{pct4(d.actual_adj_rate)}</span> · 실제 1위 <span style={mono}>{won(ab)}</span>{result && <> · 추천 투찰금 판정 <b style={{ color: result === "1위 가능 금액" ? GREEN : RED }}>{result}</b></>}
           </div>
         )}
 

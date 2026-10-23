@@ -5,6 +5,9 @@ import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import BidCard from "./components/BidCard.jsx";
 import { recOfPred } from "./lib/bidCard.js";
+import { buildTodayRows, countTodayActions } from "./lib/todayNotices.js";
+import { loadKeywords } from "./lib/eligibility.js";
+import { bidVerdict } from "./lib/rec1stPossible.js";
 import DataTab from "./components/DataTab.jsx";
 import { TOP_TABS, SUB_TABS, DEFAULT_TAB, REF_ONLY_TABS, REF_ONLY_BANNER } from "./lib/tabs.js";
 import { G2B_AUTO_SHOW, mergeAutoRows } from "./lib/g2bAuto.js";
@@ -837,6 +840,12 @@ export default function App(){
   const recOf=useCallback((p)=>recOfPred(p,{getFinal:getFinalRecommendation,adjHist,ownScore,passKeyOf,passEffFrOf,resolveAdjHistory,passProbPct,impliedAdjOfBid}),[getFinalRecommendation,adjHist,ownScore]);
   // G2B 양식·투찰 카드 1위 이력 전용 목록(자동 수집 행 합침). 예측 입력(adjHist·pcDistMap·refreshStats·recOf)은 recs 그대로 — 여기 넘기면 저장 예측값이 바뀐다.
   const g2bRecs=useMemo(()=>mergeAutoRows(recs,g2bAuto),[recs,g2bAuto]);
+  // 개찰 판정(✓/✗)은 매칭된 낙찰 기록의 실제 1위 금액·하한가로 — 서버 rec_1st_possible과 같은 정의(bidVerdict)
+  const recById=useMemo(()=>new Map(recs.map(r=>[r.id,r])),[recs]);
+  // 오늘의 공고 배지 = 탭 기본 화면(관내·소경쟁·개찰 예정·전기) 중 예측 없는 공고 수. NoticesTab과 같은 입력으로 계산
+  const todayBadge=useMemo(()=>{const nowIso=new Date().toISOString();const today=new Date().toLocaleDateString("sv-SE");
+    const pcOf=({at,ag,amount})=>pcDistMap&&at&&amount?resolvePcDist(pcDistMap,{at,canonicalAg:normalizeAgencyName(ag),ba:amount}):null;
+    return countTodayActions(buildTodayRows({notices,predictions,keywords:loadKeywords(),pcOf,nowIso,today}))},[notices,predictions,pcDistMap]);
   const todayRecMap=useMemo(()=>{
     const m={};
     predictions.forEach(p=>{if(p&&p.match_status!=="matched")m[p.id]=recOf(p)});
@@ -1058,7 +1067,7 @@ export default function App(){
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:0,flexWrap:"wrap",alignItems:"center"}}>
-          {TOP_TABS.map(t=><Tb key={t.id} id={t.id} ch={t.ch} badge={t.id==="predict"?compStats.pending:t.id==="notices"?(notices.filter(n=>n.is_target&&!n.prediction_id).length||0):undefined}/>)}
+          {TOP_TABS.map(t=><Tb key={t.id} id={t.id} ch={t.ch} badge={t.id==="predict"?compStats.pending:t.id==="notices"?todayBadge:undefined}/>)}
           {/* 보조 메뉴 접기 — 접힌 상태에서도 활성 탭은 노출 유지 */}
           {(()=>{
             const shown=moreTabs?SUB_TABS:SUB_TABS.filter(s=>s.id===tab);
@@ -1255,7 +1264,7 @@ export default function App(){
                 const finalRec=getFinalRecommendation(p);
                 const finalAdj=finalRec.adj;const finalBid=finalRec.bid;
                 const actBr1=p.matched_record_id!=null?(recBr1.get(p.matched_record_id)??null):null;
-                const optWin=finalBid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(finalBid)<=Number(p.actual_bid_amount)&&Number(finalBid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
+                const optVerdict=bidVerdict(finalBid,recById.get(p.matched_record_id));
                 return{
                   "공고명":p.pn||"",
                   "공고번호":p.pn_no||"",
@@ -1284,7 +1293,7 @@ export default function App(){
                   "실제1위업체":p.actual_winner||"",
                   "참여업체수":p.actual_participant_count||"",
                   "매칭상태":p.match_status||"",
-                  "낙찰가능":p.match_status==="matched"?(optWin?"✓":"✗"):""
+                  "낙찰가능":p.match_status==="matched"&&optVerdict?(optVerdict==="possible"?"✓":"✗"):""
                 }});
               XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(data),"예측내역");XLSX.writeFile(wb,"예측내역_"+new Date().toISOString().slice(0,10)+".xlsx")
             }} style={{padding:"4px 10px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txm,cursor:"pointer"}}>엑셀</button>
@@ -1366,7 +1375,8 @@ export default function App(){
               const optErr=(finalAdj!=null&&actBr1!=null)?(100+Number(finalAdj))-actBr1:null;
               const isAnomaly=optErr!=null&&Math.abs(optErr)>5;
               const errColor=isAnomaly?"#e24b4a":optErr!=null?(Math.abs(optErr)<0.3?"#5dca96":Math.abs(optErr)<1?"#d4a834":"#e24b4a"):C.txd;
-              const canWin=!isAnomaly&&finalBid!=null&&p.actual_bid_amount!=null&&p.actual_expected_price!=null&&p.pred_floor_rate!=null&&Number(finalBid)<=Number(p.actual_bid_amount)&&Number(finalBid)>=Number(p.actual_expected_price)*Number(p.pred_floor_rate)/100;
+              const verdict=bidVerdict(finalBid,recById.get(p.matched_record_id)); // null = 낙찰 기록 없음·하한가 없음 → 칸 비움
+              const canWin=!isAnomaly&&verdict==="possible";
               const isYuchal=p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)");
               // 수의계약: is_negotiation 플래그 기준 (복수예가 메커니즘 미적용)
               const isSuui=!isYuchal&&p.is_negotiation===true&&p.actual_adj_rate==null;
@@ -1399,7 +1409,7 @@ export default function App(){
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:"#5dca96"}} title="발주처사정율(ar1 = 예가/기초)">
                   {agAr1!=null?agAr1.toFixed(4)+"%":<span style={{color:C.txd,fontSize:10}}>—</span>}</td>
                 <td style={{padding:"6px",textAlign:"center"}}>{isYuchal?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(226,75,74,0.1)",color:"#e24b4a"}}>유찰</span>:isSuui?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(212,168,52,0.15)",color:"#d4a834"}}>수의</span>:isDataWait?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(138,147,168,0.15)",color:"#8a93a8"}}>데이터대기</span>:isCanc?<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(192,128,64,0.15)",color:"#c08040"}}>취소</span>:<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:p.match_status==="matched"?"rgba(93,202,165,0.15)":"rgba(226,75,74,0.15)",color:p.match_status==="matched"?"#5dca96":"#e24b4a"}}>{p.match_status==="matched"?"매칭":"대기"}</span>}</td>
-                <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"&&!isYuchal&&!isSuui&&!isDataWait?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
+                <td style={{padding:"6px",textAlign:"center"}}>{p.match_status==="matched"&&!isYuchal&&!isSuui&&!isDataWait&&verdict?(canWin?<span style={{fontSize:9,padding:"1px 5px",borderRadius:3,background:"rgba(93,202,165,0.15)",color:"#5dca96"}}>✓</span>:<span style={{fontSize:9,color:C.txd}}>✗</span>):""}</td>
                 <td style={{padding:"6px",textAlign:"center"}}><button onClick={()=>setCardPredId(p.id)} style={{padding:"2px 8px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.25)",borderRadius:4,color:"#a8b4ff",cursor:"pointer"}}>상세</button></td>
               </tr>})}</tbody>
           </table>
