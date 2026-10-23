@@ -6,6 +6,8 @@ import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import BidCard from "./components/BidCard.jsx";
 import { recOfPred } from "./lib/bidCard.js";
+import DataTab from "./components/DataTab.jsx";
+import { TOP_TABS, SUB_TABS, DEFAULT_TAB, REF_ONLY_TABS, REF_ONLY_BANNER } from "./lib/tabs.js";
 import { G2B_AUTO_SHOW, mergeAutoRows } from "./lib/g2bAuto.js";
 import { sbFetchG2BAuto } from "./lib/supabase.js";
 import PerformanceTab from "./components/PerformanceTab.jsx";
@@ -14,12 +16,12 @@ import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
 import G2BSheetTab from "./components/G2BSheetTab.jsx";
 import OwnScoreInput from "./components/OwnScoreInput.jsx";
 import { calcEffectiveFloorRate, parseOwnScore } from "./lib/effectiveFloor.js";
-import { clean, tc, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendMain, recommendV2, baSegOf, predConfidence, predConfidenceV2 } from "./lib/utils.js";
+import { clean, tc, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendMain, recommendV2, baSegOf, predConfidence, predConfidenceV2 } from "./lib/utils.js";
 import { resolveMode } from "./lib/modeResolver.js";
 import { floorModeOf, riskColor, riskLabel } from "./lib/floorRisk.js";
 import { buildAdjHistory, resolveAdjHistory, impliedAdjOfBid, passProbPct, passRiskSnapshot } from "./lib/passProb.js";
 import { buildPcDistMap, resolvePcDist, pcBucketOf, pcColor, pcSnapshot, PC_GRAIN_LABELS } from "./lib/participantCount.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbRefreshParticipantDistFor, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyPredictor, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbRefreshParticipantDistFor, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyPredictor, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
 import { sbFetchAllCached } from "./lib/bidCache.js";
 import { useAuth, getSession } from "./auth.js";
 
@@ -340,7 +342,7 @@ function AgencyFloorTab(){
 // ═══════════════════════════════════════════════════════════
 export default function App(){
   const{isAdmin}=useAuth();
-  const[tab,setTab]=useState("dash");
+  const[tab,setTab]=useState(DEFAULT_TAB);
   const[moreTabs,setMoreTabs]=useState(false); // 보조 메뉴(피드백·검증·V6·하한·V2) 접기 — 자주 쓰는 5개만 기본 노출
   const[recs,setRecs]=useState([]);
   const[allS,setAllS]=useState({ts:{},as:{}});const[newS,setNewS]=useState({ts:{},as:{}});const[oldS,setOldS]=useState({ts:{},as:{}});
@@ -384,8 +386,6 @@ export default function App(){
   const[hideSuui,setHideSuui]=useState(true); // 수의계약 건 숨김 (기본 ON)
   const[bidDetails,setBidDetails]=useState([]);
   const[agAss,setAgAss]=useState({});
-  const[simResult,setSimResult]=useState(null);
-  const[expandedDetail,setExpandedDetail]=useState(null);
   const[cardPredId,setCardPredId]=useState(null); // 투찰 카드로 연 예측 id (P3)
   const[g2bAgency,setG2bAgency]=useState(""); // 카드 → G2B 양식 이동 시 선택할 발주처
   // ★ v7-ops-4B: 모델 검증 탭 데이터
@@ -590,7 +590,7 @@ export default function App(){
 
   // DB 로드
   useEffect(()=>{(async()=>{
-    try{const rows=await sbFetchAllCached();setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows));if(rows.length>0)setTab("dash")}catch(e){setMsg({type:"err",text:"DB 로드 실패: "+e.message})}
+    try{const rows=await sbFetchAllCached();setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows))}catch(e){setMsg({type:"err",text:"DB 로드 실패: "+e.message})}
     try{const preds=await sbFetchPredictions();setPredictions(preds||[]);
       const g2bP=(preds||[]).filter(p=>p.source==="g2b_auto"&&p.created_at);
       if(g2bP.length>0){const lat=g2bP.reduce((a,b)=>a.created_at>b.created_at?a:b);setLastG2bAt(lat.created_at)}
@@ -668,7 +668,6 @@ export default function App(){
             }
             catch(e){console.warn("참여업체 저장 실패:",e.message);}
           }
-          const sim=simDraws(detail.pre_rates);setSimResult(sim);
           logs.push({name:file.name,type:"ok",text:`[상세] ${detail.ag} | 예가15개 + 참여${detail.participant_count}건`});
           setUploadLog([...logs]);continue}
         // 2) 입찰서류함 (기초금액/추정가격 컬럼이 있는 경우) → 예측으로 처리
@@ -808,10 +807,8 @@ export default function App(){
 
   // 삭제
   const selCount=Object.keys(sel).filter(k=>sel[k]).length;
-  const[delConfirm,setDelConfirm]=useState("");
   const doDelete=useCallback(async()=>{
-    if(dlgType==="all"&&delConfirm!=="삭제")return;
-    setBusy(true);try{if(dlgType==="all"){await sbDeleteAll();setRecs([]);refreshStats([]);setDataStatus(null);setMsg({type:"ok",text:"전체 삭제 완료"})}else if(dlgType==="sel"){const ids=Object.keys(sel).filter(k=>sel[k]).map(Number);await sbDeleteIds(ids);setRecs(prev=>{const next=prev.filter(r=>!sel[r.id]);refreshStats(next);setDataStatus(calcDataStatus(next));return next});setMsg({type:"ok",text:`${ids.length}건 삭제`});setSel({})}}catch(e){setMsg({type:"err",text:"삭제 실패"})}setDlgType("");setDelConfirm("");setBusy(false)},[dlgType,sel,refreshStats,delConfirm]);
+    setBusy(true);try{if(dlgType==="sel"){const ids=Object.keys(sel).filter(k=>sel[k]).map(Number);await sbDeleteIds(ids);setRecs(prev=>{const next=prev.filter(r=>!sel[r.id]);refreshStats(next);setDataStatus(calcDataStatus(next));return next});setMsg({type:"ok",text:`${ids.length}건 삭제`});setSel({})}}catch(e){setMsg({type:"err",text:"삭제 실패"})}setDlgType("");setBusy(false)},[dlgType,sel,refreshStats]);
 
   // 파생 데이터
   const curSt=eF==="new"?newS:eF==="old"?oldS:allS;
@@ -1003,32 +1000,6 @@ export default function App(){
     return<th style={{padding:"8px 4px",textAlign:align||"left",color:active?C.gold:C.txm,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11,cursor:"pointer",userSelect:"none",...sx}}
       onClick={()=>{setCurrent(prev=>prev.key===sortKey?{key:sortKey,dir:prev.dir==="asc"?"desc":"asc"}:{key:sortKey,dir:"desc"});setDataPage(0)}}>{label}{arrow}</th>};
 
-  // 시뮬레이션 인라인 뷰 컴포넌트
-  const SimView=({sim})=>{
-    if(!sim)return null;
-    return<div style={{padding:"12px 14px",background:"rgba(168,180,255,0.05)",border:"1px solid rgba(168,180,255,0.15)",borderRadius:8,marginTop:8,fontSize:12}}>
-      <div style={{fontWeight:600,color:"#a8b4ff",marginBottom:8}}>추첨 시뮬레이션 ({sim.total}가지)</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:8}}>
-        {[{l:"P10",v:sim.p10},{l:"P25",v:sim.p25},{l:"중앙값",v:sim.p50},{l:"P75",v:sim.p75},{l:"P90",v:sim.p90}].map((s,i)=>
-          <div key={i} style={{background:C.bg3,borderRadius:6,padding:"6px",textAlign:"center"}}>
-            <div style={{fontSize:10,color:C.txd}}>{s.l}</div>
-            <div style={{fontSize:14,fontWeight:600,color:i===2?"#a8b4ff":C.txt}}>{(100+s.v).toFixed(4)}%</div>
-          </div>)}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:8}}>
-        <div style={{background:C.bg3,borderRadius:6,padding:"5px",textAlign:"center"}}><div style={{fontSize:10,color:C.txd}}>음수 확률</div><div style={{fontWeight:600,color:sim.negPct>50?"#e24b4a":"#5dca96"}}>{sim.negPct}%</div></div>
-        <div style={{background:C.bg3,borderRadius:6,padding:"5px",textAlign:"center"}}><div style={{fontSize:10,color:C.txd}}>-0.5% 이하</div><div style={{fontWeight:600,color:sim.belowMinus05>30?"#e24b4a":"#d4a834"}}>{sim.belowMinus05}%</div></div>
-        <div style={{background:C.bg3,borderRadius:6,padding:"5px",textAlign:"center"}}><div style={{fontSize:10,color:C.txd}}>-1.0% 이하</div><div style={{fontWeight:600,color:sim.belowMinus10>15?"#e24b4a":"#5dca96"}}>{sim.belowMinus10}%</div></div>
-      </div>
-      <div style={{display:"flex",alignItems:"flex-end",gap:2,height:50}}>
-        {Object.entries(sim.hist).sort((a,b)=>parseFloat(a[0])-parseFloat(b[0])).map(([k,v])=>{
-          const pct=v/sim.total*100;const h=Math.max(2,pct/25*50);
-          return<div key={k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
-            <div style={{width:"100%",height:h,background:parseFloat(k)<0?"rgba(226,75,74,0.5)":"rgba(93,202,165,0.5)",borderRadius:"2px 2px 0 0"}}/>
-            <div style={{fontSize:8,color:C.txd}}>{k}</div>
-          </div>})}
-      </div>
-    </div>};
 
   return(<div style={{fontFamily:"system-ui,sans-serif",background:C.bg,color:C.txt,minHeight:"100vh",fontSize:13}}>
     {/* ★ 전체 로딩 오버레이 */}
@@ -1046,13 +1017,12 @@ export default function App(){
       </div>
     </div>}
     {/* 삭제 다이얼로그 */}
-    {dlgType&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.6)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>{setDlgType("");setDelConfirm("")}}><div onClick={e=>e.stopPropagation()} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:24,maxWidth:380,width:"90%"}}>
-      <div style={{fontSize:14,fontWeight:600,color:"#e24b4a",marginBottom:8}}>{dlgType==="sel"?selCount+"건 삭제":"전체 삭제"}</div>
+    {dlgType&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.6)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setDlgType("")}><div onClick={e=>e.stopPropagation()} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:24,maxWidth:380,width:"90%"}}>
+      <div style={{fontSize:14,fontWeight:600,color:"#e24b4a",marginBottom:8}}>{selCount}건 삭제</div>
       <div style={{fontSize:12,color:C.txm,marginBottom:12}}>DB에서 영구 삭제됩니다. 복구할 수 없습니다.</div>
-      {dlgType==="all"&&<div style={{marginBottom:12}}><div style={{fontSize:11,color:C.txd,marginBottom:4}}>확인: <span style={{color:"#e24b4a",fontWeight:600}}>"삭제"</span> 입력</div><input value={delConfirm} onChange={e=>setDelConfirm(e.target.value)} placeholder="삭제" style={{...inpS,borderColor:"#e24b4a44"}}/></div>}
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-        <button onClick={()=>{setDlgType("");setDelConfirm("")}} style={{padding:"7px 16px",background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,fontSize:12,cursor:"pointer"}}>취소</button>
-        <button onClick={doDelete} disabled={busy||(dlgType==="all"&&delConfirm!=="삭제")} style={{padding:"7px 16px",background:dlgType==="all"&&delConfirm!=="삭제"?"#555":"#e24b4a",border:"none",borderRadius:5,color:"#fff",fontSize:12,fontWeight:600,cursor:dlgType==="all"&&delConfirm!=="삭제"?"not-allowed":"pointer"}}>{busy?"처리중...":"삭제 실행"}</button>
+        <button onClick={()=>setDlgType("")} style={{padding:"7px 16px",background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,fontSize:12,cursor:"pointer"}}>취소</button>
+        <button onClick={doDelete} disabled={busy} style={{padding:"7px 16px",background:"#e24b4a",border:"none",borderRadius:5,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>{busy?"처리중...":"삭제 실행"}</button>
       </div></div></div>}
 
     {/* 헤더 + 3탭 (sticky 고정) */}
@@ -1111,114 +1081,7 @@ export default function App(){
     <div style={{maxWidth:tab==="g2b_sheet"?1480:1300,margin:"0 auto",padding:"16px 16px"}}>
 
     {/* ═══ 대시보드 탭 ═══ */}
-    {tab==="dash"&&<div>
-      {/* 시스템 버전 배너 */}
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",marginBottom:12,background:"rgba(0,0,0,0.18)",border:"1px solid "+C.bdr,borderRadius:8,fontSize:11,flexWrap:"wrap"}}>
-        <span style={{fontWeight:700,color:C.gold,letterSpacing:0.5}}>bid-analyzer</span>
-        <span style={{color:C.bdr}}>|</span>
-        <span style={{color:C.txd}}>투찰 결정 가이드</span>
-        <span style={{padding:"1px 7px",borderRadius:4,background:"rgba(93,202,165,0.15)",color:"#5dca96",fontWeight:700,fontFamily:"monospace"}}>v6</span>
-        <span style={{color:C.txd,fontSize:10}}>opt_adj + 동적 편향 보정 · 메인</span>
-        <span style={{color:C.bdr}}>|</span>
-        <span style={{color:C.txd}}>1순위 후보권 타깃팅</span>
-        <span style={{padding:"1px 7px",borderRadius:4,background:"rgba(59,130,246,0.18)",color:"#93c5fd",fontWeight:700,fontFamily:"monospace"}}>v7.2</span>
-        <span style={{color:C.txd,fontSize:10}}>3D 캘리브레이션 + 확률 분포 3종 · 진입률 69%/84.1%</span>
-      </div>
-      {/* 드롭존 */}
-      <div style={{border:`2px dashed ${drag?C.gold:C.bdr}`,borderRadius:10,padding:"20px",textAlign:"center",cursor:busy?"default":"pointer",background:drag?"rgba(212,168,52,0.04)":"transparent",marginBottom:16}}
-        onDrop={e=>{e.preventDefault();setDrag(false);if(!busy)loadFiles(e.dataTransfer.files)}} onDragOver={e=>{e.preventDefault();if(!busy)setDrag(true)}} onDragLeave={()=>setDrag(false)}
-        onClick={()=>{if(!busy)document.getElementById("fi").click()}}>
-        <input id="fi" type="file" accept=".xls,.xlsx" multiple style={{display:"none"}} onChange={e=>{if(e.target.files?.length){loadFiles(e.target.files);e.target.value=""}}}/>
-        {busy?<div style={{color:C.gold,fontSize:14}}>처리 중...</div>:<>
-          <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>파일을 드래그하거나 클릭하세요</div>
-          <div style={{fontSize:11,color:C.txd}}>낙찰정보리스트 / SUCVIEW 상세 / 입찰서류함 — 자동 판별</div>
-          {dbLoading&&<div style={{marginTop:8,fontSize:11,color:C.txd}}>DB 연결 중...</div>}
-        </>}
-      </div>
-      {uploadLog.length>0&&<div style={{marginBottom:12}}>{uploadLog.map((l,i)=><div key={i} style={{padding:"6px 12px",fontSize:12,color:l.type==="ok"?"#5ca":l.type==="warn"?"#d4a834":"#e55",borderBottom:"1px solid "+C.bdr}}>{l.type==="ok"?"✓":l.type==="warn"?"⚠":"✕"} {l.name} — {l.text}</div>)}</div>}
-
-      {/* 요약 카드 5개 */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:16}}>
-        {[
-          {l:"낙찰 데이터",v:recs.length.toLocaleString(),s:dataStatus?.latestDate?"최신 "+dataStatus.latestDate:"",c:C.txt},
-          {l:"상세 데이터",v:String(bidDetails.length),s:bidDetails.length+"건 · "+new Set(bidDetails.map(d=>d.at)).size+"유형",c:"#a8b4ff"},
-          {l:"모델 MAE",v:compStats.matched>0?compStats.avgErr.toFixed(2)+"%":"—",s:compStats.matched+"건 매칭 · 적중 "+compStats.within05,c:"#d4a834"},
-          {l:"예측 대기",v:String(compStats.pending),s:compStats.pending>0?"낙찰리스트 필요":"완료",c:compStats.pending>0?"#e24b4a":"#5dca96"},
-          {l:"비정상",v:String(abnormalStats.total),s:"유찰"+abnormalStats.yuchal+" 내역"+abnormalStats.broken+" 이상"+abnormalStats.outlier,c:abnormalStats.total>0?"#666680":"#5dca96"}
-        ].map((c,i)=><div key={i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"10px 8px",textAlign:"center",cursor:"pointer"}} onClick={()=>{if(i<=1)setTab("analysis");if(i>=2&&i<=3)setTab("predict")}}>
-          <div style={{fontSize:10,color:C.txd,marginBottom:3}}>{c.l}</div>
-          <div style={{fontSize:18,fontWeight:600,color:c.c}}>{c.v}</div>
-          <div style={{fontSize:9,color:C.txd,marginTop:2}}>{c.s}</div>
-        </div>)}
-      </div>
-
-      {/* Phase 5.4-B: Claude AI는 Supabase Edge Function 프록시 경유 — 키 입력 불필요 */}
-
-      {/* Phase 5.2: 만료 경고 카드 (낙찰결과 미업로드 유도) */}
-      {compStats.expired>0&&<div style={{background:"linear-gradient(135deg, rgba(226,75,74,0.08), rgba(212,168,52,0.04))",border:"1px solid rgba(226,75,74,0.3)",borderRadius:8,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={()=>{setTab("predict");setCompFilter("expired")}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:16}}>⚠️</span>
-          <div>
-            <div style={{fontSize:12,fontWeight:600,color:"#e24b4a"}}>검증 만료 {compStats.expired}건</div>
-            <div style={{fontSize:10,color:C.txm,marginTop:2}}>60일 이상 경과 + 낙찰결과 미업로드 — 낙찰정보리스트를 업로드하면 매트릭스가 자동 재학습됩니다</div>
-          </div>
-        </div>
-        <span style={{fontSize:11,color:"#e24b4a",fontWeight:600}}>확인 →</span>
-      </div>}
-
-      {bidDetails.length>0&&<div style={{marginBottom:16}}>
-        <div style={{fontSize:13,fontWeight:600,color:C.gold,marginBottom:8}}>복수예가 상세 데이터 ({bidDetails.length}건)</div>
-        {/* 기관유형별 요약 */}
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-          {Object.entries(bidDetails.reduce((m,d)=>{m[d.at]=(m[d.at]||0)+1;return m},{})).sort((a,b)=>b[1]-a[1]).map(([t,n])=>
-            <span key={t} style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(168,180,255,0.1)",color:"#a8b4ff",border:"1px solid rgba(168,180,255,0.15)"}}>{t} {n}건</span>)}
-        </div>
-        {/* 최근 5건만 표시 */}
-        {bidDetails.slice(0,5).map((d,i)=><div key={d.id||i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,marginBottom:6,overflow:"hidden"}}>
-          <div style={{padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
-            onClick={()=>setExpandedDetail(expandedDetail===d.pn_no?null:d.pn_no)}>
-            <div style={{display:"flex",gap:8,alignItems:"center",flex:1,minWidth:0}}>
-              <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:"rgba(168,180,255,0.15)",color:"#a8b4ff",flexShrink:0}}>상세</span>
-              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12,fontWeight:500}}>{d.ag} — {(d.pn||"").length>40?(d.pn||"").slice(0,40)+"…":d.pn}</span>
-            </div>
-            <div style={{fontSize:11,color:C.txd,flexShrink:0,marginLeft:8}}>{d.od} <span style={{color:"#a8b4ff"}}>{expandedDetail===d.pn_no?"접기":"펼치기"}</span></div>
-          </div>
-          <div style={{padding:"0 14px 8px",display:"flex",gap:12,fontSize:11,color:C.txm}}>
-            <span>기초 {d.ba?tc(d.ba):""}</span>
-            <span>사정율 <span style={{color:"#5dca96"}}>{d.adj_rate!=null?(100+Number(d.adj_rate)).toFixed(4)+"%":""}</span></span>
-            <span>참여 {d.participant_count}건</span>
-          </div>
-          {expandedDetail===d.pn_no&&<div style={{borderTop:"1px solid "+C.bdr,padding:"12px 14px",background:"#0e0e22"}}>
-            <SimView sim={simDraws(d.pre_rates)}/>
-          </div>}
-        </div>)}
-      </div>}
-
-      {/* SUCVIEW 업로드 직후 시뮬레이션 */}
-      {simResult&&bidDetails.length===0&&<SimView sim={simResult}/>}
-
-      {/* 최근 활동 */}
-      {(dataStatus||compStats.matched>0)&&<div>
-        <div style={{fontSize:13,fontWeight:600,color:C.gold,marginBottom:8}}>최근 활동</div>
-        <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"hidden"}}>
-          {dataStatus?.uploadTime&&<div style={{padding:"8px 12px",borderBottom:"1px solid "+C.bdr,fontSize:12,display:"flex",alignItems:"center",gap:8}}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:"#5dca96",flexShrink:0}}/>
-            <span>낙찰정보 {dataStatus.uploadBatchCount}건 업로드</span>
-            <span style={{color:C.txd,marginLeft:"auto",fontSize:10}}>{dataStatus.uploadTime?.slice(0,16).replace("T"," ")}</span>
-          </div>}
-          {bidDetails.length>0&&<div style={{padding:"8px 12px",borderBottom:"1px solid "+C.bdr,fontSize:12,display:"flex",alignItems:"center",gap:8}}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:"#a8b4ff",flexShrink:0}}/>
-            <span>SUCVIEW 상세 {bidDetails.length}건 저장</span>
-          </div>}
-          {compStats.matched>0&&<div style={{padding:"8px 12px",fontSize:12,display:"flex",alignItems:"center",gap:8}}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:"#d4a834",flexShrink:0}}/>
-            <span>{compStats.matched}건 예측 자동 매칭 (평균 오차 {compStats.avgErr.toFixed(4)}%)</span>
-          </div>}
-        </div>
-      </div>}
-
-      {recs.length>0&&<div style={{marginTop:16}}><button onClick={()=>setDlgType("all")} style={{padding:"6px 14px",background:"rgba(220,50,50,0.1)",border:"1px solid rgba(220,50,50,0.3)",borderRadius:5,color:"#e55",fontSize:11,cursor:"pointer"}}>전체 삭제 ({recs.length}건)</button></div>}
-    </div>}
+    {tab==="data"&&<DataTab busy={busy} drag={drag} setDrag={setDrag} loadFiles={loadFiles} loadPredFiles={loadPredFiles} uploadLog={uploadLog} dbLoading={dbLoading} compStats={compStats} dataStatus={dataStatus} bidDetails={bidDetails} onOpenExpired={()=>{setTab("predict");setCompFilter("expired")}}/>}
 
     {/* ═══ 분석 탭 (통계 + 데이터 통합) ═══ */}
     {tab==="analysis"&&<div>
