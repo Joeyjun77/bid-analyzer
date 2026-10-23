@@ -10,3 +10,8 @@ SELECT cron.schedule('g2b_auto_backfill_nightly', '15 20 * * *',
 -- 키 하루 한도 중 350회(daily 300 + 공고 수집 ~50)는 남겨 둔다.
 SELECT cron.alter_job((SELECT jobid FROM cron.job WHERE jobname = 'g2b_auto_backfill_nightly'), schedule := '*/20 15-21 * * *',
   command := $$ SELECT public.invoke_edge_function('fn-collect-g2b-sheet', jsonb_build_object('mode','backfill','max_calls',300,'reserve',350), 140000); $$);
+
+-- 2026-10-23 임시: 카운터 초기화(15:05 UTC) 전까지 남은 키 한도로 과거분을 앞당긴다(10/23 16:00~23:58 KST, 2분 간격, 60회 남김).
+-- 10/23에만 도는 일정. 과거분이 끝나면 cron.unschedule('g2b_auto_backfill_daytime_20261023')로 지운다.
+SELECT cron.schedule('g2b_auto_backfill_daytime_20261023', '*/2 7-14 23 10 *',
+  $$ SELECT public.invoke_edge_function('fn-collect-g2b-sheet', jsonb_build_object('mode','backfill','max_calls',300,'reserve',60), 140000); $$);
