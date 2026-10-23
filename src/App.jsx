@@ -3,9 +3,6 @@ import * as XLSX from "xlsx";
 import { C, PAGE, inpS } from "./lib/constants.js";
 import { authedFetch } from "./auth.js";
 import V2PreviewTab from "./components/V2PreviewTab.jsx";
-import ModeBadge from "./components/ModeBadge.jsx";
-import { fmtAdj as v2FmtAdj, fmtPct as v2FmtPct, fmtKRW as v2FmtKRW } from "./lib/fmtAdj.js";
-import { getMainMetricLabel, getModeNotice } from "./lib/modeResolver.js";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import BidCard from "./components/BidCard.jsx";
@@ -15,14 +12,13 @@ import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
 import G2BSheetTab from "./components/G2BSheetTab.jsx";
 import OwnScoreInput from "./components/OwnScoreInput.jsx";
-import { calcEffectiveFloorRate, formatFloorDual, parseOwnScore } from "./lib/effectiveFloor.js";
+import { calcEffectiveFloorRate, parseOwnScore } from "./lib/effectiveFloor.js";
 import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendMain, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH, predConfidence, predConfidenceV2 } from "./lib/utils.js";
 import { resolveMode } from "./lib/modeResolver.js";
 import { floorModeOf, riskColor, riskLabel } from "./lib/floorRisk.js";
-import { buildAdjHistory, resolveAdjHistory, impliedAdjOfBid, passProbPct, bidAtPassProb, passRiskSnapshot, SAFE_LINE_MIN_N, SAFE_LINE_Q } from "./lib/passProb.js";
-import { floorPassPct, floorPassLabel } from "./lib/floorLabels.js";
+import { buildAdjHistory, resolveAdjHistory, impliedAdjOfBid, passProbPct, passRiskSnapshot } from "./lib/passProb.js";
 import { buildPcDistMap, resolvePcDist, pcBucketOf, pcColor, pcSnapshot, PC_GRAIN_LABELS } from "./lib/participantCount.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbRefreshParticipantDistFor, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyWinStats, sbFetchAgencyPredictor, sbFetchSimulator, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchPwinCalibration, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchV72Targets, sbFetchAgencyHistMap, sbFetchV8Predictions, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbDeleteIds, sbDeleteAll, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbRefreshParticipantDistFor, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyPredictor, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
 import { sbFetchAllCached } from "./lib/bidCache.js";
 import { useAuth, getSession } from "./auth.js";
 
@@ -34,25 +30,10 @@ const passKeyOf=(x)=>({at:x.at,canonicalAg:x.canonical_ag||normalizeAgencyName(x
 const passEffFrOf=(x,ownScore)=>calcEffectiveFloorRate(x.at,eraFR(x.at,Number(x.ep)||Number(x.ba),x.open_date||new Date().toISOString().slice(0,10)),ownScore);
 
 // ─── 컴포넌트 ──────────────────────────────────────────────
-function NI({value,onChange}){return<input value={value==="0"?"0":tc(value)} onChange={e=>{const r=e.target.value.replace(/,/g,"").replace(/[^0-9]/g,"");onChange(r===""?"0":r)}} style={{...inpS,textAlign:"right",fontFamily:"monospace"}}/>}
 
 // 취소 공고 식별 — pn 텍스트에 (취소) 또는 [취소] 포함. 매칭 불가 + UI에서 "취소" 라벨로 분리 표시.
 const isCancelledPred=(p)=>!!(p&&p.pn&&/[\(\[]\s*취소\s*[\)\]]/.test(p.pn));
 
-// ★ Phase A v7 검토 (2026-04-30): v7 참고 패널 표시 토글.
-// v6는 메인 추천 그대로, v7은 read-only 비교 정보로만 노출. 핵심 영역 회귀 확인되어 메인 채택은 보류.
-// 환경변수 미설정 시 기본 true (참고 표시). 패널 자체가 부담되면 .env.local에 VITE_USE_V7=false 설정.
-const USE_V7_PANEL=(()=>{const v=import.meta.env?.VITE_USE_V7;return v==null||v===""||v==="true"||v===true})();
-// v7 신뢰도 → 4단계 tier_label 매핑 (DB v_simulator_api_v7와 동일 규칙).
-// high/medium/low + 진입확률(0~1) 임계로 결정. 진입 ≥0.6 & high → ✅, ≥0.4 → 🛡️, ≥0.25 → ⚠️, 그 외 → ⛔.
-const v7TierLabel=(conf,p1)=>{
-  const pct=p1!=null?Number(p1):null;
-  if(pct==null)return null;
-  if(conf==="high"&&pct>=0.6)return{glyph:"✅",label:"강추천",color:"#5dca96",bg:"rgba(93,202,165,0.12)"};
-  if(pct>=0.4)return{glyph:"🛡️",label:"안정권",color:"#a8b4ff",bg:"rgba(168,180,255,0.12)"};
-  if(pct>=0.25)return{glyph:"⚠️",label:"경계",color:"#d4a834",bg:"rgba(212,168,52,0.12)"};
-  return{glyph:"⛔",label:"진입난",color:"#e24b4a",bg:"rgba(226,75,74,0.12)"};
-};
 
 // 계정 배지 (헤더 우측: 이메일 + 로그아웃) — useAuth() 로 Context 에서 받음
 function UserBadge(){
@@ -102,14 +83,6 @@ function AgencyInput({value,onChange,agencies,placeholder,stats}){
 
 // ─── Phase 12-C: 발주사별 낙찰 예측 헬퍼 ──────────────────
 // 사정률(100%) 표기: br1 값 그대로 또는 (100 + 0-base사정률)
-// 0-base 사정률을 100-base로 변환
-function toP100(adj0){return adj0==null?null:(100+Number(adj0))}
-// 100-base를 문자열로 포맷 (예: 99.78%)
-function fmtP100(adj0,decimals=3){
-  const v=toP100(adj0);
-  if(v==null||isNaN(v))return"-";
-  return v.toFixed(decimals)+"%"
-}
 
 // ─── V1: 발주사 하한 예측탭 (2026-05-13) ──────────────────
 // 펼침 패널: 해당 canonical_ag의 최근 30건 + 평균/std 요약
@@ -362,74 +335,6 @@ function AgencyFloorTab(){
   </div>;
 }
 
-// 티어별 배지 스타일
-const TIER_STYLES={
-  1:{emoji:"🏆",label:"P1",color:"#e24b4a",bg:"rgba(226,75,74,0.12)",border:"#e24b4a"},
-  2:{emoji:"⭐",label:"P2",color:"#ff9933",bg:"rgba(255,153,51,0.10)",border:"#ff9933"},
-  3:{emoji:"📊",label:"P3",color:"#5b9dd9",bg:"rgba(91,157,217,0.08)",border:"#5b9dd9"},
-  4:{emoji:"⚠️",label:"P4",color:"#a8a8ff",bg:"rgba(168,168,255,0.06)",border:"#a8a8ff"},
-  5:{emoji:"⛔",label:"P5",color:"#666680",bg:"rgba(102,102,128,0.06)",border:"#666680"}
-};
-// 예측 → 발주사 평가 (tier, win_rate, confidence, recommended_offset)
-function assessPrediction(p,agencyStats,agencyPred){
-  if(!p||!p.ag)return null;
-  const s=agencyStats[p.ag];
-  const pr=agencyPred[normalizeAgencyName(p.ag)];
-  if(!s)return{tier:null,win_rate:null,confidence:0,offset:0,label:"데이터 없음",n:0};
-  return{
-    tier:Number(s.priority_tier),
-    win_rate:Number(s.theoretical_win_rate),
-    actual_win_rate:Number(s.actual_win_rate),
-    confidence:Number(s.confidence),
-    n:Number(s.n_total),
-    n_perfect:Number(s.n_perfect_win),
-    n_actual:Number(s.n_actual_win),
-    mae:Number(s.mae),
-    median_adj:Number(s.median_adj_rate), // 0-base
-    label:s.priority_label||"",
-    recommendation:s.recommendation||"",
-    offset:pr?Number(pr.effective_offset):0,
-    strategy:pr?pr.strategy:"keep_current"
-  }
-}
-// 배지 컴포넌트
-function TierBadge({tier,label,compact=false}){
-  if(!tier)return<span style={{fontSize:10,color:"#666680"}}>미분류</span>;
-  const s=TIER_STYLES[tier]||TIER_STYLES[5];
-  return<span style={{display:"inline-flex",alignItems:"center",gap:3,padding:compact?"1px 5px":"2px 7px",fontSize:compact?9:10,fontWeight:600,color:s.color,background:s.bg,border:"1px solid "+s.border+"55",borderRadius:4}}>
-    {s.emoji} {s.label}{label&&!compact?" "+label.replace(/^🏆 |^⭐ |^📊 |^⚠️ |^⛔ /,""):""}
-  </span>
-}
-// 신뢰도 바 (0~1)
-function ConfBar({confidence}){
-  const v=Math.max(0,Math.min(1,Number(confidence)||0));
-  const pct=Math.round(v*100);
-  const color=v>=0.8?"#5dca96":v>=0.5?"#d4a834":"#a8a8ff";
-  return<div style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:9,color:"#a0a0b8"}}>
-    <div style={{width:40,height:4,background:"#252540",borderRadius:2,overflow:"hidden"}}>
-      <div style={{width:pct+"%",height:"100%",background:color}}/>
-    </div>
-    <span style={{color,fontWeight:600}}>{pct}%</span>
-  </div>
-}
-// Phase 14-3: 분산 투찰 추천 뱃지
-function SplitBadge({sim,compact=false}){
-  if(!sim)return null;
-  const lbl=sim.strategy_label;
-  if(lbl==="single_only"||lbl==="no_data")return null;
-  const styles={
-    split_strong:{emoji:"🔥",text:"분산강력",color:"#e24b4a",bg:"rgba(226,75,74,0.12)",border:"#e24b4a"},
-    split_consider:{emoji:"📊",text:"분산검토",color:"#5b9dd9",bg:"rgba(91,157,217,0.10)",border:"#5b9dd9"},
-    low_sample:{emoji:"⚠",text:"샘플부족",color:"#a8a8ff",bg:"rgba(168,168,255,0.06)",border:"#a8a8ff"}
-  };
-  const s=styles[lbl];if(!s)return null;
-  const gain=Number(sim.ev_gain_eok)||0;
-  const gainStr=gain>=0.01?(gain>=1?gain.toFixed(2)+"억":(gain*10000).toFixed(0)+"만"):"";
-  const tooltip=`12-F 단독: ${(Number(sim.p_calibrated_12f)*100).toFixed(1)}%\n분산 투찰: ${(Number(sim.p_calibrated_split)*100).toFixed(1)}%\nEV 증가: +${gainStr||"미미"}\n샘플: ${sim.cat_n}건`;
-  return<span title={tooltip} style={{display:"inline-flex",alignItems:"center",gap:3,padding:compact?"1px 5px":"2px 7px",fontSize:compact?9:10,fontWeight:600,color:s.color,background:s.bg,border:"1px solid "+s.border+"55",borderRadius:4,cursor:"help"}}>
-    {s.emoji} {compact?gainStr||s.text:s.text+(gainStr?" +"+gainStr:"")}
-  </span>
-}
 
 // ═══════════════════════════════════════════════════════════
 export default function App(){
@@ -440,7 +345,6 @@ export default function App(){
   const[allS,setAllS]=useState({ts:{},as:{}});const[newS,setNewS]=useState({ts:{},as:{}});const[oldS,setOldS]=useState({ts:{},as:{}});
   const[drag,setDrag]=useState(false);const[dragPred,setDragPred]=useState(false);const[busy,setBusy]=useState(false);const[msg,setMsg]=useState({type:"",text:""});
   const[uploadLog,setUploadLog]=useState([]);const[dataStatus,setDataStatus]=useState(null);
-  const[inp,setInp]=useState({agency:"",baseAmount:"0",estimatedPrice:"0",aValue:"0"});const[pred,setPred]=useState(null);
   const[search,setSearch]=useState("");const[agSch,setAgSch]=useState("");const[eF,setEF]=useState("all");const[atF,setAtF]=useState("all");
   const[sel,setSel]=useState({});const[dlgType,setDlgType]=useState("");const[dataPage,setDataPage]=useState(0);const[dbLoading,setDbLoading]=useState(true);
   const[hideAbnormal,setHideAbnormal]=useState(false); // D-1: 비정상 데이터 필터
@@ -452,7 +356,6 @@ export default function App(){
   const[notices,setNotices]=useState([]); // 나라장터 공고 목록
   const[noticeLoadingIds,setNoticeLoadingIds]=useState(new Set()); // 예측 등록 중인 notice id
   const[noticeFilter,setNoticeFilter]=useState("upcoming"); // upcoming/all/registered
-  const[scoringMap,setScoringMap]=useState({}); // Phase 5: ROI scoring (prediction_id → grade/win_prob/...)
   const[biasMap,setBiasMapState]=useState({agency:{},at:{}}); // Phase 5.4: 편차 보정 맵
   const[predBiasMap,setPredBiasMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Phase 23-2: 동적 편향 보정 (AG×금액대 다층)
   const[accuracyMap,setAccuracyMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Track2: 실측 정확도(n/bias/mae/sd) — 신뢰도 V2 표시용
@@ -475,9 +378,6 @@ export default function App(){
   useEffect(()=>{try{localStorage.setItem(OWN_SCORE_KEY,String(ownScore));}catch{}},[ownScore]);
   const[trendMap,setTrendMapState]=useState({}); // Phase 5.4: 추세 맵
   const[claudeApiKey,setClaudeApiKey]=useState(""); // Phase 5.4-B: Edge Function 프록시 사용, 레거시 호환 유지
-  const[aiAnalysisMap,setAiAnalysisMap]=useState({}); // 예측ID → AI 분석 결과
-  const[aiLoadingPredId,setAiLoadingPredId]=useState(null);
-  const[gradeFilter,setGradeFilter]=useState("all"); // Phase 5: 등급 필터
   const[compFilter,setCompFilter]=useState("all");
   const[agFilter,setAgFilter]=useState(""); // 예측 리스트 발주기관 필터 (""=전체)
   const[predListShow,setPredListShow]=useState(50); // 리스트 표시 건수 (더보기)
@@ -487,15 +387,9 @@ export default function App(){
   const[agAss,setAgAss]=useState({});
   const[simResult,setSimResult]=useState(null);
   const[expandedDetail,setExpandedDetail]=useState(null);
-  const[simSlider,setSimSlider]=useState(0); // Phase 3: 투찰 시뮬레이터 사정률 슬라이더
   const[adjPatDec,setAdjPatDec]=useState(2); // 사정률 패턴 소수점 자릿수 (2~4)
-  const[aiAdvice,setAiAdvice]=useState("");const[aiLoading,setAiLoading]=useState(false); // Phase 4-A: AI 어드바이저
-  const[batchAi,setBatchAi]=useState({});const[batchAiLoading,setBatchAiLoading]=useState(null);const[expandedBatch,setExpandedBatch]=useState(null); // 일괄 AI
-  const[predSel,setPredSel]=useState({}); // 예측 내역 선택 삭제
   const[cardPredId,setCardPredId]=useState(null); // 투찰 카드로 연 예측 id (P3)
   const[g2bAgency,setG2bAgency]=useState(""); // 카드 → G2B 양식 이동 시 선택할 발주처
-  // ★ v7-ops-2: 전략별 Pwin 캘리브레이션 현황 (n, 실측률, fallback)
-  const[pwinCal,setPwinCal]=useState({});
   // ★ v7-ops-4B: 모델 검증 탭 데이터
   const[qualityDaily,setQualityDaily]=useState([]);
   const[weeklyQuality,setWeeklyQuality]=useState([]);
@@ -503,24 +397,10 @@ export default function App(){
   const[watchlist,setWatchlist]=useState([]);
   const[watchHistory,setWatchHistory]=useState([]);
   const[qualityLoading,setQualityLoading]=useState(false);
-  const[showSim,setShowSim]=useState(false); // 수동 시뮬레이션 토글
-  // Phase 12-C: 발주사별 낙찰 예측
-  const[agencyStats,setAgencyStats]=useState({}); // ag → {tier, win_rate, confidence, ...}
+  // 발주처 예측기 (predictV5 입력)
   const[agencyPred,setAgencyPred]=useState({}); // ag → {offset, strategy}
   const[floorBench,setFloorBench]=useState({}); // Phase 23-4: at|floor_rate → {med, n, std}
   const[win1stDistMap,setWin1stDistMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Phase 23-9: 1위 사정률 분포 다단 fallback
-  const[hideP5,setHideP5]=useState(false); // P5 (회피) 숨김 기본 OFF — 정보 제공 도구 원칙(사용자 자체 판단권 보장)
-  const[onlyPrimary,setOnlyPrimary]=useState(false); // 주력 발주사만 보기
-  // Phase 14-3: 분산 투찰 시뮬레이터 (prediction_id → {strategy_label, ev_gain_eok, ...})
-  const[simulatorMap,setSimulatorMap]=useState({});
-  // ★ v7.2: 이번 주 타깃 뷰 (pred_id → {aggressive, balanced, safe, tier, ...})
-  const[v72Map,setV72Map]=useState({});
-  // ★ v7.2: 사용자 전략 선택 (pred_id → 'aggressive'|'balanced'|'safe')
-  const[v72Selection,setV72Selection]=useState({});
-  // ★ v8: pred_id → {rate, p25, p50, p75, confidence, sampleSize, scope, source}
-  const[v8Map,setV8Map]=useState({});
-  // ★ 발주사 이력: canonical_ag → {nRaw, nFiltered, p10~p75, mean, std, latestOd, layer}
-  const[agencyHistMap,setAgencyHistMap]=useState({});
   // ★ AI 챗봇 (localStorage 세션 관리)
   const[chatSessions,setChatSessions]=useState(()=>{try{return JSON.parse(localStorage.getItem("bid_chat_sessions")||"[]")}catch(e){return[]}});
   const[chatSid,setChatSid]=useState(()=>localStorage.getItem("bid_chat_active")||"");
@@ -616,86 +496,6 @@ export default function App(){
     return{adj:null,bid:null,bid1st:null,source:null};
   },[predBiasMap,basegFinetune]);
 
-  // AI 프롬프트 생성 (공통)
-  const buildAiPrompt=(r,mode="initial")=>{
-    const p=r.pred;if(!p)return null;
-    const agType=r.at||clsAg(r.ag);const agName=r.ag||"";
-    const curStat=allS.as?.[agName];const typeStat=allS.ts?.[agType];
-    const agDets=bidDetails.filter(d=>d.ag===agName);
-    const rec=recommendAssumedAdj({at:agType,agName,ba:r.ba,ep:r.ep,av:r.av,ownScore},allS.ts,allS.as,agAss);
-    const baseInfo=`■ 입찰 정보
-- 공고명: ${(r.pn||"").slice(0,50)}
-- 발주기관: ${agName} (${agType})
-- 기초금액: ${r.ba?Number(r.ba).toLocaleString():"미입력"}원
-- 추정가격: ${r.ep?Number(r.ep).toLocaleString():"미입력"}원
-- A값: ${r.av?Number(r.av).toLocaleString()+"원":"없음"}
-- 적용 낙찰하한율: ${p.fr}%
-
-■ 예측 결과 (분석용: 사정률 예측)
-- 예측 사정률(100%): ${(100+Number(p.adj)).toFixed(4)}% (중앙값)
-- 신뢰구간 70%: ${p.ci70?(100+Number(p.ci70.low)).toFixed(4)+"% ~ "+(100+Number(p.ci70.high)).toFixed(4)+"%":"N/A"}
-- 예측 투찰금액: ${p.bid?p.bid.toLocaleString()+"원":"N/A"}
-- 근거: ${p.src}
-
-■ 추천 투찰 전략 (실전용: 가정 사정률 기반)
-- 보수적: 가정 사정률 ${(100+rec.conservative.adj).toFixed(4)}%, 투찰금액 ${rec.conservative.bid.toLocaleString()}원
-- 균형:   가정 사정률 ${(100+rec.balanced.adj).toFixed(4)}%, 투찰금액 ${rec.balanced.bid.toLocaleString()}원
-- 공격적: 가정 사정률 ${(100+rec.aggressive.adj).toFixed(4)}%, 투찰금액 ${rec.aggressive.bid.toLocaleString()}원
-- 근거: ${rec.source}
-- 탈락률 참고: ${rec.risk.note} (${rec.risk.failRate}%)
-
-■ 기관 통계 (${agType})
-- 평균 사정률(100%): ${typeStat?(100+Number(typeStat.avg)).toFixed(4)+"%":"N/A"} (${typeStat?typeStat.n+"건":"N/A"})
-- 표준편차: ${typeStat?typeStat.std.toFixed(4)+"%":"N/A"}
-${curStat?`- 발주기관 개별: 평균(100%) ${(100+Number(curStat.avg)).toFixed(4)}%, ${curStat.n}건`:"- 발주기관 개별 데이터: 없음"}
-${agDets.length>0?`- 복수예가 상세: ${agDets.length}건 보유`:""}
-
-■ 핵심 제약
-- 복수예비가격 C(15,4) 추첨의 노이즈 바닥 = 0.642%
-- 1순위 업체의 낙찰하한율 대비 마진: 중앙값 0.5%`;
-
-    if(mode==="post"&&r.actual!=null){
-      const err=r.actual-p.adj;const errDir=err>0?"높게":"낮게";
-      const matchedRec=r.matchedRecord||{};
-      const optAdj=p.optAdj!=null?p.optAdj:p.adj;
-      const optBid=p.optBid||p.bid;
-      const marginWon=matchedRec.bp?Number(matchedRec.bp)-optBid:null;
-      const marginPct=marginWon&&matchedRec.bp?marginWon/Number(matchedRec.bp)*100:null;
-      const epN=r.ep||r.ba||0;
-      const tierPct=epN<1e8?"1.8%":epN<3e8?"4.5%":epN<1e9?"8.8%":"12.0%";
-      return`당신은 한국 공공조달 입찰 전문가 AI입니다. 이 입찰건은 이미 개찰이 완료되어 실제 결과가 확인되었습니다. 예측과 실제의 차이를 분석하고, 향후 유사건에 대한 교훈을 300자 이내로 정리해주세요.
-
-${baseInfo}
-
-■ 실제 결과 (개찰 완료)
-- 실제 사정률(100%): ${(100+Number(r.actual)).toFixed(4)}%
-- 예측 오차: ${err>=0?"+":""}${err.toFixed(4)}% (예측이 실제보다 ${Math.abs(err).toFixed(4)}% ${errDir} 예측)
-- 추천 사정률(100%): ${(100+optAdj).toFixed(4)}% / 추천 투찰금액: ${optBid.toLocaleString()}원
-${matchedRec.co?`- 1순위 업체: ${matchedRec.co}`:""}
-${matchedRec.pc?`- 참여업체 수: ${matchedRec.pc}개사`:""}
-${matchedRec.bp?`- 1순위 투찰금액: ${Number(matchedRec.bp).toLocaleString()}원`:""}
-${marginWon!=null?`- 1순위 대비 마진: ${marginWon>=0?"+":""}${Math.round(marginWon).toLocaleString()}원 (${marginPct>=0?"+":""}${marginPct.toFixed(3)}%) → ${marginWon>=0?"낙찰 가능":"낙찰 불가"}`:""}
-- 금액대 기대 낙찰률: ${tierPct} (722건 백테스트)
-
-위 정보를 바탕으로:
-1. 예측 오차의 원인 분석 (기관 특성, 복수예가 추첨 변동성, 데이터 부족 등)
-2. ${marginWon!=null&&marginWon<0&&Math.abs(marginPct)<0.5?"이 건은 0.5% 이내로 아깝게 놓친 건입니다. 다음 투찰 시 더 적극적 접근이 유리했을지 분석해주세요.":"이 기관의 향후 입찰에 적용할 수 있는 교훈 한 가지"}
-3. 전략 보정 제안: 이 기관에서는 추천 사정률을 더 낮출지/유지할지/높일지`}
-
-    return`당신은 한국 공공조달 입찰 전문가 AI입니다. 다음 입찰건에 대해 맞춤형 투찰 전략을 200자 이내로 간결하게 조언해주세요.
-
-${baseInfo}
-
-위 정보를 바탕으로:
-1. 이 입찰건의 특성과 리스크를 한 줄로 요약
-2. 추천 투찰 전략 (보수/균형/공격 중)과 그 이유 — 예측 투찰금액과 추천 투찰금액 차이도 언급
-3. 투찰 시 유의사항 한 가지`};
-  const callAi=async(prompt)=>{
-    const _sess=getSession();
-    const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":_sess?.access_token?`Bearer ${_sess.access_token}`:""},
-      body:JSON.stringify({systemBase:buildChatSystem(),messages:[{role:"user",content:prompt}]})});
-    if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.error?.message||err.error||`API ${res.status}`)}
-    const data=await res.json();return data.content?.map(c=>c.text||"").join("")||"응답 없음"};
 
   // ★ AI 챗봇 시스템 프롬프트 (현재 데이터 통계 동적 포함)
   const buildChatSystem=()=>{
@@ -818,34 +618,18 @@ ${baseInfo}
     try{const fb=await sbFetchFloorBench();if(fb)setFloorBench(fb)}catch(e){}
     try{const wd=await sbFetchWin1stDistMap();if(wd)setWin1stDistMap(wd)}catch(e){}
     try{const bf=await sbFetchBasegFinetune();if(bf)setBasegFinetune(bf)}catch(e){}
-    // Phase 12-C: 발주사별 낙찰 예측 데이터 로드
+    // 발주처 예측기 — predictV5 입력(Generator)이라 유지
     try{
-      const [aws,apr]=await Promise.all([sbFetchAgencyWinStats(),sbFetchAgencyPredictor()]);
-      const awsMap={};(aws||[]).forEach(r=>{awsMap[r.ag]=r});setAgencyStats(awsMap);
+      const apr=await sbFetchAgencyPredictor();
       const aprMap={};(apr||[]).forEach(r=>{aprMap[r.ag]=r});setAgencyPred(aprMap);
-    }catch(e){setAgencyStats({});setAgencyPred({})}
-    // Phase 14-3: 분산 투찰 시뮬레이터 데이터 로드
-    try{
-      const sim=await sbFetchSimulator();
-      const simMap={};(sim||[]).forEach(r=>{simMap[r.prediction_id]=r});setSimulatorMap(simMap);
-    }catch(e){setSimulatorMap({})}
+    }catch(e){setAgencyPred({})}
     // 나라장터 공고 로드
     try{const nots=await sbFetchNotices();setNotices(nots||[])}catch(e){setNotices([])}
-    // ★ v7.2: 이번 주 타깃 뷰 로드 (pred_id → 3종 추천 맵)
-    try{const v72=await sbFetchV72Targets();setV72Map(v72||{})}catch(e){setV72Map({})}
-    // ★ v8: 전체 예측 v8 사정률 맵 로드
-    try{const v8=await sbFetchV8Predictions();setV8Map(v8||{})}catch(e){setV8Map({})}
     setDbLoading(false)
   })()},[refreshStats]);
 
   // 예측 탭 진입 시 자동 새로고침
   useEffect(()=>{if(tab==="predict"&&!dbLoading){refreshPredictions()}},[tab,dbLoading]);
-  // ★ 발주사 이력: predictions 변경 시 canonical_ag 배치 통계 로드
-  useEffect(()=>{(async()=>{
-    const ags=[...new Set(predictions.map(p=>p.canonical_ag).filter(Boolean))];
-    if(!ags.length)return;
-    try{const hist=await sbFetchAgencyHistMap(ags);setAgencyHistMap(hist||{})}catch(e){setAgencyHistMap({})}
-  })()},[predictions]);
 
   // ★ v7-ops-4B: 모델 검증 탭 진입 시 1회 로드
   useEffect(()=>{
@@ -927,7 +711,7 @@ ${baseInfo}
         await sbUpdateStrategyOutcomes(since);
       }catch(e){console.warn("strategy outcome 백필 실패:",e.message)}}
       // Phase 5.2: 신규 예측에 대해 자동 scoring
-      const existingIds=new Set(Object.keys(scoringMap).map(Number));
+      const existingIds=new Set(); // 옛 scoringMap은 채워진 적이 없어 항상 빈 집합이었다 — 동작 그대로(전체 신규 예측 snapshot UPSERT)
       const newPreds=(matched>0?await sbFetchPredictions():preds).filter(p=>!existingIds.has(p.id));
       if(newPreds.length>0){
         // ★ v7 a-R2: 신규 예측에 대해 snapshot 기록 (UPSERT, 실패는 경고만)
@@ -982,7 +766,7 @@ ${baseInfo}
       const shown=totalResults.filter(r=>!protectedKeys.has(r.dedup_key));
       setPredResults(prev=>{const dkSet=new Set(shown.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...shown]});
       const preds=await sbFetchPredictions();setPredictions(preds);
-      const existingIds=new Set(Object.keys(scoringMap).map(Number));
+      const existingIds=new Set(); // 옛 scoringMap은 채워진 적이 없어 항상 빈 집합이었다 — 동작 그대로(전체 신규 예측 snapshot UPSERT)
       const newPreds=preds.filter(p=>!existingIds.has(p.id));
       if(newPreds.length>0){
         // ★ v7 a-R2: 신규 예측에 대해 snapshot 기록 (UPSERT, 실패는 경고만)
@@ -1024,24 +808,6 @@ ${baseInfo}
     return result};
 
   // 수동 예측 (DB 저장 안 함 — 시뮬레이션 전용)
-  const[manualRec,setManualRec]=useState(null);
-  const[manualV2,setManualV2]=useState(null); // Phase 23-9: 수동 시뮬레이션 v2 추천
-  const doManualPred=useCallback(()=>{
-    if(!Object.keys(allS.ts||{}).length){setMsg({type:"err",text:"낙찰 데이터가 없습니다. 먼저 데이터를 업로드해주세요."});return}
-    const at=clsAg(inp.agency);
-    const agName=inp.agency.trim();
-    const ba=tn(inp.baseAmount);
-    const ep=tn(inp.estimatedPrice);
-    const av=tn(inp.aValue);
-    const p=predictV5({at,agName,ba,ep,av,ownScore},allS.ts,allS.as,bidDetails,agencyPred,floorBench);
-    if(!p){setMsg({type:"err",text:"예측 실패: 기관 또는 금액 정보를 확인해주세요."});return}
-    setPred(p);if(p)setSimSlider(Math.round(p.adj*100));
-    const rec=recommendAssumedAdj({at,agName,ba,ep,av,ownScore},allS.ts,allS.as,agAss);
-    setManualRec(rec);
-    // Phase 23-9: v2 추천
-    const v2=recommendBid1st({at,agName,ba,ep,av,fr:p.fr},{distMap:win1stDistMap,ownScore},{enableMonteCarlo:false});
-    setManualV2(v2);
-  },[inp,allS,bidDetails,agencyPred,floorBench,agAss,win1stDistMap,ownScore]);
 
   // 삭제
   const selCount=Object.keys(sel).filter(k=>sel[k]).length;
@@ -1115,23 +881,10 @@ ${baseInfo}
     if(agFilter){const q=agFilter.trim().toLowerCase();if(q)list=list.filter(x=>(x.ag||"").trim().toLowerCase()===q)} // 발주기관 정확일치 (각 기관 개별 — 고양시≠고양시 덕양구)
     // Phase ①: 예상 참가자수 버킷 필터 (분포 미해석·종심제 행은 필터 활성 시 제외)
     if(pcFilter&&pcDistMap){list=list.filter(x=>{if(isLhJongsim(x.at,x.ba,x.pn))return false;const d=resolvePcDist(pcDistMap,{at:x.at,canonicalAg:x.canonical_ag||x.ag,ba:x.ba});return d&&pcBucketOf(d.p50)===pcFilter})}
-    // Phase 5: 등급 필터
-    if(gradeFilter!=="all"){list=list.filter(x=>{const g=scoringMap[x.id]?.roi_grade||"D";if(gradeFilter==="SA")return g==="S"||g==="A";if(gradeFilter==="SAB")return g==="S"||g==="A"||g==="B";if(gradeFilter==="notD")return g!=="D";return true})}
-    // Phase 12-C: 발주사별 P5 숨김, 주력만 보기 (pending 건에만 적용)
-    if(hideP5){list=list.filter(x=>{
-      if(x.match_status!=="pending")return true; // 매칭건은 유지 (과거 데이터)
-      const a=assessPrediction(x,agencyStats,agencyPred);
-      return !a||a.tier==null||a.tier<5;
-    })}
-    if(onlyPrimary){list=list.filter(x=>{
-      if(x.match_status!=="pending")return true;
-      const a=assessPrediction(x,agencyStats,agencyPred);
-      return a&&a.tier!=null&&a.tier<=2;
-    })}
     // Phase ①: 예상 참가자수 정렬 (계산 필드 — 공용 sortFn 미변경, null은 항상 뒤로)
     if(predSort.key==="exp_pc"){const val=x=>{const d=pcDistMap?resolvePcDist(pcDistMap,{at:x.at,canonicalAg:x.canonical_ag||x.ag,ba:x.ba}):null;return d?d.p50:null};
       return[...list].sort((a,b)=>{const va=val(a),vb=val(b);if(va==null&&vb==null)return 0;if(va==null)return 1;if(vb==null)return -1;return predSort.dir==="asc"?va-vb:vb-va})}
-    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,agFilter,predSort,hideYuchal,hideSuui,gradeFilter,scoringMap,hideP5,onlyPrimary,agencyStats,agencyPred,pcFilter,pcDistMap]);
+    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,agFilter,predSort,hideYuchal,hideSuui,pcFilter,pcDistMap]);
 
   // Phase 23-9: pending 건 v2 backfill (분포 map 로드 후 NULL 행에 적용)
   // 라운드 11 권고: ref를 scoreSnap으로 변환 — ownScore 변경 시 stale row 재계산
@@ -1352,7 +1105,7 @@ ${baseInfo}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:0,flexWrap:"wrap",alignItems:"center"}}>
-          <Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측" badge={compStats.pending}/><Tb id="notices" ch="오늘의 공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="performance" ch="성과"/><Tb id="g2b_sheet" ch="G2B 양식"/>
+          <Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측 기록" badge={compStats.pending}/><Tb id="notices" ch="오늘의 공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="performance" ch="성과"/><Tb id="g2b_sheet" ch="G2B 양식"/>
           {/* 보조 메뉴 접기 — 접힌 상태에서도 활성 탭은 노출 유지 */}
           {(()=>{
             const SUB=[{id:"feedback",ch:"📈 피드백"},{id:"quality",ch:"🔬 검증"},{id:"agency_predict_v6",ch:"💎 발주처 예측 V6"},{id:"agency_floor",ch:"🎯 발주사 하한"},{id:"v2_preview",ch:"🧪 V2 미리보기"}];
@@ -1429,37 +1182,6 @@ ${baseInfo}
         <span style={{fontSize:11,color:"#e24b4a",fontWeight:600}}>확인 →</span>
       </div>}
 
-      {/* Phase 5.3: 같은 기관 묶음 알림 */}
-      {(()=>{
-        // pending S/A 건을 발주기관별로 그룹핑
-        const sa=predictions.filter(p=>{const g=scoringMap[p.id]?.roi_grade;return p.match_status==="pending"&&(g==="S"||g==="A")});
-        const groups={};sa.forEach(p=>{if(!p.ag)return;if(!groups[p.ag])groups[p.ag]=[];groups[p.ag].push(p)});
-        const big=Object.entries(groups).filter(([_,items])=>items.length>=3).sort((a,b)=>b[1].length-a[1].length);
-        if(big.length===0)return null;
-        return<div style={{background:"linear-gradient(135deg, rgba(168,85,247,0.12), rgba(212,168,52,0.06))",border:"1px solid rgba(168,85,247,0.4)",borderRadius:10,padding:"14px 16px",marginBottom:16}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-            <span style={{fontSize:13,fontWeight:600,color:"#a855f7",letterSpacing:1}}>🔥 발주기관 묶음 발견 — 우선 검토</span>
-            <span style={{fontSize:9,color:C.txd}}>같은 기관에 S/A등급 3건 이상 집중</span>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {big.slice(0,5).map(([ag,items])=>{
-              const totalAmt=items.reduce((s,p)=>s+(Number(p.ep||p.ba)||0),0);
-              const avgProb=items.reduce((s,p)=>s+(Number(scoringMap[p.id]?.win_prob)||0),0)/items.length;
-              const expWins=Math.round(avgProb*items.length*10)/10;
-              return<div key={ag} style={{padding:"8px 12px",background:C.bg3,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={()=>{setTab("predict");setGradeFilter("SA")}}>
-                <div style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
-                  <span style={{fontSize:18,fontWeight:700,color:"#a855f7",fontFamily:"monospace",minWidth:32}}>{items.length}</span>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,color:C.txt,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ag}</div>
-                    <div style={{fontSize:10,color:C.txm,marginTop:2}}>총 {tc(totalAmt)}원 · 평균 확률 {(avgProb*100).toFixed(1)}% · 기대 낙찰 {expWins}건</div>
-                  </div>
-                </div>
-                <span style={{fontSize:11,color:"#a855f7",marginLeft:8}}>→</span>
-              </div>
-            })}
-          </div>
-        </div>
-      })()}
       {bidDetails.length>0&&<div style={{marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:600,color:C.gold,marginBottom:8}}>복수예가 상세 데이터 ({bidDetails.length}건)</div>
         {/* 기관유형별 요약 */}
@@ -1659,23 +1381,8 @@ ${baseInfo}
 
     {/* ═══ 예측 탭 (개편: 시뮬레이션 분리 + 통합 리스트 + 상세 모달) ═══ */}
     {tab==="predict"&&<div>
-      {/* 시스템 버전 배너 */}
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",marginBottom:12,background:"rgba(0,0,0,0.18)",border:"1px solid "+C.bdr,borderRadius:8,fontSize:11,flexWrap:"wrap"}}>
-        <span style={{fontWeight:700,color:C.gold,letterSpacing:0.5}}>bid-analyzer</span>
-        <span style={{color:C.bdr}}>|</span>
-        <span style={{color:C.txd}}>투찰 결정 가이드</span>
-        <span style={{padding:"1px 7px",borderRadius:4,background:"rgba(93,202,165,0.15)",color:"#5dca96",fontWeight:700,fontFamily:"monospace"}}>v6</span>
-        <span style={{color:C.txd,fontSize:10}}>opt_adj + 동적 편향 보정 · 메인</span>
-        <span style={{color:C.bdr}}>|</span>
-        <span style={{color:C.txd}}>1순위 후보권 타깃팅</span>
-        <span style={{padding:"1px 7px",borderRadius:4,background:"rgba(59,130,246,0.18)",color:"#93c5fd",fontWeight:700,fontFamily:"monospace"}}>v7.2</span>
-        <span style={{color:C.txd,fontSize:10}}>3D 캘리브레이션 + 확률 분포 3종 · 진입률 69%/84.1%</span>
-      </div>
-
-
-
-      {/* 상단: 파일 업로드 + 수동 시뮬레이션 토글 */}
-      <div style={{display:"grid",gridTemplateColumns:showSim?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
+      {/* 상단: 입찰서류함 파일 업로드 */}
+      <div style={{marginBottom:16}}>
         {/* 파일 업로드 (메인) */}
         <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,overflow:"hidden"}}>
           <div style={{border:`2px dashed ${dragPred?C.gold:C.bdr}`,borderRadius:10,padding:"30px 16px",textAlign:"center",cursor:busy?"default":"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:dragPred?"rgba(212,168,52,0.04)":"transparent"}}
@@ -1690,138 +1397,7 @@ ${baseInfo}
             </>}
           </div>
         </div>
-        {/* 수동 시뮬레이션 (토글) */}
-        {showSim&&<div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16}}>
-          <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:10}}>빠른 시뮬레이션</div>
-          <div style={{fontSize:10,color:C.txd,marginBottom:8}}>DB에 저장되지 않습니다. 일회성 조회용.</div>
-          <div style={{marginBottom:6}}><div style={{fontSize:11,color:C.txm,marginBottom:3}}>발주기관</div><AgencyInput value={inp.agency} onChange={v=>setInp(p=>({...p,agency:v}))} agencies={agencyList} stats={allS.as}/></div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:6}}>
-            <div><div style={{fontSize:11,color:C.txm,marginBottom:3}}>기초금액</div><NI value={inp.baseAmount} onChange={v=>setInp(p=>({...p,baseAmount:v}))}/></div>
-            <div><div style={{fontSize:11,color:C.txm,marginBottom:3}}>A값</div><NI value={inp.aValue} onChange={v=>setInp(p=>({...p,aValue:v}))}/></div>
-          </div>
-          <button onClick={doManualPred} style={{width:"100%",padding:"8px",background:C.gold,border:"none",borderRadius:6,color:"#000",fontWeight:700,fontSize:12,cursor:"pointer"}}>시뮬레이션</button>
-          {/* Phase 23-9: v2 자동 추천 (1위 분포 중심 위치) */}
-          {manualV2&&<div style={{marginTop:10,padding:"10px",background:C.bg3,borderRadius:6,border:"1px solid "+C.gold+"33"}}>
-            <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:6}}>★ 자동 추천 (1위 분포 중심)</div>
-            <div style={{fontSize:10,color:C.txm,marginBottom:6}}>
-              분포: {manualV2.distribution.src} (grain: {manualV2.distribution.grain||'-'}) · 평균 {(100+manualV2.distribution.mean).toFixed(4)}% · σ {manualV2.distribution.std.toFixed(4)}%
-            </div>
-            <div style={{padding:"8px 10px",background:C.bg,borderRadius:4,marginBottom:8,textAlign:"center"}}>
-              <div style={{fontSize:18,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{(100+manualV2.auto.adj).toFixed(4)}%</div>
-              <div style={{fontSize:14,fontWeight:700,fontFamily:"monospace",color:C.txt}}>{tc(manualV2.auto.bid)}원</div>
-              <div style={{fontSize:11,marginTop:4}}>
-                <span style={{color:manualV2.auto.floorSafe?"#5dca96":"#e24b4a",fontWeight:600}}>{manualV2.auto.floorSafe?"[자격OK]":"[자격미달]"}</span>
-                <span style={{color:C.txm,marginLeft:8}} title="자사 위치가 1위 사정률 분포의 중심에 얼마나 가까운지 (mean에서 100%, 끝으로 갈수록 감소)">분포적합도 {Math.round(manualV2.auto.winProb*100)}%</span>
-              </div>
-            </div>
-            <div style={{fontSize:11,color:C.txm,marginBottom:4}}>3구간 옵션</div>
-            {[['적극(P25)','aggressive'],['균형(P50)','balanced'],['보수(P75)','conservative']].map(([label,key])=>{
-              const o=manualV2.scenarios[key];
-              return<div key={key} style={{display:"grid",gridTemplateColumns:"60px 1fr 1fr 90px",gap:6,fontSize:11,padding:"3px 0"}}>
-                <span style={{color:C.txd}}>{label}</span>
-                <span style={{fontFamily:"monospace"}}>{(100+o.adj).toFixed(4)}%</span>
-                <span style={{fontFamily:"monospace",color:C.txm,textAlign:"right"}}>{tc(o.bid)}원</span>
-                <span style={{color:o.floorSafe?"#5dca96":"#e24b4a",fontSize:10,textAlign:"right"}}>{o.label}</span>
-              </div>;
-            })}
-          </div>}
-          {/* 시뮬레이션 결과 (통합) */}
-          {pred&&<div style={{marginTop:10,padding:"10px",background:C.bg3,borderRadius:6}}>
-            {/* 예측 분석 */}
-            <div style={{fontSize:11,color:C.txm,marginBottom:6}}>📊 예측: 사정률 <span style={{color:"#5dca96",fontFamily:"monospace"}}>{(100+pred.adj).toFixed(4)}%</span> · 하한율 {pred.fr}% · <span style={{fontSize:10}}>{pred.src}</span></div>
-            {/* Phase 12-D: 발주사 보정 표시 */}
-            {pred.agencyOffset!=null&&pred.agencyN>0&&<div style={{fontSize:10,color:"#e24b4a",marginBottom:6,padding:"3px 6px",background:"rgba(226,75,74,0.06)",borderRadius:4,border:"1px solid rgba(226,75,74,0.2)"}}>
-              🎯 발주사 보정: 기관유형 {pred.typeOffset>=0?"+":""}{pred.typeOffset.toFixed(3)}% <span style={{color:C.txd}}>+</span> <span style={{color:"#e24b4a",fontWeight:600}}>발주사 {pred.agencyOffset>=0?"+":""}{pred.agencyOffset.toFixed(3)}%</span> <span style={{color:C.txd}}>(샘플 {pred.agencyN}건)</span> = 최종 {pred.optOffset>=0?"+":""}{pred.optOffset.toFixed(3)}%
-            </div>}
-            {/* ★ 추천 투찰 (메인) */}
-            <div style={{padding:"10px 12px",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.25)",borderRadius:6,marginBottom:8}}>
-              <div style={{fontSize:12,fontWeight:600,color:C.gold,marginBottom:6}}>★ 추천 투찰</div>
-              <div style={{textAlign:"center",marginBottom:6}}>
-                <div style={{fontSize:18,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{pred.optAdj!=null?(100+pred.optAdj).toFixed(4)+"%":"—"}</div>
-                <div style={{fontSize:16,fontWeight:700,color:C.gold,fontFamily:"monospace"}}>{pred.optBid?tc(pred.optBid)+"원":tc(pred.bid)+"원"}</div>
-                {pred.optXp>0&&pred.optBid&&<div style={{fontSize:10,color:"#85b7eb"}}>투찰율 {(pred.optBid/pred.optXp*100).toFixed(4)}%</div>}
-              </div>
-              {/* 조정 범위 */}
-              <div style={{background:C.bg,borderRadius:6,padding:"6px 8px",fontSize:11}}>
-                <div style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr",gap:"3px 8px",alignItems:"center"}}>
-                  <span style={{color:"#e24b4a",fontSize:10}}>적극적</span>
-                  <span style={{fontFamily:"monospace",color:C.txt}}>{pred.optAdj!=null?(100+pred.optAdj-0.05).toFixed(4)+"%":"—"}</span>
-                  <span style={{fontFamily:"monospace",color:C.txm,textAlign:"right"}}>{pred.optBid?tc(Math.round(pred.optBid-tn(inp.baseAmount)*0.0005))+"원":"—"}</span>
-                  <span style={{color:C.gold,fontSize:10,fontWeight:600}}>● 기본</span>
-                  <span style={{fontFamily:"monospace",color:C.gold,fontWeight:600}}>{pred.optAdj!=null?(100+pred.optAdj).toFixed(4)+"%":"—"}</span>
-                  <span style={{fontFamily:"monospace",color:C.gold,fontWeight:600,textAlign:"right"}}>{pred.optBid?tc(pred.optBid)+"원":tc(pred.bid)+"원"}</span>
-                  <span style={{color:"#5dca96",fontSize:10}}>안전</span>
-                  <span style={{fontFamily:"monospace",color:C.txt}}>{(100+pred.adj).toFixed(4)+"%"}</span>
-                  <span style={{fontFamily:"monospace",color:C.txm,textAlign:"right"}}>{tc(pred.bid)}원</span>
-                  {pred.benchmarkBid&&<>
-                    <span title={"SUCVIEW "+pred.benchmarkN+"건 기반 1위 투찰 벤치마크"} style={{color:"#a8b4ff",fontSize:10}}>🎯 벤치마크</span>
-                    <span style={{fontFamily:"monospace",color:"#a8b4ff"}}>{pred.benchmarkRate!=null?pred.benchmarkRate.toFixed(4)+"%":"—"}</span>
-                    <span style={{fontFamily:"monospace",color:"#a8b4ff",textAlign:"right"}}>{tc(pred.benchmarkBid)}원</span>
-                  </>}
-                </div>
-                {pred.benchmarkBid&&<div style={{fontSize:9,color:C.txd,marginTop:4}}>벤치마크 근거: {pred.benchmarkSrc}</div>}
-              </div>
-            </div>
-            {/* AI 시뮬레이션 */}
-            <div style={{borderTop:"1px solid "+C.bdr,paddingTop:8}}>
-              <button disabled={aiLoading} onClick={async()=>{
-                setAiLoading(true);setAiAdvice("");
-                try{const prompt=buildAiPrompt({pn:"시뮬레이션: "+inp.agency,ag:inp.agency.trim(),at:clsAg(inp.agency),ba:tn(inp.baseAmount),ep:tn(inp.estimatedPrice),av:tn(inp.aValue),pred});
-                  if(!prompt)throw new Error("데이터 없음");const text=await callAi(prompt);setAiAdvice(text)}
-                catch(e){setAiAdvice("⚠ "+e.message)}finally{setAiLoading(false)}
-              }} style={{padding:"3px 10px",fontSize:10,background:"rgba(168,180,255,0.1)",border:"1px solid rgba(168,180,255,0.3)",borderRadius:4,color:"#a8b4ff",cursor:aiLoading?"default":"pointer",marginBottom:6}}>
-                {aiLoading?"분석 중...":"AI 전략 분석"}
-              </button>
-              {aiAdvice&&<div style={{fontSize:12,lineHeight:1.7,color:C.txt}} dangerouslySetInnerHTML={{__html:md2html(aiAdvice)}}/>}
-            </div>
-            {/* 경쟁 참고 (접기) — 사정률은 100% 기준 */}
-            {manualRec&&<details style={{marginTop:6}}>
-              <summary style={{fontSize:10,color:C.txd,cursor:"pointer"}}>📋 경쟁 참고 — 사정률(100%) 시나리오</summary>
-              <div style={{padding:"6px 8px",background:C.bg,borderRadius:6,marginTop:4,fontSize:11,display:"grid",gridTemplateColumns:"auto 1fr 1fr",gap:"3px 8px"}}>
-                <span style={{color:C.txd}}>공격</span><span style={{fontFamily:"monospace"}}>{(100+manualRec.aggressive.adj).toFixed(4)}%</span><span style={{fontFamily:"monospace",textAlign:"right"}}>{tc(manualRec.aggressive.bid)}원</span>
-                <span style={{color:C.txd}}>균형</span><span style={{fontFamily:"monospace"}}>{(100+manualRec.balanced.adj).toFixed(4)}%</span><span style={{fontFamily:"monospace",textAlign:"right"}}>{tc(manualRec.balanced.bid)}원</span>
-                <span style={{color:C.txd}}>보수</span><span style={{fontFamily:"monospace"}}>{(100+manualRec.conservative.adj).toFixed(4)}%</span><span style={{fontFamily:"monospace",textAlign:"right"}}>{tc(manualRec.conservative.bid)}원</span>
-              </div>
-            </details>}
-          </div>}
-        </div>}
       </div>
-      {/* 시뮬레이션 토글 */}
-      <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",marginTop:-10,marginBottom:10}}>
-        <button onClick={()=>{setShowSim(!showSim);if(showSim){setPred(null);setAiAdvice("")}}} style={{padding:"3px 10px",fontSize:10,background:showSim?"rgba(212,168,52,0.1)":"transparent",border:"1px solid "+(showSim?C.gold+"44":C.bdr),borderRadius:5,color:showSim?C.gold:C.txd,cursor:"pointer"}}>
-          {showSim?"시뮬레이션 닫기":"빠른 시뮬레이션"}
-        </button>
-      </div>
-
-      {/* 모델 성능 카드 (간략) */}
-      {compStats.matched>=3&&<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
-        {[{l:"MAE",v:compStats.avgErr.toFixed(4)+"%",c:"#d4a834"},{l:"Bias",v:(compStats.bias>=0?"+":"")+compStats.bias.toFixed(4)+"%",c:Math.abs(compStats.bias)<0.1?"#5dca96":"#e24b4a"},{l:"±0.5% 적중",v:Math.round(compStats.within05/compStats.matched*100)+"%",c:"#5dca96"},{l:"매칭",v:compStats.matched+"건",c:C.txm}].map((c,i)=>
-          <div key={i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"8px",textAlign:"center"}}>
-            <div style={{fontSize:10,color:C.txd}}>{c.l}</div>
-            <div style={{fontSize:15,fontWeight:600,color:c.c}}>{c.v}</div>
-          </div>)}
-      </div>}
-      {/* ★ 전략별 성과 모니터링 */}
-      {(()=>{const matchedWithRec=predictions.filter(p=>p.match_status==="matched"&&p.rec_1st_possible);
-        if(matchedWithRec.length<1)return null;
-        const counts={existing:0,aggressive:0,balanced:0,conservative:0,any:0};
-        matchedWithRec.forEach(p=>{try{const j=JSON.parse(p.rec_1st_possible);
-          if(j.existing)counts.existing++;if(j.aggressive)counts.aggressive++;if(j.balanced)counts.balanced++;if(j.conservative)counts.conservative++;
-          if(j.existing||j.aggressive||j.balanced||j.conservative)counts.any++}catch(e){}});
-        const n=matchedWithRec.length;const pct=v=>Math.round(v/n*100);
-        return<div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:12}}>
-          {[{l:"기존 예측",v:pct(counts.existing)+"%",s:counts.existing+"건",c:C.txm},
-            {l:"공격 전략",v:pct(counts.aggressive)+"%",s:counts.aggressive+"건",c:"#e24b4a"},
-            {l:"균형 전략",v:pct(counts.balanced)+"%",s:counts.balanced+"건",c:C.gold},
-            {l:"보수 전략",v:pct(counts.conservative)+"%",s:counts.conservative+"건",c:"#5dca96"},
-            {l:"병행 최선",v:pct(counts.any)+"%",s:counts.any+"/"+n+"건",c:"#a8b4ff"}
-          ].map((c,i)=><div key={i} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,padding:"6px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:C.txd}}>{c.l}</div>
-            <div style={{fontSize:14,fontWeight:600,color:c.c}}>{c.v}</div>
-            <div style={{fontSize:9,color:C.txd}}>{c.s}</div>
-          </div>)}
-        </div>})()}
-
       {/* ★ 통합 예측 리스트 (file_upload 건 + 매칭 건) */}
       <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:16}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
@@ -1900,141 +1476,15 @@ ${baseInfo}
             <span>수의 숨김 ({predictions.filter(p=>p.is_negotiation===true&&p.actual_adj_rate==null).length}건)</span>
           </label>
         </div>
-        {/* Phase 12-C: 발주사별 낙찰 예측 대시보드 */}
-        {(()=>{
-          const pending=predictions.filter(p=>p.match_status==="pending"&&p.match_status!=="expired");
-          const assessed=pending.map(p=>assessPrediction(p,agencyStats,agencyPred)).filter(a=>a);
-          const tierCounts={1:0,2:0,3:0,4:0,5:0,null:0};
-          let expectedWins=0;let primaryCount=0;
-          assessed.forEach(a=>{
-            if(a.tier==null)tierCounts.null++;
-            else tierCounts[a.tier]++;
-            if(a.win_rate)expectedWins+=Number(a.win_rate)/100;
-            if(a.tier&&a.tier<=2)primaryCount++;
-          });
-          return<div style={{marginBottom:10,padding:"10px 12px",background:"linear-gradient(90deg, rgba(226,75,74,0.06), rgba(93,202,150,0.06))",borderRadius:8,border:"1px solid "+C.bdr}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:8}}>
-              <div style={{fontSize:11,fontWeight:600,color:C.gold,letterSpacing:0.5}}>🎯 발주사별 낙찰 예측 · pending {pending.length}건 기준</div>
-              <div style={{display:"flex",gap:10,alignItems:"center"}}>
-                <label style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:10,color:hideP5?"#5dca96":C.txd}}>
-                  <input type="checkbox" checked={hideP5} onChange={e=>{setHideP5(e.target.checked);setPredListShow(50)}} style={{accentColor:"#5dca96",width:12,height:12}}/>
-                  <span>P5 숨김 ({tierCounts[5]}건)</span>
-                </label>
-                <label style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:10,color:onlyPrimary?"#e24b4a":C.txd}}>
-                  <input type="checkbox" checked={onlyPrimary} onChange={e=>{setOnlyPrimary(e.target.checked);setPredListShow(50)}} style={{accentColor:"#e24b4a",width:12,height:12}}/>
-                  <span>P1~P2만 ({primaryCount}건)</span>
-                </label>
-              </div>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}}>
-              {[
-                {l:"🏆 P1",v:tierCounts[1],c:"#e24b4a",sub:"20%+"},
-                {l:"⭐ P2",v:tierCounts[2],c:"#ff9933",sub:"13~20%"},
-                {l:"📊 P3",v:tierCounts[3],c:"#5b9dd9",sub:"7~13%"},
-                {l:"⚠️ P4",v:tierCounts[4],c:"#a8a8ff",sub:"3~7%"},
-                {l:"⛔ P5",v:tierCounts[5],c:"#666680",sub:"~2%"},
-                {l:"❓ 미분류",v:tierCounts.null,c:C.txd,sub:"샘플 부족"},
-                {l:"📈 기대 낙찰",v:expectedWins.toFixed(1),c:"#5dca96",sub:"이론 합계",unit:"건"}
-              ].map((c,i)=>
-                <div key={i} style={{background:C.bg3,border:"1px solid "+c.c+"33",borderRadius:6,padding:"6px 4px",textAlign:"center"}}>
-                  <div style={{fontSize:9,color:C.txd,marginBottom:2}}>{c.l}</div>
-                  <div style={{fontSize:16,fontWeight:700,color:c.c,fontFamily:"monospace"}}>{c.v}{c.unit||""}</div>
-                  <div style={{fontSize:8,color:C.txd}}>{c.sub}</div>
-                </div>
-              )}
-            </div>
-            {Object.keys(agencyStats).length===0&&<div style={{fontSize:10,color:"#e24b4a",marginTop:6,textAlign:"center"}}>⚠️ agency_win_stats 로드 실패 — 다시 시도 중</div>}
-          </div>
-        })()}
-        {/* Phase 14-3: 분산 투찰 시뮬레이터 요약 */}
-        {(()=>{
-          const pending=predictions.filter(p=>p.match_status==="pending");
-          const sims=pending.map(p=>simulatorMap[p.id]).filter(s=>s);
-          if(sims.length===0)return null;
-          const strong=sims.filter(s=>s.strategy_label==="split_strong");
-          const consider=sims.filter(s=>s.strategy_label==="split_consider");
-          const lowSample=sims.filter(s=>s.strategy_label==="low_sample");
-          const totalGain=strong.reduce((a,s)=>a+(Number(s.ev_gain_eok)||0),0)
-                        + consider.reduce((a,s)=>a+(Number(s.ev_gain_eok)||0),0);
-          // Top 5 strong
-          const top5=[...strong].sort((a,b)=>(Number(b.ev_gain_eok)||0)-(Number(a.ev_gain_eok)||0)).slice(0,5);
-          const top5Pids=new Set(top5.map(s=>s.prediction_id));
-          const top5Preds=pending.filter(p=>top5Pids.has(p.id));
-          return<div style={{marginBottom:10,padding:"10px 12px",background:"linear-gradient(90deg, rgba(226,75,74,0.06), rgba(91,157,217,0.06))",borderRadius:8,border:"1px solid "+C.bdr}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:8}}>
-              <div style={{fontSize:11,fontWeight:600,color:"#e24b4a",letterSpacing:0.5}}>
-                🔥 분산 투찰 시뮬레이터 · pending {sims.length}건 분석
-              </div>
-              <div style={{fontSize:10,color:C.txd}}>
-                EV 증가 잠재력: <span style={{color:"#5dca96",fontWeight:600,fontSize:12}}>+{totalGain.toFixed(2)}억</span>
-              </div>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:top5.length>0?10:0}}>
-              {[
-                {l:"🔥 강력 추천",v:strong.length,c:"#e24b4a",sub:"EV +300만↑"},
-                {l:"📊 검토 권장",v:consider.length,c:"#5b9dd9",sub:"50%+ 개선"},
-                {l:"⚠ 샘플 부족",v:lowSample.length,c:"#a8a8ff",sub:"참고용"},
-                {l:"💰 합산 EV",v:"+"+totalGain.toFixed(2),c:"#5dca96",sub:"억",unit:""}
-              ].map((c,i)=>
-                <div key={i} style={{background:C.bg3,border:"1px solid "+c.c+"33",borderRadius:6,padding:"6px 4px",textAlign:"center"}}>
-                  <div style={{fontSize:9,color:C.txd,marginBottom:2}}>{c.l}</div>
-                  <div style={{fontSize:16,fontWeight:700,color:c.c,fontFamily:"monospace"}}>{c.v}{c.unit||""}</div>
-                  <div style={{fontSize:8,color:C.txd}}>{c.sub}</div>
-                </div>
-              )}
-            </div>
-            {top5.length>0&&<div style={{fontSize:10,color:C.txm,marginBottom:4,fontWeight:600}}>Top {top5.length} 분산 투찰 강력 추천:</div>}
-            {top5.length>0&&<div style={{display:"flex",flexDirection:"column",gap:3}}>
-              {top5.map(s=>{
-                const p=top5Preds.find(x=>x.id===s.prediction_id);if(!p)return null;
-                const gain=Number(s.ev_gain_eok)||0;
-                const gainStr=gain>=1?gain.toFixed(2)+"억":(gain*10000).toFixed(0)+"만";
-                const baEok=p.ba?(Number(p.ba)/100000000).toFixed(2):"-";
-                return<div key={s.prediction_id} style={{display:"flex",alignItems:"center",gap:8,fontSize:10,padding:"4px 8px",background:C.bg2,borderRadius:4,border:"1px solid "+C.bdr+"55"}}>
-                  <span style={{color:C.txd,minWidth:54,fontFamily:"monospace"}}>{p.open_date||"-"}</span>
-                  <span style={{color:C.txt,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.ag} · {p.pn}</span>
-                  <span style={{color:C.gold,fontFamily:"monospace",minWidth:48,textAlign:"right"}}>{baEok}억</span>
-                  <span style={{color:"#5b9dd9",fontFamily:"monospace",minWidth:42,textAlign:"right"}}>{(Number(s.p_calibrated_12f)*100).toFixed(0)}%→{(Number(s.p_calibrated_split)*100).toFixed(0)}%</span>
-                  <span style={{color:"#5dca96",fontWeight:600,fontFamily:"monospace",minWidth:48,textAlign:"right"}}>+{gainStr}</span>
-                </div>
-              })}
-            </div>}
-          </div>
-        })()}
-        {/* Phase 23-5: 화살표 범례 (다른 이용자용 해설) */}
-        <div style={{display:"flex",gap:10,marginBottom:6,padding:"4px 8px",background:C.bg3,borderRadius:6,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{fontSize:10,color:C.txd}}>화살표:</span>
-          <span style={{fontSize:10}}><span style={{color:"#85b7eb",fontWeight:700}}>▴▾</span> <span style={{color:C.txm}}>작음(정확)</span></span>
-          <span style={{fontSize:10}}><span style={{color:"#d4a834",fontWeight:700}}>▲▼</span> <span style={{color:C.txm}}>보통</span></span>
-          <span style={{fontSize:10}}><span style={{color:"#e24b4a",fontWeight:700}}>⇈⇊</span> <span style={{color:C.txm}}>주의(큰 편향)</span></span>
-          <span style={{fontSize:10,color:C.txd}}>위=실측 1위가 추천보다 높음 · 아래=낮음 · 표시 없음=데이터 부족</span>
-        </div>
-        {/* 오차 색상 범례 */}
-        <div style={{display:"flex",gap:12,marginBottom:8,padding:"4px 8px",background:C.bg3,borderRadius:6,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{fontSize:10,color:C.txd}}>오차 범례:</span>
-          <span style={{fontSize:10,color:"#5dca96"}}>● &lt;0.3% 우수</span>
-          <span style={{fontSize:10,color:"#d4a834"}}>● 0.3~1.0% 보통</span>
-          <span style={{fontSize:10,color:"#e24b4a"}}>● ≥1.0% 큰차이</span>
-          <span style={{fontSize:10,color:"#e24b4a"}}>⚠ &gt;5% 이상치</span>
-          <span style={{fontSize:10,color:C.txd}}>— 유찰/수의</span>
-        </div>
-        {/* 신뢰도 색상 범례 — 추천 사정률·투찰금 강조 (신뢰 높음만) */}
-        <div style={{display:"flex",gap:12,marginBottom:8,padding:"4px 8px",background:C.bg3,borderRadius:6,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{fontSize:10,color:C.txd}}>추천값 색상:</span>
-          <span style={{fontSize:10}}><span style={{color:"#5dca96",fontWeight:700}}>● 초록</span> <span style={{color:C.txm}}>신뢰 높음 — 발주사 표본 200건 이상</span></span>
-          <span style={{fontSize:10}}><span style={{color:C.gold,fontWeight:700}}>● 금색</span> <span style={{color:C.txm}}>신뢰 보통(50건+)/데이터 부족</span></span>
-          <span style={{fontSize:10,color:C.txd}}>※ 표본 규모 기준 — 실측 정확도와 별개</span>
-        </div>
         {compList.length>0?<div style={{overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-            <colgroup><col style={{width:"4%"}}/><col style={{width:"10%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"7%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
+            <colgroup><col style={{width:"14%"}}/><col style={{width:"8%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"7%"}}/><col style={{width:"8%"}}/><col style={{width:"6%"}}/><col style={{width:"7%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"4%"}}/></colgroup>
             <thead>
-              <tr><th colSpan={1} style={{padding:"4px 6px",fontSize:10,color:"#e24b4a",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"center",letterSpacing:1}}>P12</th>
+              <tr>
                 <th colSpan={7} style={{padding:"4px 6px",fontSize:10,color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>투찰 전 추천</th>
                 <th colSpan={3} style={{padding:"4px 6px",fontSize:10,color:"#a8b4ff",fontWeight:500,borderBottom:"1px solid "+C.bdr+"44",textAlign:"left",letterSpacing:1}}>입찰 후 결과</th>
                 <th colSpan={3} style={{padding:"4px 6px",fontSize:10,borderBottom:"1px solid "+C.bdr+"44"}}></th></tr>
               <tr style={{background:C.bg3}}>
-              <th style={{padding:"7px 4px",textAlign:"center",color:"#e24b4a",fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}} title="발주사별 낙찰 예측 (P1~P5)">타깃</th>
               <SortTh label="공고명" sortKey="pn" current={predSort} setCurrent={setPredSort}/>
               <SortTh label="발주기관" sortKey="ag" current={predSort} setCurrent={setPredSort}/>
               <th style={{padding:"7px 4px",textAlign:"right",color:C.gold,fontWeight:500,borderBottom:"1px solid "+C.bdr,fontSize:11}}>추천 사정률(100%)</th>
@@ -2078,23 +1528,8 @@ ${baseInfo}
               const isDataWait=!isYuchal&&!isSuui&&p.match_status==="matched"&&actBr1==null;
               // 취소 공고: pn 텍스트 (취소)/[취소] 매치 + 매칭 전 (matched·expired 아님)
               const isCanc=p.match_status!=="matched"&&p.match_status!=="expired"&&isCancelledPred(p);
-              // AI 권장은 이제 최종 추천에 영향 없음 (참고용 탭에서만 확인)
-              // Phase 12-C: 발주사별 낙찰 예측
-              const agAsmt=assessPrediction(p,agencyStats,agencyPred);
-              const sim=simulatorMap[p.id]; // Phase 14-3: 분산 투찰 시뮬레이터
-              const tierStyle=agAsmt&&agAsmt.tier?TIER_STYLES[agAsmt.tier]:null;
-              // P1~P2는 좌측 강조 보더, P5는 opacity 추가 감소
-              const rowBorder=tierStyle&&agAsmt.tier<=2?{borderLeft:"3px solid "+tierStyle.border}:{};
-              const p5Fade=agAsmt&&agAsmt.tier===5?0.55:1;
               const isFocused=focusedPredId===p.id;
-              return<tr key={p.id} id={"pred-row-"+p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:(isAnomaly||isYuchal||isSuui||isDataWait?0.5:1)*p5Fade,background:isFocused?"rgba(93,202,150,0.14)":"",boxShadow:isFocused?"inset 3px 0 0 #5dca96":"",transition:"background 0.3s",...rowBorder}}>
-                <td style={{padding:"6px 2px",textAlign:"center"}}>
-                  {agAsmt&&agAsmt.tier?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}} title={`${agAsmt.label}\n샘플 ${agAsmt.n}건\n이론 ${agAsmt.win_rate}%\n오차 ${agAsmt.mae}%`}>
-                    <TierBadge tier={agAsmt.tier} compact={true}/>
-                    <span style={{fontSize:9,fontFamily:"monospace",color:tierStyle?.color||C.txd,fontWeight:600}}>{agAsmt.win_rate}%</span>
-                    {sim&&<SplitBadge sim={sim} compact={true}/>}
-                  </div>:(sim?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><span style={{fontSize:9,color:C.txd}}>-</span><SplitBadge sim={sim} compact={true}/></div>:<span style={{fontSize:9,color:C.txd}}>-</span>)}
-                </td>
+              return<tr key={p.id} id={"pred-row-"+p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:(isAnomaly||isYuchal||isSuui||isDataWait?0.5:1),background:isFocused?"rgba(93,202,150,0.14)":"",boxShadow:isFocused?"inset 3px 0 0 #5dca96":"",transition:"background 0.3s"}}>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:finalRec.jongsim?"#e24b4a":(finalRec.floorSafe===false?"#e24b4a":(isHighConf?"#5dca96":C.gold)),fontWeight:500}} title={finalRec.jongsim?"LH 종심제·순심제 (예측 미지원)":(finalRec.floorSafe===false?"⚠ 자격 미달 — 그대로 투찰 시 자동 탈락 (av가 큰 입찰)":(finalRec.source?"근거: "+finalRec.source:""))}>
