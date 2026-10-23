@@ -47,11 +47,13 @@ AS $$
     FROM bid_notices x
     WHERE x.od >= p_from AND x.od < p_to + 1 AND x.bid_ntce_no ~ '^R'
     ORDER BY x.bid_ntce_no, x.bid_ntce_ord DESC
+  ), m AS (
+    SELECT n.*, (n.participated IS TRUE
+             OR n.bid_ntce_no IN (SELECT split_part(p.pn_no, '-', 1) FROM bid_predictions p
+                                  WHERE p.source = 'file_upload' AND p.pn_no ~ '^R')) AS mine
+    FROM n
   ), u AS (
-    SELECT n.* FROM n
-    WHERE n.reg ILIKE '%경기%' OR n.participated IS TRUE
-       OR n.bid_ntce_no IN (SELECT split_part(p.pn_no, '-', 1) FROM bid_predictions p
-                            WHERE p.source = 'file_upload' AND p.pn_no ~ '^R')
+    SELECT m.* FROM m WHERE m.reg ILIKE '%경기%' OR m.mine
   ), j AS (
     SELECT u.*, g.status AS cur_status, COALESCE(g.attempts, 0) AS attempts,
            (SELECT e.id FROM bid_records e
@@ -73,7 +75,7 @@ AS $$
     'pn', COALESCE(r_pn, pn), 'ag', COALESCE(r_ag, ag),
     'canonical_ag', COALESCE(r_cag, normalize_agency_name(COALESCE(r_ag, ag))),
     'at', COALESCE(r_at, classify_agency_type(COALESCE(r_ag, ag))),
-    'reg', reg, 'cat', cat, 'main_cnstty', main_cnstty, 'participated', participated, 'fr', fr,
+    'reg', reg, 'cat', cat, 'main_cnstty', main_cnstty, 'participated', participated, 'mine', mine, 'fr', fr,
     'excel_record_id', excel_record_id, 'api_record_id', api_record_id,
     'co', co, 'co_no', co_no, 'bp', bp, 'pc', pc, 'ba', ba, 'xp', xp,
     'attempts', attempts, 'cur_status', cur_status)

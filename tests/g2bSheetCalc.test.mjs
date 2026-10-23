@@ -1,4 +1,4 @@
-import { sumAValue, computeSheet, classifyTrade } from "../supabase/functions/fn-collect-g2b-sheet/calc.js";
+import { sumAValue, computeSheet, classifyTrade, parseOpengCorpInfo } from "../supabase/functions/fn-collect-g2b-sheet/calc.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${got} expect ${exp}`); bad++; } };
@@ -37,6 +37,12 @@ eq(classifyTrade({ licenseNames: ["전기공사업/0001"] }).elec, true, "면허
 eq(classifyTrade({ cat: "건축공사업", mainCnsttyNm: "" }).elec, false, "다른 업종");
 eq(classifyTrade({ cat: null, mainCnsttyNm: null, licenseNames: [] }).elec, null, "전부 공백은 모름");
 eq(classifyTrade({}).source, null, "출처 없음");
+
+// parseOpengCorpInfo — 개찰결과 opengCorpInfo '업체^사업자번호^대표^투찰금액^투찰률' (2026-10-23 실측 R26BK01764713)
+const oc = parseOpengCorpInfo("주식회사 성은이엔씨^8778102412^한헌석^113452950^90.025");
+eq(oc.co, "주식회사 성은이엔씨", "1순위 업체"); eq(oc.co_no, "8778102412", "사업자번호"); eq(oc.bp, 113452950, "1순위 금액"); eq(oc.rate, 90.025, "투찰률");
+eq(parseOpengCorpInfo("").bp, null, "빈 값"); eq(parseOpengCorpInfo(null).co, null, "null");
+eq(parseOpengCorpInfo("업체^123").bp, null, "필드 부족");
 
 console.log(bad === 0 ? "OK g2bSheetCalc" : `FAIL ${bad}`);
 process.exit(bad === 0 ? 0 : 1);

@@ -36,6 +36,13 @@ export function computeSheet({ ba, av, xp, fr, bp }) {
   return { ar1, br1, floor_price, missing };
 }
 
+// 개찰결과 opengCorpInfo = '업체^사업자번호^대표^투찰금액^투찰률'. 기존 적재(upsert_bid_record)는 투찰금액을 버려 API 행 bp가 비어 있다.
+export function parseOpengCorpInfo(s) {
+  const p = s ? String(s).split("^") : [];
+  const num = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+  return { co: p[0] || null, co_no: p[1] || null, bp: p.length >= 4 ? num(p[3]) : null, rate: p.length >= 5 ? num(p[4]) : null };
+}
+
 // 업종: 공고 필드에 '전기공사'가 있으면 전기. 값이 하나라도 있는데 없으면 아님. 전부 비면 모름(null) — 공고명 추정은 하지 않는다.
 export function classifyTrade({ cat, mainCnsttyNm, licenseNames } = {}) {
   const fields = [["cat", cat], ["mainCnsttyNm", mainCnsttyNm], ["licenseNames", (licenseNames || []).join(",")]];
