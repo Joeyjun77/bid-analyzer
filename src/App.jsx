@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS } from "./lib/constants.js";
-import { authedFetch } from "./auth.js";
 import V2PreviewTab from "./components/V2PreviewTab.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
@@ -13,7 +12,7 @@ import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
 import G2BSheetTab from "./components/G2BSheetTab.jsx";
 import OwnScoreInput from "./components/OwnScoreInput.jsx";
 import { calcEffectiveFloorRate, parseOwnScore } from "./lib/effectiveFloor.js";
-import { clsAg, clean, tc, tn, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, buildAiContext, callClaudeAi, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendBid1st, recommendMain, recommendV2, baSegOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH, predConfidence, predConfidenceV2 } from "./lib/utils.js";
+import { clean, tc, pDt, mSch, md5, parseFile, toRecord, toRecords, parseBidDoc, calcStats, predictV5, calcDataStatus, isSucviewFile, parseSucview, simDraws, pnv, sn, eraFR, isNewEra, isLhJongsim, sanitizeJson, recommendAssumedAdj, calcRoiV2, WIN_OPT_GAP, calcWin1stBid, calcBenchmarkAdj, getBiasArrow, normalizeAgencyName, recommendMain, recommendV2, baSegOf, predConfidence, predConfidenceV2 } from "./lib/utils.js";
 import { resolveMode } from "./lib/modeResolver.js";
 import { floorModeOf, riskColor, riskLabel } from "./lib/floorRisk.js";
 import { buildAdjHistory, resolveAdjHistory, impliedAdjOfBid, passProbPct, passRiskSnapshot } from "./lib/passProb.js";
@@ -352,11 +351,9 @@ export default function App(){
   const[predictions,setPredictions]=useState([]);
   const[lastG2bAt,setLastG2bAt]=useState(null); // 나라장터 자동 예측 마지막 갱신 시각
   const[lastSucviewAt,setLastSucviewAt]=useState(null); // SUCVIEW 마지막 업로드 시각
-  const[focusedPredId,setFocusedPredId]=useState(null); // 공고→예측 이동 시 포커스할 예측 id
   const[notices,setNotices]=useState([]); // 나라장터 공고 목록
   const[noticeLoadingIds,setNoticeLoadingIds]=useState(new Set()); // 예측 등록 중인 notice id
   const[noticeFilter,setNoticeFilter]=useState("upcoming"); // upcoming/all/registered
-  const[biasMap,setBiasMapState]=useState({agency:{},at:{}}); // Phase 5.4: 편차 보정 맵
   const[predBiasMap,setPredBiasMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Phase 23-2: 동적 편향 보정 (AG×금액대 다층)
   const[accuracyMap,setAccuracyMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Track2: 실측 정확도(n/bias/mae/sd) — 신뢰도 V2 표시용
   // 하한 통과 확률용 과거 발주처 사정율 기록 (발주기관·기관유형별, 최근 3년) — passProb.js. recs가 바뀔 때만 다시 만든다.
@@ -376,7 +373,6 @@ export default function App(){
     }catch{return 20;}
   });
   useEffect(()=>{try{localStorage.setItem(OWN_SCORE_KEY,String(ownScore));}catch{}},[ownScore]);
-  const[trendMap,setTrendMapState]=useState({}); // Phase 5.4: 추세 맵
   const[claudeApiKey,setClaudeApiKey]=useState(""); // Phase 5.4-B: Edge Function 프록시 사용, 레거시 호환 유지
   const[compFilter,setCompFilter]=useState("all");
   const[agFilter,setAgFilter]=useState(""); // 예측 리스트 발주기관 필터 (""=전체)
@@ -387,7 +383,6 @@ export default function App(){
   const[agAss,setAgAss]=useState({});
   const[simResult,setSimResult]=useState(null);
   const[expandedDetail,setExpandedDetail]=useState(null);
-  const[adjPatDec,setAdjPatDec]=useState(2); // 사정률 패턴 소수점 자릿수 (2~4)
   const[cardPredId,setCardPredId]=useState(null); // 투찰 카드로 연 예측 id (P3)
   const[g2bAgency,setG2bAgency]=useState(""); // 카드 → G2B 양식 이동 시 선택할 발주처
   // ★ v7-ops-4B: 모델 검증 탭 데이터
@@ -711,8 +706,7 @@ export default function App(){
         await sbUpdateStrategyOutcomes(since);
       }catch(e){console.warn("strategy outcome 백필 실패:",e.message)}}
       // Phase 5.2: 신규 예측에 대해 자동 scoring
-      const existingIds=new Set(); // 옛 scoringMap은 채워진 적이 없어 항상 빈 집합이었다 — 동작 그대로(전체 신규 예측 snapshot UPSERT)
-      const newPreds=(matched>0?await sbFetchPredictions():preds).filter(p=>!existingIds.has(p.id));
+      const newPreds=matched>0?await sbFetchPredictions():preds; // 신규 예측 전부 snapshot UPSERT (옛 scoringMap 필터는 항상 비어 동작 동일)
       if(newPreds.length>0){
         // ★ v7 a-R2: 신규 예측에 대해 snapshot 기록 (UPSERT, 실패는 경고만)
         try{await sbRecordSnapshots(newPreds.map(p=>p.id))}catch(e){console.warn("snapshot 실패:",e.message)}
@@ -766,8 +760,7 @@ export default function App(){
       const shown=totalResults.filter(r=>!protectedKeys.has(r.dedup_key));
       setPredResults(prev=>{const dkSet=new Set(shown.map(r=>r.dedup_key));const kept=prev.filter(p=>!dkSet.has(p.dedup_key));return[...kept,...shown]});
       const preds=await sbFetchPredictions();setPredictions(preds);
-      const existingIds=new Set(); // 옛 scoringMap은 채워진 적이 없어 항상 빈 집합이었다 — 동작 그대로(전체 신규 예측 snapshot UPSERT)
-      const newPreds=preds.filter(p=>!existingIds.has(p.id));
+      const newPreds=preds; // 신규 예측 전부 snapshot UPSERT
       if(newPreds.length>0){
         // ★ v7 a-R2: 신규 예측에 대해 snapshot 기록 (UPSERT, 실패는 경고만)
         try{await sbRecordSnapshots(newPreds.map(p=>p.id))}catch(e){console.warn("snapshot 실패:",e.message)}
@@ -993,21 +986,6 @@ export default function App(){
       }catch(e){console.warn("b_pred 자동채움 실패:",e?.message);}
     })();
   },[predictions,win1stDistMap,ownScore]);
-
-  // focusedPredId 변경 시: 리스트 확장 + 해당 행으로 스크롤 (공고→예측 이동 시 자동 포커스)
-  useEffect(()=>{
-    if(!focusedPredId||tab!=="predict")return;
-    const idx=compList.findIndex(p=>p.id===focusedPredId);
-    if(idx>=0&&idx>=predListShow){
-      setPredListShow(Math.ceil((idx+1)/50)*50);
-    }
-    const t=setTimeout(()=>{
-      const el=document.getElementById("pred-row-"+focusedPredId);
-      if(el){el.scrollIntoView({behavior:"smooth",block:"center"});}
-    },200);
-    const t2=setTimeout(()=>setFocusedPredId(null),3000);
-    return()=>{clearTimeout(t);clearTimeout(t2);};
-  },[focusedPredId,tab,compList,predListShow]);
 
   // 스타일
   const btnS=(act,c)=>({padding:"4px 12px",fontSize:11,fontWeight:act?600:400,background:act?c+"22":"#1a1a30",color:act?c:"#888",border:"1px solid "+(act?c+"44":"#252540"),borderRadius:5,cursor:"pointer"});
@@ -1528,8 +1506,7 @@ export default function App(){
               const isDataWait=!isYuchal&&!isSuui&&p.match_status==="matched"&&actBr1==null;
               // 취소 공고: pn 텍스트 (취소)/[취소] 매치 + 매칭 전 (matched·expired 아님)
               const isCanc=p.match_status!=="matched"&&p.match_status!=="expired"&&isCancelledPred(p);
-              const isFocused=focusedPredId===p.id;
-              return<tr key={p.id} id={"pred-row-"+p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:(isAnomaly||isYuchal||isSuui||isDataWait?0.5:1),background:isFocused?"rgba(93,202,150,0.14)":"",boxShadow:isFocused?"inset 3px 0 0 #5dca96":"",transition:"background 0.3s"}}>
+              return<tr key={p.id} id={"pred-row-"+p.id} style={{borderBottom:"1px solid "+C.bdr,opacity:(isAnomaly||isYuchal||isSuui||isDataWait?0.5:1),transition:"background 0.3s"}}>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.pn}>{p.pn}</td>
                 <td style={{padding:"6px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.ag}</td>
                 <td style={{padding:"6px",textAlign:"right",fontFamily:"monospace",fontSize:11,color:finalRec.jongsim?"#e24b4a":(finalRec.floorSafe===false?"#e24b4a":(isHighConf?"#5dca96":C.gold)),fontWeight:500}} title={finalRec.jongsim?"LH 종심제·순심제 (예측 미지원)":(finalRec.floorSafe===false?"⚠ 자격 미달 — 그대로 투찰 시 자동 탈락 (av가 큰 입찰)":(finalRec.source?"근거: "+finalRec.source:""))}>

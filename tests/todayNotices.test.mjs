@@ -77,19 +77,34 @@ eq(tradesOf({ cat: null, pn: "교사동 CCTV 설치공사" }).join(","), "comm",
 eq(tradesOf({ cat: "철근ㆍ콘크리트공사업", pn: "대성터널 제연설비 보강공사(전기)" }).join(","), "elec,fire", "다른 업종이어도 공고명에 전기(제연설비는 소방도 해당)");
 eq(tradesOf({ cat: "건축공사업", pn: "새빛학교 신축공사" }).length, 0, "건축은 해당 없음");
 eq(tradesOf({ cat: null, pn: "운동장 조성공사" }).length, 0, "업종 없음 + 무관 공고명");
+eq(tradesOf({ cat: null, pn: "본관 변압기 교체공사" }).join(","), "elec", "변압기");
+eq(tradesOf({ cat: null, pn: "수전설비 개선" }).join(","), "elec", "수전설비");
+eq(tradesOf({ cat: null, pn: "분전반 교체" }).join(","), "elec", "분전반");
+eq(tradesOf({ cat: null, pn: "비상발전기 설치" }).join(","), "elec", "발전기");
+eq(tradesOf({ cat: null, pn: "피뢰설비 보수" }).join(","), "elec", "피뢰");
+eq(tradesOf({ cat: null, pn: "하천변 경관녹지 조성" }).length, 0, "경관녹지(조경)는 전기 아님");
 
 const TR = [
   { key: "a", group: "target", status: STATUS.NONE, trades: ["elec"] },
   { key: "b", group: "target", status: STATUS.NONE, trades: ["comm"] },
   { key: "c", group: "target", status: STATUS.NONE, trades: ["fire"] },
   { key: "d", group: "target", status: STATUS.NONE, trades: [] },
-  { key: "e", group: "target", status: STATUS.PRED_FILE, trades: [] },
+  { key: "e", group: "target", status: STATUS.PRED_FILE, trades: [], source: "file_upload", predId: 5 },
   { key: "f", group: "target", status: STATUS.PRED_FILE, trades: null },
 ];
 eq(filterRows(TR, "target", false, ["elec"]).map(r => r.key).join(","), "a,e,f", "전기만: 엑셀 예측 행은 업종 무관 표시");
 eq(filterRows(TR, "target", false, ["elec", "comm"]).map(r => r.key).join(","), "a,b,e,f", "전기+통신");
 eq(filterRows(TR, "target", false, ["elec", "comm", "fire"]).map(r => r.key).join(","), "a,b,c,e,f", "전기+통신+소방");
 eq(filterRows(TR, "target", false).length, 6, "업종 인자 없으면 거르지 않음");
+// 사용자 신호(투찰 기록·예측 등록·엑셀 업로드)가 있는 공고는 업종과 무관하게 남긴다 — 상태가 바뀌어도
+const SIG = [
+  { key: "bid", group: "target", status: STATUS.BID, trades: [], participated: true, predId: null, source: null },
+  { key: "auto", group: "target", status: STATUS.PRED_AUTO, trades: [], participated: false, predId: 7, source: "g2b_auto" },
+  { key: "fileClosed", group: "target", status: STATUS.CLOSED, trades: [], participated: false, predId: 8, source: "file_upload" },
+  { key: "none", group: "target", status: STATUS.NONE, trades: [], participated: false, predId: null, source: null },
+];
+// 자동 예측(g2b_auto)은 서버 cron이 공고 대부분에 만들어 '사용자 신호'가 아니다(2026-10-23 실측: 예정 공고 예측 195건 전부 g2b_auto) — 업종 필터 대상
+eq(filterRows(SIG, "target", true, ["elec"]).map(r => r.key).join(","), "bid,fileClosed", "투찰 기록·엑셀 예측만 업종 무관 유지, 자동 예측·미분류는 숨김");
 eq(buildTodayRows({ notices: [{ id: 9, pn_no: "X1", pn: "가로등 정비", ag: "a", at: "지자체", ep: "1", od: "2026-10-30", cat: null }], predictions: [], keywords: [], pcOf: () => null, nowIso: NOW })[0].trades.join(","), "elec", "공고 행에 업종 부여");
 eq(r600.trades, null, "단독 엑셀 예측 행은 업종 판정 안 함(null)");
 

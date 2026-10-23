@@ -17,7 +17,7 @@ export function recOfPred(p, deps) {
   if (!jongsim && bid && p.ba) {
     const dist = deps.resolveAdjHistory(deps.adjHist, deps.passKeyOf(p));
     if (dist) {
-      distN = dist.length ?? null; distGrain = dist.grain ?? null;
+      distN = dist.n ?? null; distGrain = dist.grain ?? null; // resolveAdjHistory는 {grain, n, arr}를 반환
       passPct = deps.passProbPct(dist, deps.impliedAdjOfBid({ bid: Number(bid), ba: Number(p.ba), av: Number(p.av) || 0, effFr: deps.passEffFrOf(p, deps.ownScore) }));
     }
   }

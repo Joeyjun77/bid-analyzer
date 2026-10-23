@@ -50,7 +50,7 @@ export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accur
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: C.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.pn}>{d.pn || "—"}</div>
             <div style={{ fontSize: 11, color: C.txm, marginTop: 3 }}>
-              {d.ag} · {d.at} · 개찰 {d.open_date || "—"} · 기초금액 {ba ? tc(ba) + "원" : "—"}{r.estimated ? " (추정)" : ""}
+              공고번호 <span style={{ fontFamily: "monospace", color: C.txt }}>{d.pn_no || "—"}</span> · {d.ag} · {d.at} · 개찰 {d.open_date || "—"} · 기초금액 {ba ? tc(ba) + "원" : "—"}{r.estimated ? " (추정)" : ""}
               <span style={{ marginLeft: 8, fontSize: 10, padding: "1px 6px", borderRadius: 4, border: "1px solid " + (modeA ? GOLD : GREEN), color: modeA ? GOLD : GREEN }}>{modeA ? "공략 모드" : "안착 모드"}</span>
             </div>
           </div>
@@ -76,6 +76,7 @@ export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accur
                 <div><div style={lbl}>하한 통과 확률</div><div style={big(passColor)}>{r.passPct == null ? "—" : floorPassLabel(100 - r.passPct)}</div></div>
               </div>
               {r.floorSafe === false && <div style={{ marginTop: 8, fontSize: 11, color: RED, fontWeight: 600 }}>자격 미달 — 그대로 투찰 시 자동 탈락</div>}
+              {r.adj == null && d.source !== "file_upload" && <div style={{ marginTop: 6, fontSize: 11, color: C.txd }}>자동 예측에는 이 공고의 추천값이 없습니다(군시설 공략안은 엑셀 업로드 예측에서만 계산). 입찰서류함 엑셀을 올리면 채워집니다.</div>}
               {r.estimated && <div style={{ marginTop: 6, fontSize: 10, color: C.txd }}>추정 기초금액(추정가격×1.1) 기준 — 기초금액 공개 후 입찰서류함 엑셀을 올리면 확정됩니다.</div>}
               <div style={{ marginTop: 6, fontSize: 11, color: C.txm }}>{modeA ? "군시설은 1위 가능 구간이 있습니다. 하한 통과 확률로 안전 여부를 함께 보세요." : "목표는 하한 미달 탈락 방지입니다. 1위는 추첨에 가깝습니다."}</div>
             </>

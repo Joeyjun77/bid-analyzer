@@ -7,7 +7,7 @@ export const STATUS = { OPENED: "opened", CLOSED: "closed", BID: "bid", PRED_FIL
 
 // 업종: 공고 업종(cat) 또는 공고명 단어. 업종이 빈 공고(수의견적·소액)가 절반이라 공고명으로 보완한다(2026-10-23 실측 463건 중 243건).
 const TRADE_RULES = [
-  ["elec", /전기/, /전기|조명|가로등|보안등|신호|LED|전력|변전|수배전|태양광|경관/i],
+  ["elec", /전기/, /전기|조명|가로등|보안등|신호|LED|전력|변전|변압기|수전|배전|분전|피뢰|태양광|UPS/i],
   ["comm", /통신/, /통신|CCTV|방송|네트워크|전산/i],
   ["fire", /소방/, /소방|화재|스프링클러|제연/],
 ];
@@ -95,10 +95,12 @@ export function buildTodayRows({ notices, predictions, keywords, pcOf, nowIso, t
   return rows.sort((a, b) => (a.sortAt ?? Infinity) - (b.sortAt ?? Infinity));
 }
 
-// trades 생략 = 업종으로 거르지 않음. 엑셀 업로드 예측(직접 고른 공고)은 업종과 무관하게 남긴다.
+// trades 생략 = 업종으로 거르지 않음. 사용자가 이미 손댄 공고(투찰 기록·엑셀 업로드 예측)는 상태와 무관하게 남긴다.
+// 자동 예측(g2b_auto)은 서버 cron이 공고 대부분에 만들고 '예측 등록' 버튼과 구분도 안 돼 신호로 보지 않는다.
+const hasUserSignal = (r) => r.participated === true || r.source === "file_upload";
 export function filterRows(rows, view, includeDone, trades) {
   return (rows || []).filter(r =>
     (view === "all" || r.group === "target") &&
     (includeDone || (r.status !== STATUS.OPENED && r.status !== STATUS.CLOSED)) &&
-    (!trades || r.trades == null || r.status === STATUS.PRED_FILE || r.trades.some(t => trades.includes(t))));
+    (!trades || r.trades == null || hasUserSignal(r) || r.trades.some(t => trades.includes(t))));
 }

@@ -47,6 +47,7 @@ export default function NoticesTab({
   const rows = useMemo(() => buildTodayRows({ notices, predictions: predictions || [], keywords, pcOf, nowIso, today }), [notices, predictions, pcDistMap, keywords]); // eslint-disable-line react-hooks/exhaustive-deps
   const view = noticeFilter === "all" ? "all" : "target";
   const visible = filterRows(rows, view, includeDone, trades);
+  const hiddenByTrade = filterRows(rows, view, includeDone).length - visible.length; // 업종 필터로 숨긴 공고 수(업종 미분류 포함)
   const targetUpcoming = filterRows(rows, "target", false, trades);
   const dueToday = targetUpcoming.filter(r => r.closeAt && localDay(r.closeAt) === today).length;
   const noPred = targetUpcoming.filter(r => r.status === STATUS.NONE).length;
@@ -85,7 +86,7 @@ export default function NoticesTab({
         <span style={{ flex: 1 }} />
         <input ref={fileRef} type="file" accept=".xls,.xlsx" multiple style={{ display: "none" }} onChange={e => { if (e.target.files?.length) loadPredFiles(e.target.files); e.target.value = ""; }} />
         <button onClick={() => fileRef.current?.click()} style={btn(true, GREEN)}>입찰서류함 엑셀 업로드</button>
-        <span style={{ fontSize: 10, color: C.txd }}>키워드 "{keywords.join(", ")}" · 참가자 300개사 미만 · 마감 임박순</span>
+        <span style={{ fontSize: 10, color: C.txd }}>키워드 "{keywords.join(", ")}" · 참가자 300개사 미만 · 마감 임박순{hiddenByTrade > 0 ? ` · 다른 업종·미분류 ${hiddenByTrade}건 숨김` : ""}</span>
       </div>
       <div style={{ border: "1px solid " + C.bdr, borderRadius: 8, overflowX: "auto", maxWidth: "100%" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>

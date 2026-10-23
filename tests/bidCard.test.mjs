@@ -10,7 +10,7 @@ const deps = {
   getFinal: () => { calls++; return { adj: 0.5, bid: 900, bid1st: 950, jongsim: false, floorSafe: true }; },
   adjHist: { ok: true }, ownScore: 20,
   passKeyOf: (p) => p.at, passEffFrOf: () => 89.745,
-  resolveAdjHistory: (h, k) => k === "지자체" ? Object.assign([1, 2, 3], { grain: "AG" }) : null,
+  resolveAdjHistory: (h, k) => k === "지자체" ? { grain: "AG", n: 3, arr: [1, 2, 3] } : null, // passProb.js 실제 반환 모양
   passProbPct: () => 96.4, impliedAdjOfBid: () => 0.1,
 };
 const up = { id: 1, source: "file_upload", at: "지자체", ba: "1000", match_status: "pending" };
