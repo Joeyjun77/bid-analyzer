@@ -1,4 +1,4 @@
-// fn-collect-g2b-sheet v4 (2026-10-23)
+// fn-collect-g2b-sheet v5 (2026-10-23)
 // G2B 양식 자동 수집 1차 — 나라장터 경기 전기공사업 개찰 공고를 g2b_auto_sheet에만 계산·저장한다.
 // bid_records·bid_predictions에는 쓰지 않는다(예측 엔진 격리). 스펙: docs/superpowers/specs/2026-10-23-g2b-auto-collect-design.md
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
@@ -12,7 +12,7 @@ const TIME_BUDGET_MS = 100_000; // edge function 실행 한도(150s) 전에 멈�
 const FLUSH_EVERY = 25;         // 결과를 이 건수마다 저장 — 강제 종료돼도 진행이 남는다
 const DAILY_DAYS = 14;          // daily 창: 최근 14일(재료 부족 공고 재시도 기간)
 
-interface Body { mode?: 'daily' | 'backfill'; max_calls?: number; dry_run?: boolean }
+interface Body { mode?: 'daily' | 'backfill'; max_calls?: number; dry_run?: boolean; reserve?: number }
 type Cand = Record<string, any>;
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10); // kstNow()는 +9h 이동된 Date라 KST 날짜가 나온다
@@ -22,12 +22,12 @@ class Budget {
   calls = 0;
   keys: Record<string, { secret: string; left: number }> = {};
   deadline = Date.now() + TIME_BUDGET_MS;
-  constructor(public max: number, public dry: boolean) {}
+  constructor(public max: number, public dry: boolean, public reserve = 0) {} // reserve = 키 하루 한도 중 남겨 둘 호출 수(과거분이 daily 몫을 먹지 않게)
   async open(k: { key: string }) {
     const row = await getApiKey(k.key);
     this.keys[k.key] = { secret: row.decrypted_secret, left: row.daily_limit - row.calls_today };
   }
-  can(k: { key: string }) { return this.calls < this.max && Date.now() < this.deadline && (this.keys[k.key]?.left ?? 0) > 0; }
+  can(k: { key: string }) { return this.calls < this.max && Date.now() < this.deadline && (this.keys[k.key]?.left ?? 0) > this.reserve; }
   // 한 번 호출하고 공고번호가 맞는 항목들을 돌려준다. 예산이 없으면 undefined.
   async items(k: { key: string; service: string }, op: string, params: Record<string, string>, no: string): Promise<any[] | undefined> {
     if (!this.can(k)) return undefined;
@@ -146,7 +146,7 @@ async function runCandidates(cands: Cand[], b: Budget, today: string, out: Recor
 
 // ── 과거분(backfill) ── 단계: notice(공고 목록) → license(면허 목록) → compute(next_page 1=대조용, 2=표시용, 주 단위) → done
 const BACKFILL_FROM = '2026-04-01';
-const LIST_FROM = '2026-03-01'; // 공고 게시일 시작 — 개찰보다 최대 한 달 앞서 게시
+const LIST_FROM = '2026-04-17'; // 공고 게시일 시작 — bid_notices 대상 공고의 첫 게시일(2026-04-17 실측)
 
 async function rest(path: string, init: RequestInit = {}) {
   const { url, key } = supaEnv();
@@ -235,7 +235,7 @@ Deno.serve(async (req: Request) => {
   let body: Body = {};
   try { body = (await req.json()) as Body; } catch { body = {}; }
   const mode = body.mode ?? 'daily';
-  const b = new Budget(Math.max(Number(body.max_calls ?? 300), 0), Boolean(body.dry_run));
+  const b = new Budget(Math.max(Number(body.max_calls ?? 300), 0), Boolean(body.dry_run), Math.max(Number(body.reserve ?? 0), 0));
   const today = ymd(kstNow());
   const out: Record<string, any> = { ok: true, mode, dry_run: b.dry, processed: 0, errors: [] as string[] };
   try {
