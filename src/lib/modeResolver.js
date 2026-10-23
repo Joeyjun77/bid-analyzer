@@ -95,19 +95,3 @@ export async function resolveFloorErrDist({ at, canonicalAg, ba, era = "current"
   }
   return null;
 }
-
-// V2_UI_SPEC §3 — 안착 모드에서 "낙찰 확률" 문자열 표시 금지 가드
-// /evaluate G-모드표시 게이트와 정합 (.claude/commands/evaluate.md §9)
-export function getMainMetricLabel(mode) {
-  return mode === "A" ? "예상 낙찰 확률" : "하한 통과 확률";
-}
-
-export function getModeBadgeLabel(mode) {
-  return mode === "A" ? "공략 모드" : "안착 모드";
-}
-
-export function getModeNotice(mode) {
-  return mode === "A"
-    ? "✓ 이 영역은 낙찰 가능 구간이 존재합니다."
-    : "⚠ 이 발주처는 낙찰이 운에 가깝습니다. 목표는 하한 미달 탈락 방지.";
-}

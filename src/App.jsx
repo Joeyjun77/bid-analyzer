@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS } from "./lib/constants.js";
-import V2PreviewTab from "./components/V2PreviewTab.jsx";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import BidCard from "./components/BidCard.jsx";
@@ -992,7 +991,7 @@ export default function App(){
 
   // 스타일
   const btnS=(act,c)=>({padding:"4px 12px",fontSize:11,fontWeight:act?600:400,background:act?c+"22":"#1a1a30",color:act?c:"#888",border:"1px solid "+(act?c+"44":"#252540"),borderRadius:5,cursor:"pointer"});
-  const Tb=({id,ch,badge})=>(<button onClick={()=>{setTab(id);setDataPage(0)}} style={{padding:"10px 20px",fontSize:12,fontWeight:tab===id?600:400,background:tab===id?C.bg3:"transparent",color:tab===id?C.gold:C.txm,border:"none",borderBottom:tab===id?`2px solid ${C.gold}`:"2px solid transparent",cursor:"pointer",position:"relative"}}>{ch}{badge>0&&<span style={{position:"absolute",top:4,right:4,background:"#e24b4a",color:"#fff",fontSize:8,padding:"1px 5px",borderRadius:8,minWidth:14,textAlign:"center"}}>{badge}</span>}</button>);
+  const Tb=({id,ch,badge})=>(<button onClick={()=>{setTab(id);setDataPage(0);if(id==="g2b_sheet")setG2bAgency("")}} style={{padding:"10px 20px",fontSize:12,fontWeight:tab===id?600:400,background:tab===id?C.bg3:"transparent",color:tab===id?C.gold:C.txm,border:"none",borderBottom:tab===id?`2px solid ${C.gold}`:"2px solid transparent",cursor:"pointer",position:"relative"}}>{ch}{badge>0&&<span style={{position:"absolute",top:4,right:4,background:"#e24b4a",color:"#fff",fontSize:8,padding:"1px 5px",borderRadius:8,minWidth:14,textAlign:"center"}}>{badge}</span>}</button>);
   // 정렬 가능 헤더
   const SortTh=({label,sortKey,current,setCurrent,align,style:sx})=>{
     const active=current.key===sortKey;
@@ -1059,19 +1058,18 @@ export default function App(){
       </div>
       <div style={{display:"flex",alignItems:"center",gap:0,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:0,flexWrap:"wrap",alignItems:"center"}}>
-          <Tb id="dash" ch="대시보드"/><Tb id="analysis" ch="분석"/><Tb id="predict" ch="예측 기록" badge={compStats.pending}/><Tb id="notices" ch="오늘의 공고" badge={notices.filter(n=>n.is_target&&!n.prediction_id).length||0}/><Tb id="performance" ch="성과"/><Tb id="g2b_sheet" ch="G2B 양식"/>
+          {TOP_TABS.map(t=><Tb key={t.id} id={t.id} ch={t.ch} badge={t.id==="predict"?compStats.pending:t.id==="notices"?(notices.filter(n=>n.is_target&&!n.prediction_id).length||0):undefined}/>)}
           {/* 보조 메뉴 접기 — 접힌 상태에서도 활성 탭은 노출 유지 */}
           {(()=>{
-            const SUB=[{id:"feedback",ch:"📈 피드백"},{id:"quality",ch:"🔬 검증"},{id:"agency_predict_v6",ch:"💎 발주처 예측 V6"},{id:"agency_floor",ch:"🎯 발주사 하한"},{id:"v2_preview",ch:"🧪 V2 미리보기"}];
-            const shown=moreTabs?SUB:SUB.filter(s=>s.id===tab);
+            const shown=moreTabs?SUB_TABS:SUB_TABS.filter(s=>s.id===tab);
             return<>
               {shown.map(s=><Tb key={s.id} id={s.id} ch={s.ch}/>)}
-              <button onClick={()=>setMoreTabs(v=>!v)} title={moreTabs?"보조 메뉴 접기":"피드백·검증·발주처 예측·발주사 하한·V2 미리보기"}
+              <button onClick={()=>setMoreTabs(v=>!v)} title={moreTabs?"보조 메뉴 접기":SUB_TABS.map(s=>s.ch.replace(/^\S+\s/,"")).join("·")}
                 style={{padding:"10px 12px",fontSize:12,background:"transparent",color:moreTabs?C.gold:C.txd,border:"none",borderBottom:"2px solid transparent",cursor:"pointer"}}>
-                {moreTabs?"접기 ▴":"더보기 ▾"}</button>
+                {moreTabs?"접기 ▴":"보조 ▾"}</button>
             </>;
           })()}
-          <Tb id="chat" ch="AI 상담"/>{isAdmin&&<Tb id="admin" ch="👤 관리자"/>}
+          {isAdmin&&<Tb id="admin" ch="👤 관리자"/>}
         </div>
         <UserBadge/>
       </div>
@@ -1081,6 +1079,7 @@ export default function App(){
     <div style={{maxWidth:tab==="g2b_sheet"?1480:1300,margin:"0 auto",padding:"16px 16px"}}>
 
     {/* ═══ 대시보드 탭 ═══ */}
+    {REF_ONLY_TABS.has(tab)&&<div style={{margin:"0 0 10px",padding:"6px 12px",fontSize:11,color:"#d4a834",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.3)",borderRadius:6}}>{REF_ONLY_BANNER}</div>}
     {tab==="data"&&<DataTab busy={busy} drag={drag} setDrag={setDrag} loadFiles={loadFiles} loadPredFiles={loadPredFiles} uploadLog={uploadLog} dbLoading={dbLoading} compStats={compStats} dataStatus={dataStatus} bidDetails={bidDetails} onOpenExpired={()=>{setTab("predict");setCompFilter("expired")}}/>}
 
     {/* ═══ 분석 탭 (통계 + 데이터 통합) ═══ */}
@@ -1436,7 +1435,6 @@ export default function App(){
     {/* ═══ Phase 20: 작전 대시보드 탭 ═══ */}
 
     {/* ═══ U0 Phase 2: V2 미리보기 (mock 표시, B2/B3 엔진 미연결) ═══ */}
-    {tab==="v2_preview"&&<V2PreviewTab/>}
 
     {/* ═══ Phase 22 P2-2: 낙찰 결과 자동 피드백 탭 ═══ */}
     {tab==="feedback"&&<PredictionFeedback/>}
