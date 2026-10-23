@@ -16,7 +16,7 @@ export function mergeAutoRows(recs, autoRows) {
     .map(a => ({
       id: -a.id, pn_no: a.bid_ntce_no + "-" + (a.bid_ntce_ord || "000"), pn: a.pn, ag: a.ag, canonical_ag: a.canonical_ag, at: a.at, od: a.od,
       ba: a.ba, av: a.av, xp: a.xp, fr: a.fr, bp: a.bp, co: a.co, co_no: a.co_no, pc: a.pc,
-      ar1: a.ar1, br1: a.br1, floor_price: a.floor_price, cat: "전기", is_excluded: false, _auto: true,
+      ar1: a.ar1, br1: a.br1, floor_price: a.floor_price, cat: a.trade_elec ? "전기" : null, is_excluded: false, _auto: true, // 참여 공고는 업종 무관하게 계산됨
     }));
   return add.length ? [...(recs || []), ...add] : recs;
 }

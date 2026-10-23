@@ -1,4 +1,4 @@
-import { sumAValue, computeSheet, classifyTrade, parseOpengCorpInfo } from "../supabase/functions/fn-collect-g2b-sheet/calc.js";
+import { sumAValue, computeSheet, classifyTrade, parseOpengCorpInfo, sheetStatus, pickOrd } from "../supabase/functions/fn-collect-g2b-sheet/calc.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${got} expect ${exp}`); bad++; } };
@@ -43,6 +43,19 @@ const oc = parseOpengCorpInfo("주식회사 성은이엔씨^8778102412^한헌석
 eq(oc.co, "주식회사 성은이엔씨", "1순위 업체"); eq(oc.co_no, "8778102412", "사업자번호"); eq(oc.bp, 113452950, "1순위 금액"); eq(oc.rate, 90.025, "투찰률");
 eq(parseOpengCorpInfo("").bp, null, "빈 값"); eq(parseOpengCorpInfo(null).co, null, "null");
 eq(parseOpengCorpInfo("업체^123").bp, null, "필드 부족");
+
+// sheetStatus — 포기 기준은 시도 횟수, 단 오래된 공고의 재료 부족(유찰 등)은 기다려도 안 오므로 바로 포기. API 오류는 횟수까지 재시도.
+const T = "2026-10-23";
+eq(sheetStatus({ missing: [], attempts: 1, od: "2026-10-20", today: T }), "complete", "완성");
+eq(sheetStatus({ missing: ["bp"], attempts: 1, od: "2026-10-20", today: T }), "pending", "최근·1회 → 대기");
+eq(sheetStatus({ missing: ["bp"], attempts: 3, od: "2026-10-20", today: T }), "gave_up", "3회 → 포기");
+eq(sheetStatus({ missing: ["bp"], attempts: 1, od: "2026-09-01", today: T }), "gave_up", "14일 넘은 재료 부족 → 포기");
+eq(sheetStatus({ missing: ["api_error"], attempts: 1, od: "2026-09-01", today: T }), "pending", "오래돼도 API 오류는 재시도");
+eq(sheetStatus({ missing: ["api_error"], attempts: 3, od: "2026-09-01", today: T }), "gave_up", "API 오류도 3회면 포기");
+
+// pickOrd — 같은 공고의 여러 차수 중 요청 차수, 없으면 최대 차수
+const its = [{ bidNtceNo: "R1", bidNtceOrd: "000", v: 0 }, { bidNtceNo: "R1", bidNtceOrd: "002", v: 2 }, { bidNtceNo: "R1", bidNtceOrd: "001", v: 1 }];
+eq(pickOrd(its, "001").v, 1, "요청 차수"); eq(pickOrd(its, "009").v, 2, "없으면 최대 차수"); eq(pickOrd([], "000"), null, "빈 목록");
 
 console.log(bad === 0 ? "OK g2bSheetCalc" : `FAIL ${bad}`);
 process.exit(bad === 0 ? 0 : 1);

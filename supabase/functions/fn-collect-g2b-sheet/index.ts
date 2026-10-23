@@ -1,14 +1,16 @@
-// fn-collect-g2b-sheet v3 (2026-10-23)
+// fn-collect-g2b-sheet v4 (2026-10-23)
 // G2B 양식 자동 수집 1차 — 나라장터 경기 전기공사업 개찰 공고를 g2b_auto_sheet에만 계산·저장한다.
 // bid_records·bid_predictions에는 쓰지 않는다(예측 엔진 격리). 스펙: docs/superpowers/specs/2026-10-23-g2b-auto-collect-design.md
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { buildUrl, fetchG2B, kstNow } from './_shared/g2b.ts';
 import { getApiKey, incrementApiCall, rpc, supaEnv } from './_shared/db.ts';
-import { sumAValue, computeSheet, classifyTrade, parseOpengCorpInfo } from './calc.js';
+import { sumAValue, computeSheet, classifyTrade, parseOpengCorpInfo, sheetStatus, pickOrd } from './calc.js';
 
 const PUB = { key: 'prod_bid_public', service: 'BidPublicInfoService' };
 const SCS = { key: 'prod_scsbid_info', service: 'ScsbidInfoService' };
-const GIVE_UP_DAYS = 7; // 개찰 후 7일 지나도 재료가 안 모이면 포기
+const TIME_BUDGET_MS = 100_000; // edge function 실행 한도(150s) 전에 멈추고 다음 실행에서 이어 간다
+const FLUSH_EVERY = 25;         // 결과를 이 건수마다 저장 — 강제 종료돼도 진행이 남는다
+const DAILY_DAYS = 14;          // daily 창: 최근 14일(재료 부족 공고 재시도 기간)
 
 interface Body { mode?: 'daily' | 'backfill'; max_calls?: number; dry_run?: boolean }
 type Cand = Record<string, any>;
@@ -19,25 +21,29 @@ const addDays = (s: string, n: number) => ymd(new Date(Date.parse(s) + n * 86400
 class Budget {
   calls = 0;
   keys: Record<string, { secret: string; left: number }> = {};
+  deadline = Date.now() + TIME_BUDGET_MS;
   constructor(public max: number, public dry: boolean) {}
   async open(k: { key: string }) {
     const row = await getApiKey(k.key);
     this.keys[k.key] = { secret: row.decrypted_secret, left: row.daily_limit - row.calls_today };
   }
-  can(k: { key: string }) { return this.calls < this.max && (this.keys[k.key]?.left ?? 0) > 0; }
+  can(k: { key: string }) { return this.calls < this.max && Date.now() < this.deadline && (this.keys[k.key]?.left ?? 0) > 0; }
   // 한 번 호출하고 공고번호가 맞는 항목들을 돌려준다. 예산이 없으면 undefined.
   async items(k: { key: string; service: string }, op: string, params: Record<string, string>, no: string): Promise<any[] | undefined> {
     if (!this.can(k)) return undefined;
     this.calls++; this.keys[k.key].left--;
     await incrementApiCall(k.key, 1).catch(() => 0);
     const resp = await fetchG2B(buildUrl(k.service, op, this.keys[k.key].secret, params));
-    if (!resp.ok) throw new Error(`${op} ${no} rc=${resp.resultCode ?? resp.status} ${resp.resultMsg ?? resp.error ?? ''}`.slice(0, 160));
+    if (!resp.ok) {
+      if (resp.resultCode === '22') this.keys[k.key].left = 0; // 서버 쪽 일일 한도 초과 — 이 키는 오늘 더 쓰지 않는다
+      throw new Error(`${op} ${no} rc=${resp.resultCode ?? resp.status} ${resp.resultMsg ?? resp.error ?? ''}`.slice(0, 160));
+    }
     return (resp.items as any[]).filter((it) => it?.bidNtceNo === no);
   }
-  // 첫 항목. 예산이 없으면 undefined, 응답이 비면 null.
-  async one(k: { key: string; service: string }, op: string, params: Record<string, string>, no: string) {
+  // 요청 차수 항목(없으면 최대 차수). 예산이 없으면 undefined, 응답이 비면 null.
+  async one(k: { key: string; service: string }, op: string, params: Record<string, string>, no: string, ord: string) {
     const its = await this.items(k, op, params, no);
-    return its === undefined ? undefined : (its[0] ?? null);
+    return its === undefined ? undefined : pickOrd(its, ord);
   }
 }
 
@@ -45,9 +51,11 @@ class Budget {
 const COLS = ['bid_ntce_no', 'bid_ntce_ord', 'status', 'missing', 'purpose', 'excel_record_id', 'api_record_id', 'od', 'pn', 'ag', 'canonical_ag', 'at', 'reg',
   'trade_elec', 'trade_source', 'ba', 'av', 'a_applies', 'a_items', 'xp', 'fr', 'bp', 'co', 'co_no', 'pc', 'ar1', 'br1', 'floor_price', 'attempts', 'computed_at', 'updated_at'];
 
-async function upsertRows(raw: Record<string, unknown>[]) {
+const ERR_COLS = ['bid_ntce_no', 'bid_ntce_ord', 'od', 'status', 'missing', 'attempts', 'updated_at'];
+
+async function upsertRows(raw: Record<string, unknown>[], cols = COLS) {
   if (!raw.length) return;
-  const rows = raw.map((r) => Object.fromEntries(COLS.map((k) => [k, r[k] ?? null])));
+  const rows = raw.map((r) => Object.fromEntries(cols.map((k) => [k, r[k] ?? null])));
   const { url, key } = supaEnv();
   const res = await fetch(`${url}/rest/v1/g2b_auto_sheet?on_conflict=bid_ntce_no`, {
     method: 'POST',
@@ -58,13 +66,13 @@ async function upsertRows(raw: Record<string, unknown>[]) {
 }
 
 // 공고 하나 처리 → 저장할 행(또는 예산 소진 시 null). 과거분의 주공종·하한율·면허는 후보 함수가 메타 테이블에서 채워 준다.
-async function processOne(c: Cand, b: Budget, today: string) {
+async function processOne(c: Cand, b: Budget, today: string, errs: string[]) {
   const no = c.bid_ntce_no as string;
   let mainCnstty = c.main_cnstty || null; // 원본의 빈 문자열은 값 없음으로
   let fr = c.fr || null;
   const ord = (c.bid_ntce_ord as string) ?? '000';
   if (fr == null) { // 하한율만 공고 단건 조회(inqryDiv=2·날짜 없음). 주공종도 같이 채운다.
-    const it = await b.one(PUB, 'getBidPblancListInfoCnstwk', { inqryDiv: '2', bidNtceNo: no, pageNo: '1', numOfRows: '5' }, no);
+    const it = await b.one(PUB, 'getBidPblancListInfoCnstwk', { inqryDiv: '2', bidNtceNo: no, pageNo: '1', numOfRows: '5' }, no, ord);
     if (it === undefined) return null;
     if (it) { mainCnstty = mainCnstty || it.mainCnsttyNm || null; fr = it.sucsfbidLwltRate || null; }
   }
@@ -74,7 +82,7 @@ async function processOne(c: Cand, b: Budget, today: string) {
     if (lic === undefined) {
       const its = await b.items(PUB, 'getBidPblancListInfoLicenseLimit', { inqryDiv: '2', bidNtceNo: no, bidNtceOrd: ord, pageNo: '1', numOfRows: '20' }, no);
       if (its === undefined) return null;
-      lic = its.map((x) => x.lcnsLmtNm);
+      lic = its.filter((x) => (x.bidNtceOrd ?? ord) === ord).map((x) => x.lcnsLmtNm);
     }
     trade = lic.length
       ? classifyTrade({ cat: c.cat, mainCnsttyNm: mainCnstty, licenseNames: lic })
@@ -86,21 +94,20 @@ async function processOne(c: Cand, b: Budget, today: string) {
     purpose: c.excel_record_id != null ? 'compare' : 'display',
     trade_elec: trade.elec, trade_source: trade.source, attempts: Number(c.attempts ?? 0) + 1, updated_at: new Date().toISOString(),
   };
-  const expired = c.od && addDays(c.od, GIVE_UP_DAYS) < today;
   if (trade.elec === false && !c.mine) return { ...base, status: 'not_target', missing: null };
-  if (trade.elec === null && !c.mine) return { ...base, status: expired ? 'gave_up' : 'pending', missing: ['trade'] };
+  if (trade.elec === null && !c.mine) return { ...base, status: sheetStatus({ missing: ['trade'], attempts: base.attempts, od: c.od, today }), missing: ['trade'] };
 
   let { co, co_no, bp, pc } = c;
   if (bp == null && b.can(SCS)) { // 1순위 금액은 개찰결과 단건 조회(inqryDiv=4)의 opengCorpInfo 4번째 값. 최종 낙찰자 목록은 적격심사 전엔 비어 있다(2026-10-23 실측)
     try {
-      const it = await b.one(SCS, 'getOpengResultListInfoCnstwk', { inqryDiv: '4', bidNtceNo: no, pageNo: '1', numOfRows: '5' }, no);
+      const it = await b.one(SCS, 'getOpengResultListInfoCnstwk', { inqryDiv: '4', bidNtceNo: no, pageNo: '1', numOfRows: '5' }, no, ord);
       if (it) {
         const o = parseOpengCorpInfo(it.opengCorpInfo);
         co = co ?? o.co; co_no = co_no ?? o.co_no; bp = o.bp; pc = Number(pc) > 0 ? pc : (Number(it.prtcptCnum) || null);
       }
-    } catch (_) { /* 1순위 없음 → pending 유지 */ }
+    } catch (e) { errs.push(String(e).slice(0, 160)); } // 1순위 없음 → 미완성으로 남는다
   }
-  const aItem = await b.one(PUB, 'getBidPblancListInfoCnstwkBsisAmount', { inqryDiv: '2', bidNtceNo: no, pageNo: '1', numOfRows: '5' }, no);
+  const aItem = await b.one(PUB, 'getBidPblancListInfoCnstwkBsisAmount', { inqryDiv: '2', bidNtceNo: no, pageNo: '1', numOfRows: '5' }, no, ord);
   if (aItem === undefined) return null;
   const a = aItem ? sumAValue(aItem) : null;
   const num = (v: unknown) => (v == null || v === '' ? null : Number(v));
@@ -109,26 +116,32 @@ async function processOne(c: Cand, b: Budget, today: string) {
     ...base, co: co ?? null, co_no: co_no ?? null, bp: num(bp), pc: pc ?? null,
     ba: num(c.ba), xp: num(c.xp), fr: num(fr), av: a ? a.av : null, a_applies: a ? a.aApplies : null, a_items: a ? a.items : null,
     ar1: s.ar1, br1: s.br1, floor_price: s.floor_price, missing: s.missing.length ? s.missing : null,
-    status: s.missing.length ? (expired ? 'gave_up' : 'pending') : 'complete',
+    status: sheetStatus({ missing: s.missing, attempts: base.attempts, od: c.od, today }),
     computed_at: s.missing.length ? null : new Date().toISOString(),
   };
 }
 
 async function runCandidates(cands: Cand[], b: Budget, today: string, out: Record<string, any>) {
-  const rows: Record<string, unknown>[] = [];
+  const rows: Record<string, unknown>[] = [], errRows: Record<string, unknown>[] = [];
+  const flush = async () => { // 오류 행은 상태 컬럼만 merge — 기존 행의 다른 값을 null로 지우지 않는다
+    if (!b.dry) { await upsertRows(rows); await upsertRows(errRows, ERR_COLS); }
+    rows.length = 0; errRows.length = 0;
+  };
   for (const c of cands) {
     if (!b.can(PUB)) { out.stopped = 'budget'; break; }
     try {
-      const row = await processOne(c, b, today);
+      const row = await processOne(c, b, today, out.errors);
       if (!row) { out.stopped = 'budget'; break; }
       rows.push(row); out.processed++; out[row.status as string] = (out[row.status as string] ?? 0) + 1;
     } catch (e) {
       out.errors.push(String(e).slice(0, 160));
-      rows.push({ bid_ntce_no: c.bid_ntce_no, bid_ntce_ord: c.bid_ntce_ord ?? '000', od: c.od, status: 'pending', missing: ['api_error'],
-        attempts: Number(c.attempts ?? 0) + 1, updated_at: new Date().toISOString() });
+      const attempts = Number(c.attempts ?? 0) + 1;
+      errRows.push({ bid_ntce_no: c.bid_ntce_no, bid_ntce_ord: c.bid_ntce_ord ?? '000', od: c.od, missing: ['api_error'], attempts,
+        status: sheetStatus({ missing: ['api_error'], attempts, od: c.od, today }), updated_at: new Date().toISOString() });
     }
+    if (rows.length + errRows.length >= FLUSH_EVERY) await flush();
   }
-  if (!b.dry) await upsertRows(rows);
+  await flush();
 }
 
 // ── 과거분(backfill) ── 단계: notice(공고 목록) → license(면허 목록) → compute(next_page 1=대조용, 2=표시용, 주 단위) → done
@@ -189,6 +202,7 @@ async function backfill(b: Budget, today: string, out: Record<string, any>) {
       out.meta = (out.meta ?? 0) + meta.size;
       if (page * 999 < r.total) page++;
       else { page = 1; dt = addDays(dt, 1); }
+      await save(); // 페이지마다 진행 위치 저장
       if (dt > lastList) {
         if (phase === 'notice') { phase = 'license'; dt = LIST_FROM; }
         else { phase = 'compute'; dt = BACKFILL_FROM; page = 1; }
@@ -207,8 +221,9 @@ async function backfill(b: Budget, today: string, out: Record<string, any>) {
     const cands = await rpc<Cand[]>('g2b_auto_candidates', { p_mode: page === 1 ? 'compare' : 'fill', p_from: dt, p_to: to, p_limit: 500 });
     out.candidates = (out.candidates ?? 0) + cands.length;
     await runCandidates(cands, b, today, out);
-    if (out.stopped === 'budget') break;
+    if (out.stopped === 'budget' || cands.length === 500) break; // 한도만큼 왔으면 같은 주를 다음 실행에서 이어 간다
     dt = addDays(dt, 7);
+    await save();
   }
   } finally { // 예외가 나도 진행 위치는 남긴다
     await save();
@@ -226,7 +241,7 @@ Deno.serve(async (req: Request) => {
   try {
     await b.open(PUB); await b.open(SCS);
     if (b.max > 0 && mode === 'daily') {
-      const cands = await rpc<Cand[]>('g2b_auto_candidates', { p_mode: 'daily', p_from: addDays(today, -7), p_to: today, p_limit: 500 });
+      const cands = await rpc<Cand[]>('g2b_auto_candidates', { p_mode: 'daily', p_from: addDays(today, -DAILY_DAYS), p_to: today, p_limit: 1000 });
       out.candidates = cands.length;
       await runCandidates(cands, b, today, out);
     }

@@ -660,7 +660,7 @@ export async function sbFetchNotices(){
   try{const res=await authedFetch(buildNoticesQuery(new Date().toISOString(),NOTICE_REGIONS,loadKeywords()));if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
 // G2B 양식 자동 수집 완성 행(g2b_auto_sheet, 읽기 전용) — G2B 양식·투찰 카드 1위 이력 전용. 실패하면 빈 배열.
-const G2B_AUTO_COLS="id,bid_ntce_no,bid_ntce_ord,status,purpose,excel_record_id,od,pn,ag,canonical_ag,at,ba,av,xp,fr,bp,co,co_no,pc,ar1,br1,floor_price";
+const G2B_AUTO_COLS="id,bid_ntce_no,bid_ntce_ord,status,purpose,excel_record_id,trade_elec,od,pn,ag,canonical_ag,at,ba,av,xp,fr,bp,co,co_no,pc,ar1,br1,floor_price";
 export async function sbFetchG2BAuto(){
   const out=[];
   try{for(let offset=0;;offset+=1000){

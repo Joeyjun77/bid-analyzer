@@ -43,6 +43,21 @@ export function parseOpengCorpInfo(s) {
   return { co: p[0] || null, co_no: p[1] || null, bp: p.length >= 4 ? num(p[3]) : null, rate: p.length >= 5 ? num(p[4]) : null };
 }
 
+// 상태 전이. 포기 = 3회 시도, 또는 개찰 14일이 지난 공고의 재료 부족(유찰 등 — 기다려도 안 온다). API 오류는 횟수까지 재시도.
+const MAX_ATTEMPTS = 3, STALE_DAYS = 14;
+export function sheetStatus({ missing, attempts, od, today }) {
+  if (!missing || !missing.length) return "complete";
+  if (attempts >= MAX_ATTEMPTS) return "gave_up";
+  const stale = od && Date.parse(od) + STALE_DAYS * 86400000 < Date.parse(today);
+  return stale && !missing.includes("api_error") ? "gave_up" : "pending";
+}
+
+// 같은 공고의 여러 차수 중 요청 차수, 없으면 최대 차수(정정공고 값이 섞이지 않게)
+export function pickOrd(items, ord) {
+  if (!items || !items.length) return null;
+  return items.find((it) => it.bidNtceOrd === ord) ?? [...items].sort((a, b) => String(b.bidNtceOrd).localeCompare(String(a.bidNtceOrd)))[0];
+}
+
 // 업종: 공고 필드에 '전기공사'가 있으면 전기. 값이 하나라도 있는데 없으면 아님. 전부 비면 모름(null) — 공고명 추정은 하지 않는다.
 export function classifyTrade({ cat, mainCnsttyNm, licenseNames } = {}) {
   const fields = [["cat", cat], ["mainCnsttyNm", mainCnsttyNm], ["licenseNames", (licenseNames || []).join(",")]];
