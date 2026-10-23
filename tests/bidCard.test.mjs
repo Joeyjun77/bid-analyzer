@@ -56,6 +56,9 @@ eq(h.rows[0].br1, 99.8, "숫자로 변환"); eq(h.rows[0].ar1, 99.7, "발주처 
 eq(agencyRecentHistory(R, "고양시").count, 4, "canonical 없으면 ag로");
 eq(agencyRecentHistory(R, "없는기관").rows.length, 0, "기록 없음");
 eq(agencyRecentHistory([], "x").p50, null, "빈 입력"); eq(agencyRecentHistory(null, "x").count, 0, "null 입력");
+const ha = agencyRecentHistory([...R, { canonical_ag: "고양시", od: "2026-07-02", br1: 100.5, ar1: 100.4, pn: "자동", _auto: true }], "고양시", 3);
+eq(ha.autoCount, 1, "자동 행 수"); eq(ha.rows[0].auto, true, "자동 행 표시"); eq(ha.rows[1].auto, false, "엑셀 행은 false");
+eq(h.autoCount, 0, "자동 없으면 0");
 
 console.log(bad === 0 ? "OK bidCard" : `FAIL ${bad}`);
 process.exit(bad === 0 ? 0 : 1);

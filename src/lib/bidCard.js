@@ -33,9 +33,9 @@ const quantile = (s, q) => { if (!s.length) return null; const i = q * (s.length
 export function agencyRecentHistory(recs, canonicalAg, n = 20) {
   const rows = (recs || [])
     .filter(r => r && r.is_excluded !== true && r.od && num(r.br1) != null && num(r.ar1) != null && (r.canonical_ag || r.ag) === canonicalAg)
-    .map(r => ({ od: String(r.od).slice(0, 10), br1: num(r.br1), ar1: num(r.ar1), pn: r.pn }))
+    .map(r => ({ od: String(r.od).slice(0, 10), br1: num(r.br1), ar1: num(r.ar1), pn: r.pn, auto: r._auto === true }))
     .sort((a, b) => (a.od < b.od ? 1 : a.od > b.od ? -1 : 0))
     .slice(0, n);
   const s = rows.map(r => r.br1).sort((a, b) => a - b);
-  return { rows, p25: quantile(s, 0.25), p50: quantile(s, 0.5), p75: quantile(s, 0.75), count: rows.length };
+  return { rows, p25: quantile(s, 0.25), p50: quantile(s, 0.5), p75: quantile(s, 0.75), count: rows.length, autoCount: rows.filter(r => r.auto).length };
 }

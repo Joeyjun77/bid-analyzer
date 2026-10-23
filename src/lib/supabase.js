@@ -659,6 +659,14 @@ export async function sbFetchV8Predictions(){
 export async function sbFetchNotices(){
   try{const res=await authedFetch(buildNoticesQuery(new Date().toISOString(),NOTICE_REGIONS,loadKeywords()));if(!res.ok)return[];return await res.json()}catch(e){return[]}
 }
+// G2B 양식 자동 수집 완성 행(g2b_auto_sheet, 읽기 전용) — G2B 양식·투찰 카드 1위 이력 전용. 실패하면 빈 배열.
+const G2B_AUTO_COLS="id,bid_ntce_no,bid_ntce_ord,status,purpose,excel_record_id,od,pn,ag,canonical_ag,at,ba,av,xp,fr,bp,co,co_no,pc,ar1,br1,floor_price";
+export async function sbFetchG2BAuto(){
+  const out=[];
+  try{for(let offset=0;;offset+=1000){
+    const res=await authedFetch("/rest/v1/g2b_auto_sheet?select="+G2B_AUTO_COLS+"&status=eq.complete&order=id.asc&offset="+offset+"&limit=1000");
+    if(!res.ok)return out;const rows=await res.json();out.push(...rows);if(rows.length<1000)return out}}catch(e){return out}
+}
 // 단건 공고 예측 등록 (predict_notice DB 함수 호출)
 export async function sbPredictNotice(noticeId){
   try{const res=await authedFetch("/rest/v1/rpc/predict_notice",{method:"POST",headers:{...JSON_H,"Prefer":"return=representation"},body:JSON.stringify({p_notice_id:noticeId})});if(!res.ok)return null;const rows=await res.json();return rows[0]||null}catch(e){return null}

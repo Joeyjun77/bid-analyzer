@@ -16,6 +16,9 @@ const fmtRateTrunc = (v, d) => {
 };
 const RATE_CAVEAT = "추첨 결과 관측값(복수예비가 C(15,4)) — 발주처의 의도적 선택 아님";
 const RATE_LABEL = { br1: "1위사정율", ar1: "발주처사정율" };
+// 나라장터 자동 수집 행 표시(g2bAuto.js mergeAutoRows의 _auto) — 엑셀 대조 중인 계산값
+const AUTO_TIP = "나라장터 자동 수집 · 계산값 · 엑셀 대조 중";
+const AutoBadge = () => <span title={AUTO_TIP} style={{ fontSize: 9, padding: "0 4px", marginRight: 4, borderRadius: 3, border: "1px solid " + C.bdr, color: C.txm, fontWeight: 500 }}>자동</span>;
 
 // 개찰일(od) 글씨색 — 오늘(현재) 기준 연도 최신순 강조. 최근3년=빨강3단계, 다음3년=노랑3단계, 그이전=흰색에서 흐려짐.
 const RECENCY_RED = ["#ff2f2f", "#ff6363", "#ff9a9a"]; // 올해·작년·재작년 (최신→과거)
@@ -199,6 +202,8 @@ export default function G2BSheetTab({ recs, initialAgency }){
   const yearFreq = useMemo(() => buildYearRateFreq(recsD, dispDecimals), [recsD, dispDecimals]);
   // 선택 발주처 행만 년도별 — yearAg 기준(현 업종/금액대 필터 반영, freq.rows 기반).
   const agencyYearFreq = useMemo(() => buildYearRateFreq(freq ? freq.rows : [], dispDecimals), [freq, dispDecimals]);
+  // 현재 빈도 기준 모집단에 들어간 자동 수집 행 수(전체·년도 기준은 전 발주처, 그 외는 이 발주처)
+  const autoN = useMemo(() => ((basis === "all" || basis === "year") ? (recsD || []).filter(r => r.ar1 != null && r.is_excluded !== true) : (freq ? freq.rows : [])).filter(r => r._auto).length, [basis, recsD, freq]);
 
   // 활성 basis + (hl, row) → 빈도맵·분모·년도. agency=선택 발주처(freq), year=행 od 년도(전체), yearAg=행 od 년도(이 발주처), all=전역.
   const freqMapFor = (hl, r) => {
@@ -324,7 +329,7 @@ export default function G2BSheetTab({ recs, initialAgency }){
       }
     }
     if (col.recency){
-      return <td key={col.label} title={String(raw ?? "")} style={{ ...base, color: odYearColor(raw), fontSize: 12, fontWeight: 600 }}>{text}</td>;
+      return <td key={col.label} title={String(raw ?? "")} style={{ ...base, color: odYearColor(raw), fontSize: 12, fontWeight: 600 }}>{r._auto && <AutoBadge />}{text}</td>;
     }
     if (col.tagGreen && raw != null && String(raw).includes(col.tagGreen)){
       return <td key={col.label} title={String(raw ?? "")} style={{ ...base, color: "#5dca96", fontSize: 12, fontWeight: 600 }}>{text}</td>;
@@ -384,6 +389,7 @@ export default function G2BSheetTab({ recs, initialAgency }){
               <span style={{ fontWeight: 700, color: C.txt }}>{agency}</span>
               <button onClick={() => { setAgency(""); setCat(""); setSeg(""); setSortChain([{ key: "od", dir: "desc" }]); setListShow(step); }} style={{ padding: "2px 8px", fontSize: 10, background: "transparent", color: C.txd, border: "1px solid " + C.bdr, borderRadius: 5, cursor: "pointer" }}>발주처 변경</button>
               <span style={{ color: C.txm }}>표시 {freq.rows.length.toLocaleString()}행</span>
+              {autoN > 0 && <span title={AUTO_TIP} style={{ color: C.txd }}>· 자동 {autoN.toLocaleString()}건 포함</span>}
               <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <span style={{ color: C.txd, fontSize: 11 }}>빈도 기준</span>
                 <span style={{ display: "inline-flex", border: "1px solid " + C.bdr, borderRadius: 6, overflow: "hidden" }}>
@@ -621,7 +627,7 @@ export default function G2BSheetTab({ recs, initialAgency }){
         <div onClick={() => setDetailRow(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 10, padding: 16, maxWidth: 560, width: "100%", maxHeight: "85vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <span style={{ fontWeight: 700, color: C.gold, fontSize: 13 }}>상세 — G2B 전체 항목</span>
+              <span style={{ fontWeight: 700, color: C.gold, fontSize: 13 }}>{detailRow._auto && <AutoBadge />}상세 — G2B 전체 항목</span>
               <button onClick={() => setDetailRow(null)} style={btnStyle}>닫기 ✕</button>
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>

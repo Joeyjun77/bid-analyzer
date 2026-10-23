@@ -112,7 +112,7 @@ export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accur
         {/* 블록 3 — 1위 사정률 이력 */}
         <div style={{ ...box, marginBottom: 0 }}>
           <div style={{ ...h, display: "flex", justifyContent: "space-between" }}>
-            <span>이 발주처의 1위 사정률 이력 (최근 {hist.count}건)</span>
+            <span>이 발주처의 1위 사정률 이력 (최근 {hist.count}건{hist.autoCount > 0 ? ` · 자동 ${hist.autoCount}건 포함` : ""})</span>
             <button onClick={() => onOpenG2B?.(ag)} style={{ background: "transparent", border: "none", color: GOLD, fontSize: 11, cursor: "pointer", padding: 0 }}>G2B 양식에서 전체 보기 →</button>
           </div>
           {hist.count === 0 ? <div style={{ fontSize: 12, color: C.txd }}>이 발주처의 1위 기록이 없습니다.</div> : (
@@ -126,7 +126,7 @@ export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accur
                   <thead><tr>{["개찰일", "1위 사정률", "발주처 사정률", "공고명"].map((t, i) => <th key={t} style={{ textAlign: i === 3 ? "left" : i === 0 ? "left" : "right", color: C.txd, fontWeight: 600, padding: "4px 6px", borderBottom: "1px solid " + C.bdr }}>{t}</th>)}</tr></thead>
                   <tbody>{hist.rows.map((h2, i) => (
                     <tr key={i} style={{ borderBottom: "1px solid " + C.bdr + "55" }}>
-                      <td style={{ padding: "3px 6px", ...mono }}>{h2.od}</td>
+                      <td style={{ padding: "3px 6px", ...mono }}>{h2.auto && <span title="나라장터 자동 수집 · 계산값 · 엑셀 대조 중" style={{ fontSize: 9, padding: "0 4px", marginRight: 4, borderRadius: 3, border: "1px solid " + C.bdr, color: C.txm }}>자동</span>}{h2.od}</td>
                       <td style={{ padding: "3px 6px", textAlign: "right", ...mono }}>{h2.br1.toFixed(4)}%</td>
                       <td style={{ padding: "3px 6px", textAlign: "right", ...mono }}>{h2.ar1 != null ? h2.ar1.toFixed(4) + "%" : "—"}</td>
                       <td style={{ padding: "3px 6px", color: C.txm, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={h2.pn}>{h2.pn}</td>

@@ -6,6 +6,8 @@ import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import BidCard from "./components/BidCard.jsx";
 import { recOfPred } from "./lib/bidCard.js";
+import { G2B_AUTO_SHOW, mergeAutoRows } from "./lib/g2bAuto.js";
+import { sbFetchG2BAuto } from "./lib/supabase.js";
 import PerformanceTab from "./components/PerformanceTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
@@ -352,6 +354,7 @@ export default function App(){
   const[lastG2bAt,setLastG2bAt]=useState(null); // 나라장터 자동 예측 마지막 갱신 시각
   const[lastSucviewAt,setLastSucviewAt]=useState(null); // SUCVIEW 마지막 업로드 시각
   const[notices,setNotices]=useState([]); // 나라장터 공고 목록
+  const[g2bAuto,setG2bAuto]=useState([]); // G2B 양식 자동 수집 완성 행 — G2B 양식·투찰 카드 1위 이력 전용(예측 계산에 넘기지 말 것)
   const[noticeLoadingIds,setNoticeLoadingIds]=useState(new Set()); // 예측 등록 중인 notice id
   const[noticeFilter,setNoticeFilter]=useState("upcoming"); // upcoming/all/registered
   const[predBiasMap,setPredBiasMap]=useState({agBa:{},ag:{},atBa:{},at:{}}); // Phase 23-2: 동적 편향 보정 (AG×금액대 다층)
@@ -620,6 +623,7 @@ export default function App(){
     }catch(e){setAgencyPred({})}
     // 나라장터 공고 로드
     try{const nots=await sbFetchNotices();setNotices(nots||[])}catch(e){setNotices([])}
+    if(G2B_AUTO_SHOW){try{setG2bAuto(await sbFetchG2BAuto())}catch(e){setG2bAuto([])}}
     setDbLoading(false)
   })()},[refreshStats]);
 
@@ -835,6 +839,8 @@ export default function App(){
   // 업로드 예측만 getFinalRecommendation(출처 필터 유지 — 함수 격리 주석 참조). 자동 예측은 저장된 안착안(b_pred_*, Mode B)만 읽는다.
   // 행 추천값 — 오늘의 공고 표와 투찰 카드가 같은 계산을 쓴다(bidCard.js recOfPred: 업로드 예측만 getFinalRecommendation, 출처 격리는 테스트로 고정).
   const recOf=useCallback((p)=>recOfPred(p,{getFinal:getFinalRecommendation,adjHist,ownScore,passKeyOf,passEffFrOf,resolveAdjHistory,passProbPct,impliedAdjOfBid}),[getFinalRecommendation,adjHist,ownScore]);
+  // G2B 양식·투찰 카드 1위 이력 전용 목록(자동 수집 행 합침). 예측 입력(adjHist·pcDistMap·refreshStats·recOf)은 recs 그대로 — 여기 넘기면 저장 예측값이 바뀐다.
+  const g2bRecs=useMemo(()=>mergeAutoRows(recs,g2bAuto),[recs,g2bAuto]);
   const todayRecMap=useMemo(()=>{
     const m={};
     predictions.forEach(p=>{if(p&&p.match_status!=="matched")m[p.id]=recOf(p)});
@@ -1547,7 +1553,7 @@ export default function App(){
     </div>}
 
     {/* ═══ 나라장터 공고 탭 ═══ */}
-    {cardPred&&<BidCard pred={cardPred} rec={recOf(cardPred)} recs={recs} pcDistMap={pcDistMap} ownScore={ownScore} accuracyMap={accuracyMap} onClose={()=>setCardPredId(null)} onOpenG2B={(ag)=>{setG2bAgency(ag);setCardPredId(null);setTab("g2b_sheet")}}/>}
+    {cardPred&&<BidCard pred={cardPred} rec={recOf(cardPred)} recs={g2bRecs} pcDistMap={pcDistMap} ownScore={ownScore} accuracyMap={accuracyMap} onClose={()=>setCardPredId(null)} onOpenG2B={(ag)=>{setG2bAgency(ag);setCardPredId(null);setTab("g2b_sheet")}}/>}
     {tab==="performance"&&<PerformanceTab recs={recs} bidDetails={bidDetails}/>}
     {tab==="notices"&&<NoticesTab
       notices={notices}
@@ -1940,7 +1946,7 @@ export default function App(){
     {tab==="agency_floor"&&<AgencyFloorTab/>}
 
     {/* ═══ G2B 양식 탭 ═══ */}
-    {tab==="g2b_sheet"&&<G2BSheetTab key={g2bAgency} recs={recs} initialAgency={g2bAgency}/>}
+    {tab==="g2b_sheet"&&<G2BSheetTab key={g2bAgency} recs={g2bRecs} initialAgency={g2bAgency}/>}
 
     {/* ═══ AI 상담 탭 ═══ */}
     {tab==="chat"&&(()=>{
