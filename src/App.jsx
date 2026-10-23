@@ -8,6 +8,7 @@ import { fmtAdj as v2FmtAdj, fmtPct as v2FmtPct, fmtKRW as v2FmtKRW } from "./li
 import { getMainMetricLabel, getModeNotice } from "./lib/modeResolver.js";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
+import { recOfPred } from "./lib/bidCard.js";
 import PerformanceTab from "./components/PerformanceTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
@@ -491,6 +492,7 @@ export default function App(){
   const[batchAi,setBatchAi]=useState({});const[batchAiLoading,setBatchAiLoading]=useState(null);const[expandedBatch,setExpandedBatch]=useState(null); // 일괄 AI
   const[predSel,setPredSel]=useState({}); // 예측 내역 선택 삭제
   const[detailModal,setDetailModal]=useState(null); // 상세 모달 (prediction 객체)
+  const[cardPredId,setCardPredId]=useState(null); // 투찰 카드로 연 예측 id (P3)
   const[detailTab,setDetailTab]=useState("detail"); // Phase 5.6: 상세 모달 탭 (detail|strategy|ai|pattern|info)
   const[detailAi,setDetailAi]=useState("");const[detailAiLoading,setDetailAiLoading]=useState(false); // 모달 AI
   // ★ v7 Phase C-small (a-R1): 전략 RPC 결과 캐시 (pred_id → [aggressive/balanced/safe])
@@ -1102,19 +1104,14 @@ ${baseInfo}
   const predMap=useMemo(()=>{const m={};predictions.forEach(p=>{m[p.id]=p});return m},[predictions]);
   // P2 오늘의 공고용 추천 맵 — 예측 리스트 행(compList 렌더)과 같은 계산을 읽기 전용으로 모아 둔다.
   // 업로드 예측만 getFinalRecommendation(출처 필터 유지 — 함수 격리 주석 참조). 자동 예측은 저장된 안착안(b_pred_*, Mode B)만 읽는다.
+  // 행 추천값 — 오늘의 공고 표와 투찰 카드가 같은 계산을 쓴다(bidCard.js recOfPred: 업로드 예측만 getFinalRecommendation, 출처 격리는 테스트로 고정).
+  const recOf=useCallback((p)=>recOfPred(p,{getFinal:getFinalRecommendation,adjHist,ownScore,passKeyOf,passEffFrOf,resolveAdjHistory,passProbPct,impliedAdjOfBid}),[getFinalRecommendation,adjHist,ownScore]);
   const todayRecMap=useMemo(()=>{
     const m={};
-    predictions.forEach(p=>{
-      if(!p||p.match_status==="matched")return;
-      let adj=null,bid=null,jongsim=false,estimated=false,floorSafe=null;
-      if(p.source==="file_upload"){const r=getFinalRecommendation(p);adj=r.adj;bid=r.bid1st||r.bid;jongsim=!!r.jongsim;floorSafe=r.floorSafe??null}
-      else if(p.b_pred_mode==="B"&&p.b_pred_adj!=null&&p.b_pred_bid_amount!=null){adj=Number(p.b_pred_adj);bid=Number(p.b_pred_bid_amount);estimated=true}
-      let passPct=null;
-      if(!jongsim&&bid&&p.ba){const d=resolveAdjHistory(adjHist,passKeyOf(p));if(d)passPct=passProbPct(d,impliedAdjOfBid({bid:Number(bid),ba:Number(p.ba),av:Number(p.av)||0,effFr:passEffFrOf(p,ownScore)}))}
-      m[p.id]={adj,bid,passPct,jongsim,estimated,floorSafe,source:p.source};
-    });
+    predictions.forEach(p=>{if(p&&p.match_status!=="matched")m[p.id]=recOf(p)});
     return m;
-  },[predictions,adjHist,ownScore,getFinalRecommendation]);
+  },[predictions,recOf]);
+  const cardPred=cardPredId!=null?predMap[cardPredId]:null; // id로 찾아 백필 후에도 최신값
   const fmtRelTime=(iso)=>{if(!iso)return null;const d=Date.now()-new Date(iso).getTime();const m=Math.floor(d/60000);if(m<1)return"방금";if(m<60)return m+"분 전";const h=Math.floor(m/60);if(h<24)return h+"시간 전";return new Date(iso).toLocaleDateString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})};
   const allSel=pagedRecs.length>0&&pagedRecs.every(r=>sel[r.id]);
 
@@ -2950,14 +2947,12 @@ ${baseInfo}
       setNotices={setNotices}
       noticeFilter={noticeFilter}
       setNoticeFilter={setNoticeFilter}
-      predMap={predMap}
+      onOpenCard={setCardPredId}
       todayRecMap={todayRecMap}
       predictions={predictions}
       loadPredFiles={loadPredFiles}
       noticeLoadingIds={noticeLoadingIds}
       setNoticeLoadingIds={setNoticeLoadingIds}
-      setFocusedPredId={setFocusedPredId}
-      setTab={setTab}
       refreshPredictions={refreshPredictions}
       pcDistMap={pcDistMap}
     />}

@@ -27,7 +27,7 @@ export default function NoticesTab({
   noticeFilter, setNoticeFilter,
   todayRecMap, predictions, loadPredFiles,
   noticeLoadingIds, setNoticeLoadingIds,
-  setFocusedPredId, setTab,
+  onOpenCard,
   refreshPredictions,
   pcDistMap,
 }) {
@@ -75,7 +75,7 @@ export default function NoticesTab({
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button onClick={() => setNoticeFilter("target")} style={btn(view === "target", C.gold)}>관내·소경쟁 ({targetUpcoming.length})</button>
-        <button onClick={() => setNoticeFilter("all")} style={btn(view === "all", BLUE)}>전체 예정 ({filterRows(rows, "all", false, trades).length})</button>
+        <button onClick={() => setNoticeFilter("all")} title="경기 지역·자격 키워드 공고 중 (서버 필터)" style={btn(view === "all", BLUE)}>전체 예정 ({filterRows(rows, "all", false, trades).length})</button>
         <button onClick={() => setIncludeDone(v => !v)} style={btn(includeDone, C.txm)}>마감·개찰 지난 것 포함</button>
         <span style={{ fontSize: 10, color: C.txd, marginLeft: 6 }}>업종</span>
         <span style={{ ...btn(true, C.gold), cursor: "default" }} title="전기는 항상 표시 (업종이 비어 있는 공고는 공고명으로 판정)">전기</span>
@@ -138,7 +138,7 @@ export default function NoticesTab({
                       isLoading ? <span style={{ fontSize: 10, color: C.txd }}>처리 중</span> :
                         <button onClick={() => handlePredictNotice(r.noticeId)} style={{ fontSize: 10, padding: "3px 9px", background: BLUE + "1a", border: "1px solid " + BLUE + "66", borderRadius: 5, color: BLUE, cursor: "pointer", fontWeight: 600 }}>예측 등록</button>
                     ) : (r.status === STATUS.PRED_FILE || r.status === STATUS.PRED_AUTO) && r.predId != null ? (
-                      <button onClick={() => { setFocusedPredId(r.predId); setTab("predict"); }} style={{ fontSize: 10, padding: "3px 9px", background: "transparent", border: "1px solid " + C.bdr, borderRadius: 5, color: C.txm, cursor: "pointer" }}>{STATUS_LABEL[r.status]}</button>
+                      <button onClick={() => onOpenCard?.(r.predId)} title="투찰 카드 열기" style={{ fontSize: 10, padding: "3px 9px", background: "transparent", border: "1px solid " + C.bdr, borderRadius: 5, color: C.txm, cursor: "pointer" }}>{STATUS_LABEL[r.status]}</button>
                     ) : <span style={{ fontSize: 10, color: C.txd }}>{STATUS_LABEL[r.status]}</span>}
                   </td>
                 </tr>
