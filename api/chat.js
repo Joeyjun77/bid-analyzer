@@ -38,11 +38,49 @@ export default async function handler(req, res) {
     // ─── 키워드 추출 및 DB 조회 ───
     const dbContext = await queryDB(lastMsg, sbKey);
 
-    // ─── 시스템 프롬프트 조합 ───
-    let system = systemBase || "";
-    if (dbContext) {
-      system += `\n\n■ 실시간 DB 조회 결과 (사용자 질문 기반 자동 조회)\n${dbContext}\n\n위 데이터를 답변에 적극 활용하세요. 수치를 인용할 때는 구체적으로 제시하세요.`;
-      system += `\n\n■ v7.2 모델 가이드 (2026-05 Phase A v7.2 — 현재 메인)
+    // ─── Claude 호출 ───
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify(buildClaudeBody({ systemBase, messages, dbContext }))
+    });
+
+    const data = await response.json();
+    if (!response.ok) return res.status(response.status).json(data);
+
+    // dbQueries 메타 정보도 함께 반환
+    return res.status(200).json({ ...data, _dbContext: dbContext ? true : false });
+
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// ─── 요청 본문 ───
+// 프롬프트 캐시는 접두 일치라, 고정 시스템 프롬프트와 대화 기록을 앞에 두고 질문마다 바뀌는 DB 조회 결과는 마지막 사용자 메시지 뒤에 붙인다.
+// 캐시 표시: 시스템 블록 + 직전 메시지(다음 질문 때도 그대로 다시 오는 마지막 지점).
+export function buildClaudeBody({ systemBase, messages, dbContext }) {
+  const CC = { type: "ephemeral" };
+  const msgs = messages.slice(-20).map(m => ({ ...m }));
+  const n = msgs.length;
+  if (n >= 2 && typeof msgs[n - 2].content === "string") {
+    msgs[n - 2].content = [{ type: "text", text: msgs[n - 2].content, cache_control: CC }];
+  }
+  if (dbContext && typeof msgs[n - 1].content === "string") {
+    msgs[n - 1].content = [{ type: "text", text: msgs[n - 1].content }, { type: "text", text: dbBlock(dbContext) }];
+  }
+  const body = { model: "claude-opus-4-7", max_tokens: 2000, messages: msgs };
+  if (systemBase) body.system = [{ type: "text", text: systemBase, cache_control: CC }];
+  return body;
+}
+
+function dbBlock(dbContext) {
+  return `■ 실시간 DB 조회 결과 (사용자 질문 기반 자동 조회)\n${dbContext}\n\n위 데이터를 답변에 적극 활용하세요. 수치를 인용할 때는 구체적으로 제시하세요.`
+    + `\n\n■ v7.2 모델 가이드 (2026-05 Phase A v7.2 — 현재 메인)
 v7.2는 1순위 후보권 진입을 직접 타깃팅하며 3가지 전략을 동시 제공합니다.
 🔥 공격 전략 (진입률 84.1%): P10 − 0.05%. 마진 손실 큼 (평균 0.82% 언더컷).
 ⚖️ 균형 전략 (진입률 69.0%, default 권장): P25. MAE 0.610% (노이즈 플로어 0.642% 돌파).
@@ -56,33 +94,6 @@ v7.2는 1순위 후보권 진입을 직접 타깃팅하며 3가지 전략을 동
 - 분산투찰(3종 동시 투찰 시 진입률 90%+) 언급 가능
 - v6 추천(화면 투찰 결정 가이드 메인값)과 v7.2 추천은 별개임을 구분할 것
 - 투찰금액 산식: 기초금액 × (1 + 사정률/100) × 낙찰하한율/100 [소수점 절상]`;
-    }
-
-    // ─── Claude 호출 ───
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-opus-4-7",
-        max_tokens: 2000,
-        system,
-        messages: messages.slice(-20)
-      })
-    });
-
-    const data = await response.json();
-    if (!response.ok) return res.status(response.status).json(data);
-
-    // dbQueries 메타 정보도 함께 반환
-    return res.status(200).json({ ...data, _dbContext: dbContext ? true : false });
-
-  } catch (e) {
-    return res.status(500).json({ error: e.message });
-  }
 }
 
 // ─── Supabase REST 쿼리 헬퍼 ───
