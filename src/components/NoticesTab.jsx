@@ -7,6 +7,7 @@ import { tc, normalizeAgencyName } from '../lib/utils.js';
 import { sbPredictNotice } from '../lib/supabase.js';
 import { resolvePcDist, pcWinRateOf, PC_GRAIN_LABELS } from '../lib/participantCount.js';
 import { loadKeywords } from '../lib/eligibility.js';
+import { floorPassLabel } from '../lib/floorLabels.js';
 import { buildTodayRows, filterRows, STATUS } from '../lib/todayNotices.js';
 
 const RED = "#e24b4a", YEL = "#d4a834", GREEN = "#5dca96", BLUE = "#5b9dd9";
@@ -131,7 +132,7 @@ export default function NoticesTab({
                     {rec?.bid ? tc(Math.round(Number(rec.bid))) + "원" : "—"}
                   </td>
                   <td style={td({ ...mono, color: passColor, fontWeight: rec?.passPct != null ? 700 : 400 })}>
-                    {rec?.passPct != null ? Math.round(rec.passPct) + "%" : rec?.jongsim ? "종심제" : "—"}
+                    {rec?.passPct != null ? floorPassLabel(100 - rec.passPct) : rec?.jongsim ? "종심제" : "—"}
                   </td>
                   <td style={td({ textAlign: "left" })}>
                     {r.status === STATUS.NONE && r.noticeId != null ? (

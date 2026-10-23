@@ -45,11 +45,12 @@ const R = [
   { canonical_ag: "고양시", od: "2026-05-02", br1: "101", ar1: "101", pn: "제외", is_excluded: true },
   { ag: "고양시", od: "2025-12-02", br1: "100.00", ar1: "100.00", pn: "canonical 없음" },
   { canonical_ag: "파주시", od: "2026-03-03", br1: "98.0", ar1: "98.0", pn: "다른 기관" },
+  { canonical_ag: "고양시", od: "2026-06-02", br1: "89.7410", ar1: null, pn: "발주처 사정률 없음(br1에 투찰률이 들어온 불완전 기록)" },
 ];
 const copy = JSON.stringify(R);
 const h = agencyRecentHistory(R, "고양시", 3);
 eq(JSON.stringify(R), copy, "원본 불변");
-eq(h.rows.map(r => r.pn).join(","), "b,c,a", "최신순 상위 3");
+eq(h.rows.map(r => r.pn).join(","), "b,c,a", "최신순 상위 3 (발주처 사정률 없는 6월 행 제외)");
 eq(h.count, 3, "건수"); near(h.p50, 100.10, 1e-9, "중앙값"); near(h.p25, 99.95, 1e-9, "P25 선형 보간"); near(h.p75, 100.20, 1e-9, "P75");
 eq(h.rows[0].br1, 99.8, "숫자로 변환"); eq(h.rows[0].ar1, 99.7, "발주처 사정률");
 eq(agencyRecentHistory(R, "고양시").count, 4, "canonical 없으면 ag로");

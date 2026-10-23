@@ -29,9 +29,10 @@ const num = (v) => { if (v == null || v === "") return null; const n = Number(v)
 const quantile = (s, q) => { if (!s.length) return null; const i = q * (s.length - 1), lo = Math.floor(i), hi = Math.ceil(i); return Math.round((s[lo] + (s[hi] - s[lo]) * (i - lo)) * 1e4) / 1e4; };
 
 // 발주처 최근 1위 이력(br1=1위 사정률, ar1=발주처 사정률, 100 기준 %). 원본 불변.
+// 발주처 사정률(ar1)이 있는 완전한 기록만 — ar1이 빈 행은 br1에 1위 투찰률(약 90%)이 들어 있어 사정률과 섞이면 분위수가 망가진다(G2B 양식 탭과 같은 기준).
 export function agencyRecentHistory(recs, canonicalAg, n = 20) {
   const rows = (recs || [])
-    .filter(r => r && r.is_excluded !== true && r.od && num(r.br1) != null && (r.canonical_ag || r.ag) === canonicalAg)
+    .filter(r => r && r.is_excluded !== true && r.od && num(r.br1) != null && num(r.ar1) != null && (r.canonical_ag || r.ag) === canonicalAg)
     .map(r => ({ od: String(r.od).slice(0, 10), br1: num(r.br1), ar1: num(r.ar1), pn: r.pn }))
     .sort((a, b) => (a.od < b.od ? 1 : a.od > b.od ? -1 : 0))
     .slice(0, n);
