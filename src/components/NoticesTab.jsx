@@ -33,6 +33,9 @@ export default function NoticesTab({
 }) {
   const keywords = useMemo(() => loadKeywords(), []);
   const [includeDone, setIncludeDone] = useState(false);
+  const [extraTrades, setExtraTrades] = useState([]); // 전기는 항상 표시, 정보통신·소방은 선택
+  const trades = ["elec", ...extraTrades];
+  const toggleTrade = (t) => setExtraTrades(v => v.includes(t) ? v.filter(x => x !== t) : [...v, t]);
   const [shown, setShown] = useState(PAGE);
   const fileRef = useRef(null);
   const nowIso = new Date().toISOString();
@@ -42,8 +45,8 @@ export default function NoticesTab({
   const pcOf = ({ at, ag, amount }) => pcDistMap && at && amount ? resolvePcDist(pcDistMap, { at, canonicalAg: normalizeAgencyName(ag), ba: amount }) : null;
   const rows = useMemo(() => buildTodayRows({ notices, predictions: predictions || [], keywords, pcOf, nowIso, today }), [notices, predictions, pcDistMap, keywords]); // eslint-disable-line react-hooks/exhaustive-deps
   const view = noticeFilter === "all" ? "all" : "target";
-  const visible = filterRows(rows, view, includeDone);
-  const targetUpcoming = filterRows(rows, "target", false);
+  const visible = filterRows(rows, view, includeDone, trades);
+  const targetUpcoming = filterRows(rows, "target", false, trades);
   const dueToday = targetUpcoming.filter(r => r.closeAt && localDay(r.closeAt) === today).length;
   const noPred = targetUpcoming.filter(r => r.status === STATUS.NONE).length;
 
@@ -72,8 +75,12 @@ export default function NoticesTab({
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button onClick={() => setNoticeFilter("target")} style={btn(view === "target", C.gold)}>관내·소경쟁 ({targetUpcoming.length})</button>
-        <button onClick={() => setNoticeFilter("all")} style={btn(view === "all", BLUE)}>전체 예정 ({filterRows(rows, "all", false).length})</button>
+        <button onClick={() => setNoticeFilter("all")} style={btn(view === "all", BLUE)}>전체 예정 ({filterRows(rows, "all", false, trades).length})</button>
         <button onClick={() => setIncludeDone(v => !v)} style={btn(includeDone, C.txm)}>마감·개찰 지난 것 포함</button>
+        <span style={{ fontSize: 10, color: C.txd, marginLeft: 6 }}>업종</span>
+        <span style={{ ...btn(true, C.gold), cursor: "default" }} title="전기는 항상 표시 (업종이 비어 있는 공고는 공고명으로 판정)">전기</span>
+        <button onClick={() => toggleTrade("comm")} style={btn(extraTrades.includes("comm"), BLUE)}>정보통신</button>
+        <button onClick={() => toggleTrade("fire")} style={btn(extraTrades.includes("fire"), RED)}>소방</button>
         <span style={{ flex: 1 }} />
         <input ref={fileRef} type="file" accept=".xls,.xlsx" multiple style={{ display: "none" }} onChange={e => { if (e.target.files?.length) loadPredFiles(e.target.files); e.target.value = ""; }} />
         <button onClick={() => fileRef.current?.click()} style={btn(true, GREEN)}>입찰서류함 엑셀 업로드</button>

@@ -1,4 +1,4 @@
-import { basePnNo, pickPrediction, STATUS, statusOf, buildTodayRows, filterRows } from "../src/lib/todayNotices.js";
+import { basePnNo, pickPrediction, STATUS, statusOf, buildTodayRows, filterRows, tradesOf } from "../src/lib/todayNotices.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${got} expect ${exp}`); bad++; } };
@@ -65,6 +65,33 @@ eq(filterRows(rows, "all", true).length, 6, "마감 포함");
 // 로컬 날짜(today)를 따로 받는다 — KST 아침(UTC 전날)에 오늘 개찰 단독 예측이 사라지면 안 된다
 const morning = buildTodayRows({ notices: [], predictions: [{ id: 700, pn_no: "UMM0500-1", source: "file_upload", match_status: "pending", open_date: "2026-10-22", created_at: "2026-10-20T01:00:00Z", ba: "100", ag: "제2부대", at: "군시설", pn: "오늘 개찰" }], keywords: [], pcOf: () => null, nowIso: "2026-10-21T23:30:00.000Z", today: "2026-10-22" });
 eq(morning.length, 1, "KST 08:30(UTC 전날 23:30)에도 오늘 개찰 단독 예측 유지");
+
+// 업종 판정 — 업종(cat)이 비어 있는 공고가 절반이라 공고명 단어로 보완
+eq(tradesOf({ cat: "전기공사업", pn: "동탄12고 신축 전기공사" }).join(","), "elec", "업종 전기");
+eq(tradesOf({ cat: "정보통신공사업", pn: "신축 통신공사" }).join(","), "comm", "업종 통신");
+eq(tradesOf({ cat: "전문소방시설공사업", pn: "신축 소방공사" }).join(","), "fire", "업종 소방(전문)");
+eq(tradesOf({ cat: "일반소방시설공사업(기계)", pn: "소방공사" }).join(","), "fire", "업종 소방(일반)");
+eq(tradesOf({ cat: null, pn: "심학초 교사동 냉난방기 전기공사" }).join(","), "elec", "업종 없음 + 공고명 전기");
+eq(tradesOf({ cat: null, pn: "2026년 보안등 연간단가 보수공사" }).join(","), "elec", "공고명 보안등");
+eq(tradesOf({ cat: null, pn: "교사동 CCTV 설치공사" }).join(","), "comm", "공고명 CCTV");
+eq(tradesOf({ cat: "철근ㆍ콘크리트공사업", pn: "대성터널 제연설비 보강공사(전기)" }).join(","), "elec,fire", "다른 업종이어도 공고명에 전기(제연설비는 소방도 해당)");
+eq(tradesOf({ cat: "건축공사업", pn: "새빛학교 신축공사" }).length, 0, "건축은 해당 없음");
+eq(tradesOf({ cat: null, pn: "운동장 조성공사" }).length, 0, "업종 없음 + 무관 공고명");
+
+const TR = [
+  { key: "a", group: "target", status: STATUS.NONE, trades: ["elec"] },
+  { key: "b", group: "target", status: STATUS.NONE, trades: ["comm"] },
+  { key: "c", group: "target", status: STATUS.NONE, trades: ["fire"] },
+  { key: "d", group: "target", status: STATUS.NONE, trades: [] },
+  { key: "e", group: "target", status: STATUS.PRED_FILE, trades: [] },
+  { key: "f", group: "target", status: STATUS.PRED_FILE, trades: null },
+];
+eq(filterRows(TR, "target", false, ["elec"]).map(r => r.key).join(","), "a,e,f", "전기만: 엑셀 예측 행은 업종 무관 표시");
+eq(filterRows(TR, "target", false, ["elec", "comm"]).map(r => r.key).join(","), "a,b,e,f", "전기+통신");
+eq(filterRows(TR, "target", false, ["elec", "comm", "fire"]).map(r => r.key).join(","), "a,b,c,e,f", "전기+통신+소방");
+eq(filterRows(TR, "target", false).length, 6, "업종 인자 없으면 거르지 않음");
+eq(buildTodayRows({ notices: [{ id: 9, pn_no: "X1", pn: "가로등 정비", ag: "a", at: "지자체", ep: "1", od: "2026-10-30", cat: null }], predictions: [], keywords: [], pcOf: () => null, nowIso: NOW })[0].trades.join(","), "elec", "공고 행에 업종 부여");
+eq(r600.trades, null, "단독 엑셀 예측 행은 업종 판정 안 함(null)");
 
 // statusOf
 eq(statusOf({ openAt: "2026-10-21 11:00:00+00", closeAt: "2026-10-21 10:00:00+00" }, NOW), STATUS.OPENED, "개찰 지남 우선");

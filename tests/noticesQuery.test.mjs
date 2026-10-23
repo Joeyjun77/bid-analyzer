@@ -7,6 +7,7 @@ const has = (s, sub, msg) => { if (!s.includes(sub)) { console.error(`XX ${msg}:
 eq(NOTICE_REGIONS.join("|"), "경기", "기본 지역 필터");
 has(NOTICE_COLS, "bid_close_dt", "투찰 마감일시 컬럼 포함");
 has(NOTICE_COLS, "participated", "참여 여부 컬럼 포함");
+has(NOTICE_COLS, ",cat,", "업종 컬럼 포함");
 
 const q = buildNoticesQuery("2026-10-22T09:00:00.000Z", ["경기"], ["고양"]);
 has(q, "od=gte.2026-10-22T09:00:00.000Z", "개찰일 하한 = 지금");

@@ -5,6 +5,17 @@ import { isEligible, isSmallField } from "./eligibility.js";
 
 export const STATUS = { OPENED: "opened", CLOSED: "closed", BID: "bid", PRED_FILE: "pred_file", PRED_AUTO: "pred_auto", NONE: "none" };
 
+// 업종: 공고 업종(cat) 또는 공고명 단어. 업종이 빈 공고(수의견적·소액)가 절반이라 공고명으로 보완한다(2026-10-23 실측 463건 중 243건).
+const TRADE_RULES = [
+  ["elec", /전기/, /전기|조명|가로등|보안등|신호|LED|전력|변전|수배전|태양광|경관/i],
+  ["comm", /통신/, /통신|CCTV|방송|네트워크|전산/i],
+  ["fire", /소방/, /소방|화재|스프링클러|제연/],
+];
+export function tradesOf({ cat, pn }) {
+  const c = cat == null ? "" : String(cat), t = pn == null ? "" : String(pn);
+  return TRADE_RULES.filter(([, catRe, pnRe]) => catRe.test(c) || pnRe.test(t)).map(([k]) => k);
+}
+
 export function basePnNo(pnNo) {
   const s = pnNo == null ? "" : String(pnNo).trim().replace(/-\d{3}$/, "");
   return s || null;
@@ -68,7 +79,7 @@ export function buildTodayRows({ notices, predictions, keywords, pcOf, nowIso, t
     rows.push(decorate({
       key: "n:" + n.id, pnNo: k, pn: n.pn, ag: n.ag, at: n.at,
       amount: ba > 0 ? ba : ep > 0 ? ep * 1.1 : null, amountEstimated: !(ba > 0),
-      closeAt: n.bid_close_dt || null, openAt: n.od || null, participated: n.participated === true,
+      closeAt: n.bid_close_dt || null, openAt: n.od || null, participated: n.participated === true, trades: tradesOf(n),
       noticeId: n.id, predId: pred ? pred.id : null, source: pred ? pred.source : null,
     }));
   }
@@ -77,13 +88,17 @@ export function buildTodayRows({ notices, predictions, keywords, pcOf, nowIso, t
     rows.push(decorate({
       key: "p:" + p.id, pnNo: basePnNo(p.pn_no), pn: p.pn, ag: p.ag, at: p.at,
       amount: num(p.ba), amountEstimated: false,
-      closeAt: null, openAt: p.open_date, participated: false,
+      closeAt: null, openAt: p.open_date, participated: false, trades: null,
       noticeId: null, predId: p.id, source: p.source,
     }));
   }
   return rows.sort((a, b) => (a.sortAt ?? Infinity) - (b.sortAt ?? Infinity));
 }
 
-export function filterRows(rows, view, includeDone) {
-  return (rows || []).filter(r => (view === "all" || r.group === "target") && (includeDone || (r.status !== STATUS.OPENED && r.status !== STATUS.CLOSED)));
+// trades 생략 = 업종으로 거르지 않음. 엑셀 업로드 예측(직접 고른 공고)은 업종과 무관하게 남긴다.
+export function filterRows(rows, view, includeDone, trades) {
+  return (rows || []).filter(r =>
+    (view === "all" || r.group === "target") &&
+    (includeDone || (r.status !== STATUS.OPENED && r.status !== STATUS.CLOSED)) &&
+    (!trades || r.trades == null || r.status === STATUS.PRED_FILE || r.trades.some(t => trades.includes(t))));
 }
