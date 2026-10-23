@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import { C, PAGE, inpS } from "./lib/constants.js";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
@@ -408,6 +408,9 @@ export default function App(){
   const[chatInput,setChatInput]=useState("");const[chatLoading,setChatLoading]=useState(false);
   const[chatSideOpen,setChatSideOpen]=useState(true);
   const chatRef=useCallback(node=>{if(node)setTimeout(()=>{node.scrollTop=node.scrollHeight},50)},[chatMsgs]);
+  // 채팅 영역 높이 = 화면 높이 − 실제 시작 위치 − 본문 아래 패딩(16). 헤더 줄바꿈·알림 줄·참고용 배너 높이가 달라 고정값으로는 입력창이 화면 밖으로 밀림
+  const chatBoxRef=useRef(null);const[chatH,setChatH]=useState(null);
+  useLayoutEffect(()=>{if(tab!=="chat")return;const fit=()=>{const el=chatBoxRef.current;if(el)setChatH(Math.max(320,window.innerHeight-(el.getBoundingClientRect().top+window.scrollY)-16))};fit();window.addEventListener("resize",fit);return()=>window.removeEventListener("resize",fit)},[tab,msg.text]);
   // 세션 저장 헬퍼
   const saveSessions=(sessions)=>{setChatSessions(sessions);try{localStorage.setItem("bid_chat_sessions",JSON.stringify(sessions))}catch(e){}};
   const saveMsgs=(sid,msgs)=>{setChatMsgs(msgs);try{localStorage.setItem("bid_chat_msg_"+sid,JSON.stringify(msgs));localStorage.setItem("bid_chat_active",sid)}catch(e){}};
@@ -1813,7 +1816,7 @@ export default function App(){
         md+=`\n---\n*입찰 분석 시스템 (Claude Opus 4.6) · ${recs.length.toLocaleString()}건 데이터 기반*\n`;
         const blob=new Blob([md],{type:"text/markdown;charset=utf-8"});const url=URL.createObjectURL(blob);
         const a=document.createElement("a");a.href=url;a.download=`AI상담_${new Date().toISOString().slice(0,10)}.md`;a.click();URL.revokeObjectURL(url)};
-      return<div style={{display:"flex",height:"calc(100vh - 60px)"}}>
+      return<div ref={chatBoxRef} style={{display:"flex",height:chatH??"calc(100vh - 60px)"}}>
       {/* ★ 좌측 사이드바: 대화 목록 */}
       <div style={{width:chatSideOpen?200:0,overflow:"hidden",transition:"width 0.2s",borderRight:chatSideOpen?"1px solid "+C.bdr:"none",background:C.bg,flexShrink:0,display:"flex",flexDirection:"column"}}>
         <div style={{padding:"10px",borderBottom:"1px solid "+C.bdr}}>
