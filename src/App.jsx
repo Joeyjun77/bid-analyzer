@@ -23,7 +23,7 @@ import { resolveMode } from "./lib/modeResolver.js";
 import { floorModeOf, riskColor, riskLabel } from "./lib/floorRisk.js";
 import { buildAdjHistory, resolveAdjHistory, impliedAdjOfBid, passProbPct, passRiskSnapshot } from "./lib/passProb.js";
 import { buildPcDistMap, resolvePcDist, pcBucketOf, pcColor, pcSnapshot, PC_GRAIN_LABELS } from "./lib/participantCount.js";
-import { sbFetchAll, sbUpsert, sbDeleteIds, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbRefreshParticipantDistFor, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyPredictor, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
+import { sbFetchAll, sbUpsert, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbRefreshParticipantDistFor, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyPredictor, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
 import { sbFetchAllCached } from "./lib/bidCache.js";
 import { useAuth, getSession } from "./auth.js";
 
@@ -351,7 +351,7 @@ export default function App(){
   const[drag,setDrag]=useState(false);const[dragPred,setDragPred]=useState(false);const[busy,setBusy]=useState(false);const[msg,setMsg]=useState({type:"",text:""});
   const[uploadLog,setUploadLog]=useState([]);const[dataStatus,setDataStatus]=useState(null);
   const[search,setSearch]=useState("");const[agSch,setAgSch]=useState("");const[eF,setEF]=useState("all");const[atF,setAtF]=useState("all");
-  const[sel,setSel]=useState({});const[dlgType,setDlgType]=useState("");const[dataPage,setDataPage]=useState(0);const[dbLoading,setDbLoading]=useState(true);
+  const[dataPage,setDataPage]=useState(0);const[dbLoading,setDbLoading]=useState(true);
   const[hideAbnormal,setHideAbnormal]=useState(false); // D-1: 비정상 데이터 필터
   const[predResults,setPredResults]=useState([]);
   const[predictions,setPredictions]=useState([]);
@@ -719,7 +719,7 @@ export default function App(){
       if(matched>0){const updPreds=await sbFetchPredictions();setPredictions(updPreds);setMsg({type:"ok",text:`업로드 완료 · ${matched}건 예측 자동 매칭 · 신규 ${newPreds.length}건`})}
       else{setPredictions(preds);if(!logs.some(l=>l.type==="err"))setMsg({type:"ok",text:`업로드 완료 · 신규 ${newPreds.length}건`})}
     }catch(e){setMsg({type:"err",text:"DB 재로드 실패"})}
-    setSel({});setBusy(false)},[refreshStats,allS,bidDetails,agencyPred,floorBench,agAss,ownScore,adjHist,pcDistMap]);
+    setBusy(false)},[refreshStats,allS,bidDetails,agencyPred,floorBench,agAss,ownScore,adjHist,pcDistMap]);
 
   // 입찰서류함 예측 (복수 파일 지원)
   const loadPredFiles=useCallback(async(fileList)=>{
@@ -807,10 +807,6 @@ export default function App(){
 
   // 수동 예측 (DB 저장 안 함 — 시뮬레이션 전용)
 
-  // 삭제
-  const selCount=Object.keys(sel).filter(k=>sel[k]).length;
-  const doDelete=useCallback(async()=>{
-    setBusy(true);try{if(dlgType==="sel"){const ids=Object.keys(sel).filter(k=>sel[k]).map(Number);await sbDeleteIds(ids);setRecs(prev=>{const next=prev.filter(r=>!sel[r.id]);refreshStats(next);setDataStatus(calcDataStatus(next));return next});setMsg({type:"ok",text:`${ids.length}건 삭제`});setSel({})}}catch(e){setMsg({type:"err",text:"삭제 실패"})}setDlgType("");setBusy(false)},[dlgType,sel,refreshStats]);
 
   // 파생 데이터
   const curSt=eF==="new"?newS:eF==="old"?oldS:allS;
@@ -853,7 +849,6 @@ export default function App(){
   },[predictions,recOf]);
   const cardPred=cardPredId!=null?predMap[cardPredId]:null; // id로 찾아 백필 후에도 최신값
   const fmtRelTime=(iso)=>{if(!iso)return null;const d=Date.now()-new Date(iso).getTime();const m=Math.floor(d/60000);if(m<1)return"방금";if(m<60)return m+"분 전";const h=Math.floor(m/60);if(h<24)return h+"시간 전";return new Date(iso).toLocaleDateString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})};
-  const allSel=pagedRecs.length>0&&pagedRecs.every(r=>sel[r.id]);
 
   const compStats=useMemo(()=>{
     const preds=(predictions||[]).filter(p=>p.source==='file_upload');const matched=preds.filter(p=>p.match_status==="matched");
@@ -1024,14 +1019,6 @@ export default function App(){
         <div style={{fontSize:11,color:C.txm}}>파일 파싱 및 예측 진행 중</div>
       </div>
     </div>}
-    {/* 삭제 다이얼로그 */}
-    {dlgType&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.6)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setDlgType("")}><div onClick={e=>e.stopPropagation()} style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:10,padding:24,maxWidth:380,width:"90%"}}>
-      <div style={{fontSize:14,fontWeight:600,color:"#e24b4a",marginBottom:8}}>{selCount}건 삭제</div>
-      <div style={{fontSize:12,color:C.txm,marginBottom:12}}>DB에서 영구 삭제됩니다. 복구할 수 없습니다.</div>
-      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-        <button onClick={()=>setDlgType("")} style={{padding:"7px 16px",background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txt,fontSize:12,cursor:"pointer"}}>취소</button>
-        <button onClick={doDelete} disabled={busy} style={{padding:"7px 16px",background:"#e24b4a",border:"none",borderRadius:5,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>{busy?"처리중...":"삭제 실행"}</button>
-      </div></div></div>}
 
     {/* 헤더 + 3탭 (sticky 고정) */}
     <div style={{padding:"10px 20px",borderBottom:"1px solid "+C.bdr,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,position:"sticky",top:0,zIndex:50,background:C.bg}}>
@@ -1195,12 +1182,11 @@ export default function App(){
       {/* 낙찰 데이터 목록 */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <span style={{fontSize:12,fontWeight:600,color:C.gold}}>낙찰 데이터 ({filteredRecs.length.toLocaleString()}건)</span>
-        {selCount>0&&<button onClick={()=>setDlgType("sel")} style={{padding:"4px 12px",background:"rgba(220,50,50,0.1)",border:"1px solid rgba(220,50,50,0.3)",borderRadius:5,color:"#e55",fontSize:11,cursor:"pointer"}}>{selCount}건 삭제</button>}
       </div>
       <div style={{background:C.bg2,border:"1px solid "+C.bdr,borderRadius:8,overflow:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,tableLayout:"fixed"}}>
-          <colgroup><col style={{width:30}}/><col style={{width:"22%"}}/><col style={{width:"12%"}}/><col style={{width:"6%"}}/><col style={{width:"12%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"5%"}}/></colgroup>
-          <thead><tr style={{background:C.bg3}}><th style={{padding:6}}><input type="checkbox" checked={allSel} onChange={()=>{const n={};if(!allSel)pagedRecs.forEach(r=>{n[r.id]=true});setSel(n)}}/></th>
+          <colgroup><col style={{width:"22%"}}/><col style={{width:"12%"}}/><col style={{width:"6%"}}/><col style={{width:"12%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"5%"}}/></colgroup>
+          <thead><tr style={{background:C.bg3}}>
             <SortTh label="공고명" sortKey="pn" current={dataSort} setCurrent={setDataSort}/>
             <SortTh label="발주기관" sortKey="ag" current={dataSort} setCurrent={setDataSort}/>
             <SortTh label="유형" sortKey="at" current={dataSort} setCurrent={setDataSort}/>
@@ -1214,7 +1200,6 @@ export default function App(){
             const isYuchal=r.co==="유찰"||r.co==="유찰(무)";const isBroken=!isYuchal&&(r.br1==null&&(r.ba==null||r.ba===0));const isOutlier=!isYuchal&&!isBroken&&r.br1!=null&&(r.br1<95||r.br1>105);
             const isAbnormal=isYuchal||isBroken||isOutlier;const rowBg=isYuchal?"rgba(226,75,74,0.04)":isBroken?"rgba(168,180,255,0.04)":isOutlier?"rgba(212,168,52,0.04)":"transparent";
             return<tr key={r.id} style={{borderBottom:"1px solid "+C.bdr,background:rowBg}}>
-              <td style={{padding:4,textAlign:"center"}}><input type="checkbox" checked={!!sel[r.id]} onChange={()=>setSel(p=>({...p,[r.id]:!p[r.id]}))}/></td>
               <td style={{padding:"6px 4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",opacity:isAbnormal?.5:1}} title={r.pn}>
                 {isYuchal&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:3,background:"rgba(226,75,74,0.15)",color:"#e24b4a",marginRight:4}}>유찰</span>}
                 {isBroken&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:3,background:"rgba(168,180,255,0.15)",color:"#a8b4ff",marginRight:4}}>내역</span>}
