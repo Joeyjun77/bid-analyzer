@@ -1262,9 +1262,9 @@ export default function App(){
               const wb=XLSX.utils.book_new();
               const data=compList.map(p=>{
                 const finalRec=getFinalRecommendation(p);
-                const finalAdj=finalRec.adj;const finalBid=finalRec.bid;
+                const finalAdj=finalRec.adj;const finalBid=finalRec.bid;const finalBid1st=finalRec.bid1st;
                 const actBr1=p.matched_record_id!=null?(recBr1.get(p.matched_record_id)??null):null;
-                const optVerdict=bidVerdict(finalBid,recById.get(p.matched_record_id));
+                const optVerdict=bidVerdict(finalBid1st||finalBid,recById.get(p.matched_record_id));
                 return{
                   "공고명":p.pn||"",
                   "공고번호":p.pn_no||"",
@@ -1280,7 +1280,7 @@ export default function App(){
                   "자사 비가격 점수":ownScore,
                   // ★ Phase 6-A: 추천은 opt_adj 단일 소스
                   "추천 사정률(100%)":finalAdj!=null?(100+Number(finalAdj)).toFixed(4):"",
-                  "추천 투찰금액":finalBid||"",
+                  "추천 투찰금액":finalBid1st||finalBid||"",
                   "추천근거":finalRec.source||"",
                   // 참고: 순수 통계 예측 (편향 보정 전)
                   "순수예측 사정률(100%)":p.pred_adj_rate!=null?(100+Number(p.pred_adj_rate)).toFixed(4):"",
@@ -1375,7 +1375,7 @@ export default function App(){
               const optErr=(finalAdj!=null&&actBr1!=null)?(100+Number(finalAdj))-actBr1:null;
               const isAnomaly=optErr!=null&&Math.abs(optErr)>5;
               const errColor=isAnomaly?"#e24b4a":optErr!=null?(Math.abs(optErr)<0.3?"#5dca96":Math.abs(optErr)<1?"#d4a834":"#e24b4a"):C.txd;
-              const verdict=bidVerdict(finalBid,recById.get(p.matched_record_id)); // null = 낙찰 기록 없음·하한가 없음 → 칸 비움
+              const verdict=bidVerdict(finalBid1st||finalBid,recById.get(p.matched_record_id)); // null = 낙찰 기록 없음·하한가 없음 → 칸 비움
               const canWin=!isAnomaly&&verdict==="possible";
               const isYuchal=p.actual_winner&&(p.actual_winner==="유찰"||p.actual_winner==="유찰(무)");
               // 수의계약: is_negotiation 플래그 기준 (복수예가 메커니즘 미적용)
