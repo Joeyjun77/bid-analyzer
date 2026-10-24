@@ -48,7 +48,7 @@ for (const c of real) eq(rec1stPossible(c.p, c.r), c.exp, `실데이터 id=${c.i
 // bidVerdict — 투찰금 하나의 개찰 판정(표·엑셀·카드 공용). 정의는 rec1stPossible과 같다(동액은 1위 아님).
 const RV = { bp: 1000, floor_price: 900 };
 eq(bidVerdict(950, RV), "possible", "하한~1위 사이"); eq(bidVerdict(1000, RV), "above", "동액은 1위 아님");
-eq(bidVerdict(1001, RV), "above", "1위보다 높음"); eq(bidVerdict(899, RV), "below_floor", "하한 미달");
+eq(bidVerdict(1001, RV), "above", "1위 이상"); eq(bidVerdict(899, RV), "below_floor", "하한 미달");
 eq(bidVerdict(900, RV), "possible", "하한과 같으면 통과"); eq(bidVerdict(950, null), null, "기록 없음");
 eq(bidVerdict(950, { bp: 1000, floor_price: null }), null, "하한가 없음"); eq(bidVerdict(null, RV), null, "투찰금 없음");
 eq(bidVerdict("950", { bp: "1000", floor_price: "900" }), "possible", "문자열 숫자");

@@ -40,10 +40,11 @@ export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accur
   const recP100 = r.adj != null ? 100 + Number(r.adj) : null;
   const inRange = recP100 != null && hist.p25 != null ? recP100 >= hist.p25 && recP100 <= hist.p75 : null;
   // 개찰 후 결과 — 매칭된 낙찰 기록의 실제 1위 금액·하한가로 판정(서버 rec_1st_possible과 같은 정의, 동액은 1위 아님)
-  const ab = Number(d.actual_bid_amount) || null;
-  const matched = d.match_status === "matched" && ab;
-  const verdict = matched && r.bid ? bidVerdict(r.bid, (recs || []).find(x => x.id === d.matched_record_id)) : null;
-  const result = verdict ? { possible: "1위 가능 금액", above: "1위보다 높음", below_floor: "하한 미달" }[verdict] : null;
+  const matched = d.match_status === "matched";
+  const matchedRec = matched ? (recs || []).find(x => x.id === d.matched_record_id) : null;
+  const ab = Number(d.actual_bid_amount) || Number(matchedRec?.bp) || null; // 예측 행에 1위 금액이 없으면 낙찰 기록 값(표의 판정과 같은 출처)
+  const verdict = r.bid ? bidVerdict(r.bid, matchedRec) : null;
+  const result = verdict ? { possible: "1위 가능 금액", above: "1위 이상", below_floor: "하한 미달" }[verdict] : null;
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>

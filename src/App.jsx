@@ -345,7 +345,7 @@ function AgencyFloorTab(){
 export default function App(){
   const{isAdmin}=useAuth();
   const[tab,setTab]=useState(DEFAULT_TAB);
-  const[moreTabs,setMoreTabs]=useState(false); // 보조 메뉴(피드백·검증·V6·하한·V2) 접기 — 자주 쓰는 5개만 기본 노출
+  const[moreTabs,setMoreTabs]=useState(false); // 보조 메뉴(SUB_TABS) 접기 — 상단은 TOP_TABS 5개만 기본 노출
   const[recs,setRecs]=useState([]);
   const[allS,setAllS]=useState({ts:{},as:{}});const[newS,setNewS]=useState({ts:{},as:{}});const[oldS,setOldS]=useState({ts:{},as:{}});
   const[drag,setDrag]=useState(false);const[dragPred,setDragPred]=useState(false);const[busy,setBusy]=useState(false);const[msg,setMsg]=useState({type:"",text:""});
@@ -844,7 +844,7 @@ export default function App(){
   // 오늘의 공고 배지 = 탭 기본 화면(관내·소경쟁·개찰 예정·전기) 중 예측 없는 공고 수. NoticesTab과 같은 입력으로 계산
   const todayBadge=useMemo(()=>{const nowIso=new Date().toISOString();const today=new Date().toLocaleDateString("sv-SE");
     const pcOf=({at,ag,amount})=>pcDistMap&&at&&amount?resolvePcDist(pcDistMap,{at,canonicalAg:normalizeAgencyName(ag),ba:amount}):null;
-    return countTodayActions(buildTodayRows({notices,predictions,keywords:loadKeywords(),pcOf,nowIso,today}))},[notices,predictions,pcDistMap]);
+    return countTodayActions(buildTodayRows({notices,predictions,keywords:loadKeywords(),pcOf,nowIso,today}))},[notices,predictions,pcDistMap,tab]); // tab: 키워드는 성과 탭에서 바뀌고 localStorage라 탭 이동 때 다시 읽는다
   const todayRecMap=useMemo(()=>{
     const m={};
     predictions.forEach(p=>{if(p&&p.match_status!=="matched")m[p.id]=recOf(p)});
@@ -1077,7 +1077,7 @@ export default function App(){
 
     <div style={{maxWidth:tab==="g2b_sheet"?1480:1300,margin:"0 auto",padding:"16px 16px"}}>
 
-    {/* ═══ 대시보드 탭 ═══ */}
+    {/* ═══ 데이터 탭 (참고용 배너는 REF_ONLY_TABS 공통) ═══ */}
     {REF_ONLY_TABS.has(tab)&&<div style={{margin:"0 0 10px",padding:"6px 12px",fontSize:11,color:"#d4a834",background:"rgba(212,168,52,0.08)",border:"1px solid rgba(212,168,52,0.3)",borderRadius:6}}>{REF_ONLY_BANNER}</div>}
     {tab==="data"&&<DataTab busy={busy} drag={drag} setDrag={setDrag} loadFiles={loadFiles} loadPredFiles={loadPredFiles} uploadLog={uploadLog} dbLoading={dbLoading} compStats={compStats} dataStatus={dataStatus} bidDetails={bidDetails} onOpenExpired={()=>{setTab("predict");setCompFilter("expired")}}/>}
 
@@ -1429,10 +1429,6 @@ export default function App(){
       refreshPredictions={refreshPredictions}
       pcDistMap={pcDistMap}
     />}
-
-    {/* ═══ Phase 20: 작전 대시보드 탭 ═══ */}
-
-    {/* ═══ U0 Phase 2: V2 미리보기 (mock 표시, B2/B3 엔진 미연결) ═══ */}
 
     {/* ═══ Phase 22 P2-2: 낙찰 결과 자동 피드백 탭 ═══ */}
     {tab==="feedback"&&<PredictionFeedback/>}
