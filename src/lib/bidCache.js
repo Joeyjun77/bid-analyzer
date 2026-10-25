@@ -86,6 +86,9 @@ export async function sbFetchAllCached(shown){
     await writeMeta(db,{lastSyncUpdatedAt:server.maxUpdated,cachedCount:cnt,cols:BID_RECORDS_COLS});
     return sortByOdDesc(await readAllRows(db));
   }catch(e){
+    // 동기화 확인·델타가 실패해도 화면에 띄운 캐시가 있으면 그대로 쓴다 — 10만 건 전체 재다운로드(운영 실측 17.5초)를 피하고 다음 접속에 다시 확인
+    const prev=await Promise.resolve(shown).catch(()=>null);
+    if(prev){console.warn("[cache] 동기화 실패 — 캐시 유지:",e?.message||e);return prev}
     console.warn("[cache] fallback (error):",e?.message||e);
     return sbFetchAll();
   }finally{
