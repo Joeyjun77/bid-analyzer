@@ -1,4 +1,4 @@
-import { recOfPred, agencyRecentHistory, attackOfPred, KEPCO_ATTACK_AGENCIES } from "../src/lib/bidCard.js";
+import { recOfPred, agencyRecentHistory, attackOfPred, KEPCO_ATTACK_AGENCIES, agencyTrend } from "../src/lib/bidCard.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${got} expect ${exp}`); bad++; } };
@@ -97,6 +97,60 @@ eq(h.autoCount, 0, "자동 없으면 0");
   eq(attackOfPred(kp, ad, null), null, "메인 추천 없으면 null");
   eq(attackOfPred(kp, ad, 92000000), null, "공격안이 메인보다 낮지 않으면 null");
   eq(attackOfPred(null, ad, 95000000), null, "null 입력");
+}
+
+// agencyTrend — 최근 90일 vs 직전 9개월 동향(표시 전용, 스펙 .scratch/agency-trend/spec.md)
+{
+  const AG = "경기도 테스트시";
+  const day = (ref, k) => { const d = new Date(ref + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - k); return d.toISOString().slice(0, 10); };
+  let seq = 0;
+  const row = (od, ar, extra = {}) => ({ id: ++seq, pn_no: "P" + seq, canonical_ag: AG, od, ar1: 100 + ar, br1: 100 + ar + 0.01, ba: 1e8, bp: null, floor_price: null, is_excluded: false, co: "업체", ...extra });
+  const REF = "2026-10-22";
+  const rec = (vals, k0) => vals.map((v, i) => row(day(REF, k0 + i), v));
+  const recentV = [0.9, 1.1, 0.95, 1.05, 1.0, 0.9, 1.1, 0.95, 1.05, 1.0];           // n10, 평균 1.0
+  const priorV = Array.from({ length: 20 }, (_, i) => (i % 2 ? 0.1 : -0.1));         // n20, 평균 0
+  const base = [...rec(recentV, 0), ...rec(priorV, 100)];
+  const opt = { openDate: "2026-10-23", today: "2026-10-26" };
+  const t1 = agencyTrend(base, AG, opt);
+  eq(t1.ref, REF, "기준일 = 개찰일 전날"); eq(t1.refFromOpen, true, "개찰 전날 기준 표시");
+  eq(t1.ar.nRecent, 10, "최근 n"); eq(t1.ar.nPrior, 20, "직전 n");
+  near(t1.ar.meanRecent, 1.0, 1e-9, "최근 평균"); near(t1.ar.meanPrior, 0, 1e-9, "직전 평균"); near(t1.ar.delta, 1.0, 1e-9, "Δ");
+  const sv = (a) => { const m = a.reduce((x, y) => x + y, 0) / a.length; return a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1); };
+  const se = Math.sqrt(sv(recentV) / 10 + sv(priorV) / 20);
+  near(t1.ar.z, 1.0 / se, 1e-9, "Welch z"); near(t1.ar.detect, 3 * se, 1e-9, "구분 가능 폭 = 3·se");
+  eq(t1.ar.shift, "up", "|z|≥3 상승"); eq(t1.ar.status, "ok", "표본 충분");
+  eq(t1.lastOd, REF, "최근 창 마지막 개찰일");
+  eq(agencyTrend([...rec(recentV.map(v => -v), 0), ...rec(priorV, 100)], AG, opt).ar.shift, "down", "하락");
+  const noisy = [...rec([1, -1, 1, -1, 1, -1, 1, -1, 1, -0.6], 0), ...rec(priorV, 100)];
+  eq(agencyTrend(noisy, AG, opt).ar.shift, "none", "|z|<3 변화 없음");
+  // 기준일 규칙
+  eq(agencyTrend(base, AG, { today: "2026-10-26" }).ref, "2026-10-26", "개찰일 없으면 오늘");
+  eq(agencyTrend(base, AG, { today: "2026-10-26" }).refFromOpen, false, "오늘 기준");
+  eq(agencyTrend(base, AG, { openDate: "2026-11-05", today: "2026-10-26" }).ref, "2026-10-26", "개찰일이 미래면 오늘");
+  // 창 경계: ref−89 최근, ref−90 직전, ref−364 직전, ref−365 제외, ref+1(개찰 당일) 제외
+  const edge = [row(day(REF, 89), 0), row(day(REF, 90), 0), row(day(REF, 364), 0), row(day(REF, 365), 0), row("2026-10-23", 0)];
+  const te = agencyTrend(edge, AG, opt);
+  eq(te.ar.nRecent, 1, "경계: 89일 전은 최근"); eq(te.ar.nPrior, 2, "경계: 90·364일 전은 직전, 365일 전·개찰 당일 제외");
+  eq(te.ar.status, "insufficient", "표본 부족"); eq(te.status, "insufficient", "두 줄 모두 부족이면 전체 부족");
+  // 필터
+  const junk = [row(REF, 0, { canonical_ag: "다른 기관" }), row(REF, 0, { is_excluded: true }), row(REF, 0, { co: "유찰" }),
+    row(REF, 0, { ar1: 94 }), row(REF, 0, { ar1: null }), row(REF, 0, { _auto: true }), row(REF, 0, { _auto: true }), { ...base[0] }];
+  const tj = agencyTrend([...base, ...junk], AG, opt);
+  eq(tj.ar.nRecent, 10, "다른 기관·제외·유찰·범위 밖·빈 값·자동·pn_no 중복 제외"); eq(tj.autoExcluded, 2, "자동 수집 제외 건수");
+  eq(agencyTrend([...base, row(REF, 0, { canonical_ag: null, ag: AG })], AG, opt).ar.nRecent, 11, "canonical 없으면 ag");
+  // 1위 여유(금액 공간): gap = (bp−floor_price)/ba×100, ≥0.05 비율
+  const g = (od, gap) => row(od, 0, { floor_price: 9e7, bp: 9e7 + gap / 100 * 1e8 });
+  const gRows = [...Array.from({ length: 10 }, (_, i) => g(day(REF, i), 0.1)), ...Array.from({ length: 20 }, (_, i) => g(day(REF, 100 + i), 0.01)),
+    g(day(REF, 1), -0.02), row(day(REF, 2), 0)];
+  const tg = agencyTrend(gRows, AG, opt);
+  eq(tg.gap.nRecent, 10, "음수 여유·하한가 없는 행 제외"); eq(tg.gap.nPrior, 20, "직전 여유 n");
+  near(tg.gap.pctRecent, 100, 1e-9, "최근 비율"); near(tg.gap.pctPrior, 0, 1e-9, "직전 비율");
+  const pp = 10 / 30; near(tg.gap.z, 1 / Math.sqrt(pp * (1 - pp) * (1 / 10 + 1 / 20)), 1e-9, "두 비율 z");
+  eq(tg.gap.shift, "wider", "덜 붙음"); eq(tg.ar.nRecent, 12, "사정률 줄은 여유 없는 행도 셈");
+  const tg2 = agencyTrend([...Array.from({ length: 10 }, (_, i) => g(day(REF, i), 0.01)), ...Array.from({ length: 20 }, (_, i) => g(day(REF, 100 + i), 0.01))], AG, opt);
+  eq(tg2.gap.shift, "none", "비율 같으면(0%·0%) 변화 없음"); eq(tg2.gap.z, null, "분산 0이면 z 없음");
+  eq(agencyTrend(base, AG, opt).gap.status, "insufficient", "여유 표본 없으면 부족");
+  eq(agencyTrend([], AG, opt).status, "insufficient", "빈 입력"); eq(agencyTrend(null, AG, opt).status, "insufficient", "null 입력");
 }
 
 console.log(bad === 0 ? "OK bidCard" : `FAIL ${bad}`);

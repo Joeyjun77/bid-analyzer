@@ -58,3 +58,45 @@ export function agencyRecentHistory(recs, canonicalAg, n = 20) {
   const s = rows.map(r => r.br1).sort((a, b) => a - b);
   return { rows, p25: quantile(s, 0.25), p50: quantile(s, 0.5), p75: quantile(s, 0.75), count: rows.length, autoCount: rows.filter(r => r.auto).length };
 }
+
+// 발주기관 최근 90일 동향(표시 전용, 스펙 .scratch/agency-trend/spec.md) — 추첨 잡음과 구분되는 변화만 "다름"으로 보인다(|z|≥3).
+// 줄 1: 발주처 사정률(ar1, 추첨 결과) 평균 이동 — Welch z. 줄 2: 1위 여유(금액 공간 (bp−하한가)/기초×100) ≥0.05%p 공고 비율 — 두 비율 z.
+// 기준일 ref = 개찰일 전날(개찰일이 오늘 이전일 때) 또는 오늘 — 개찰 당일 자기 결과·사후 정보 제외. 오늘은 호출자가 로컬 날짜로 준다.
+const TREND_MIN_RECENT = 10, TREND_MIN_PRIOR = 20, TREND_Z = 3, GAP_CUT = 0.05;
+const shiftDay = (iso, k) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + k); return d.toISOString().slice(0, 10); };
+const meanVar = (a) => { const m = a.reduce((x, y) => x + y, 0) / a.length; return [m, a.length > 1 ? a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1) : 0]; };
+export function agencyTrend(recs, canonicalAg, { openDate, today } = {}) {
+  const dayBefore = openDate ? shiftDay(String(openDate).slice(0, 10), -1) : null;
+  const ref = dayBefore && dayBefore < today ? dayBefore : today;
+  const recentFrom = shiftDay(ref, -90), priorFrom = shiftDay(ref, -365);
+  const seen = new Set(); let autoExcluded = 0;
+  const rows = [];
+  for (const r of recs || []) {
+    if (!r || (r.canonical_ag || r.ag) !== canonicalAg || r.is_excluded === true || /유찰/.test(r.co || "")) continue;
+    const od = r.od ? String(r.od).slice(0, 10) : null, ar = num(r.ar1);
+    if (!od || od > ref || od <= priorFrom || ar == null || ar < 95 || ar > 105) continue;
+    if (r._auto === true) { autoExcluded++; continue; }
+    if (r.pn_no) { if (seen.has(r.pn_no)) continue; seen.add(r.pn_no); }
+    const bp = num(r.bp), fl = num(r.floor_price), ba = num(r.ba);
+    const gap = bp != null && fl != null && ba > 0 ? (bp - fl) / ba * 100 : null;
+    rows.push({ od, ar: ar - 100, gap: gap != null && gap >= 0 ? gap : null, recent: od > recentFrom });
+  }
+  const R = rows.filter(x => x.recent), P = rows.filter(x => !x.recent);
+  const enough = (nr, np) => nr >= TREND_MIN_RECENT && np >= TREND_MIN_PRIOR;
+  let ar = { status: "insufficient", nRecent: R.length, nPrior: P.length };
+  if (enough(R.length, P.length)) {
+    const [mr, vr] = meanVar(R.map(x => x.ar)), [mp, vp] = meanVar(P.map(x => x.ar));
+    const se = Math.sqrt(vr / R.length + vp / P.length), delta = mr - mp, z = se > 0 ? delta / se : null;
+    ar = { ...ar, status: "ok", meanRecent: mr, meanPrior: mp, delta, z, detect: TREND_Z * se, shift: z == null || Math.abs(z) < TREND_Z ? "none" : z > 0 ? "up" : "down" };
+  }
+  const gR = R.filter(x => x.gap != null), gP = P.filter(x => x.gap != null);
+  let gap = { status: "insufficient", nRecent: gR.length, nPrior: gP.length };
+  if (enough(gR.length, gP.length)) {
+    const kR = gR.filter(x => x.gap >= GAP_CUT).length, kP = gP.filter(x => x.gap >= GAP_CUT).length;
+    const pR = kR / gR.length, pP = kP / gP.length, pool = (kR + kP) / (gR.length + gP.length);
+    const se = Math.sqrt(pool * (1 - pool) * (1 / gR.length + 1 / gP.length)), z = se > 0 ? (pR - pP) / se : null;
+    gap = { ...gap, status: "ok", pctRecent: pR * 100, pctPrior: pP * 100, z, shift: z == null || Math.abs(z) < TREND_Z ? "none" : z > 0 ? "wider" : "narrower" };
+  }
+  const lastOd = R.reduce((m, x) => (m == null || x.od > m ? x.od : m), null);
+  return { status: ar.status === "ok" || gap.status === "ok" ? "ok" : "insufficient", ref, refFromOpen: ref === dayBefore, autoExcluded, lastOd, ar, gap };
+}

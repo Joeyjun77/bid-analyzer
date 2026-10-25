@@ -8,7 +8,7 @@ import { floorPassLabel } from "../lib/floorLabels.js";
 import { calcEffectiveFloorRate, formatFloorDual } from "../lib/effectiveFloor.js";
 import { resolvePcDist, pcWinRateOf, PC_GRAIN_LABELS } from "../lib/participantCount.js";
 import { predConfidenceV2 } from "../lib/predConfidence.js";
-import { agencyRecentHistory } from "../lib/bidCard.js";
+import { agencyRecentHistory, agencyTrend } from "../lib/bidCard.js";
 import { bidVerdict } from "../lib/rec1stPossible.js";
 import ParticipantMatrixModal from "./ParticipantMatrixModal.jsx";
 
@@ -39,6 +39,7 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
   const pc = pcDistMap && d.at && ba ? resolvePcDist(pcDistMap, { at: d.at, canonicalAg: ag, ba }) : null;
   const winRate = pc && d.at === "지자체" && pc.grain !== "AT_BA" ? pcWinRateOf(pc.p50) : null;
   const hist = agencyRecentHistory(recs, ag, 20);
+  const trend = agencyTrend(recs, ag, { openDate: d.open_date, today: new Date().toLocaleDateString("sv-SE") });
   const recP100 = r.adj != null ? 100 + Number(r.adj) : null;
   const inRange = recP100 != null && hist.p25 != null ? recP100 >= hist.p25 && recP100 <= hist.p75 : null;
   // 개찰 후 결과 — 매칭된 낙찰 기록의 실제 1위 금액·하한가로 판정(서버 rec_1st_possible과 같은 정의, 동액은 1위 아님)
@@ -125,6 +126,17 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
           <div style={{ ...h, display: "flex", justifyContent: "space-between" }}>
             <span>이 발주처의 1위 사정률 이력 (최근 {hist.count}건{hist.autoCount > 0 ? ` · 자동 ${hist.autoCount}건 포함` : ""})</span>
             <button onClick={() => onOpenG2B?.(ag)} style={{ background: "transparent", border: "none", color: GOLD, fontSize: 11, cursor: "pointer", padding: 0 }}>G2B 양식에서 전체 보기 →</button>
+          </div>
+          <div style={{ fontSize: 11, color: C.txm, marginBottom: 10, padding: "6px 8px", border: "1px solid " + C.bdr, borderRadius: 6 }}>
+            <div style={{ color: C.txt, fontWeight: 600 }}>최근 90일 동향 <span style={{ color: C.txd, fontWeight: 400 }}>(기준 {trend.ref}{trend.refFromOpen ? " · 개찰 전날" : ""}{trend.lastOd ? ` · 최근 마지막 개찰 ${trend.lastOd}` : ""}{trend.autoExcluded ? ` · 자동 수집 ${trend.autoExcluded}건 제외` : ""})</span></div>
+            <div style={{ marginTop: 3 }}>발주처 사정률(추첨 결과): {trend.ar.status !== "ok" ? `표본 부족 (최근 ${trend.ar.nRecent}건 · 직전 9개월 ${trend.ar.nPrior}건)` : <>
+              최근 <span style={mono}>{(100 + trend.ar.meanRecent).toFixed(3)}%</span> ({trend.ar.nRecent}건) · 직전 9개월 <span style={mono}>{(100 + trend.ar.meanPrior).toFixed(3)}%</span> ({trend.ar.nPrior}건) · Δ <span style={mono}>{(trend.ar.delta >= 0 ? "+" : "") + trend.ar.delta.toFixed(3)}%p</span> — {trend.ar.shift === "none"
+                ? `구분되는 변화 없음 (이 표본으로는 ±${trend.ar.detect.toFixed(2)}%p 이내 변화는 구분 불가)`
+                : <b style={{ color: C.txt }}>직전 9개월과 다름(z={trend.ar.z.toFixed(1)}) · 원인 미상 — 추천값에 반영하지 않음</b>}</>}</div>
+            <div style={{ marginTop: 3 }}>1위가 하한선에서 0.05%p 이상 떨어진 공고: {trend.gap.status !== "ok" ? `표본 부족 (최근 ${trend.gap.nRecent}건 · 직전 9개월 ${trend.gap.nPrior}건)` : <>
+              직전 9개월 <span style={mono}>{trend.gap.pctPrior.toFixed(0)}%</span> → 최근 <span style={mono}>{trend.gap.pctRecent.toFixed(0)}%</span> ({trend.gap.nPrior}→{trend.gap.nRecent}건) — {trend.gap.shift === "none"
+                ? "구분되는 변화 없음"
+                : <b style={{ color: C.txt }}>1위가 하한선에 {trend.gap.shift === "wider" ? "덜" : "더"} 붙음(z={trend.gap.z.toFixed(1)})</b>}</>}</div>
           </div>
           {hist.count === 0 ? <div style={{ fontSize: 12, color: C.txd }}>이 발주처의 1위 기록이 없습니다.</div> : (
             <>
