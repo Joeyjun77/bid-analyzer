@@ -3,8 +3,8 @@
 import { sbFetchAll, sbFetchSyncMeta, sbFetchRecordsSince, BID_RECORDS_COLS } from "./supabase.js";
 import { decideSyncAction, needsReconcile, sortByOdDesc } from "./bidCacheLogic.js";
 
-const DB_NAME="bid-analyzer-cache", DB_VERSION=1;
-const STORE_ROWS="bid_records", STORE_META="meta", META_KEY="bid_records";
+const DB_NAME="bid-analyzer-cache", DB_VERSION=2; // v2: 시작 화면 스냅샷(kv) 추가
+const STORE_ROWS="bid_records", STORE_META="meta", META_KEY="bid_records", STORE_KV="kv";
 
 // ── IndexedDB IO ──────────────────────────────────────────
 function openCache(){
@@ -14,6 +14,7 @@ function openCache(){
       const db=req.result;
       if(!db.objectStoreNames.contains(STORE_ROWS))db.createObjectStore(STORE_ROWS,{keyPath:"id"});
       if(!db.objectStoreNames.contains(STORE_META))db.createObjectStore(STORE_META,{keyPath:"key"});
+      if(!db.objectStoreNames.contains(STORE_KV))db.createObjectStore(STORE_KV,{keyPath:"key"});
     };
     req.onsuccess=()=>resolve(req.result);
     req.onerror=()=>reject(req.error);
@@ -42,7 +43,8 @@ function replaceAllRows(db,rows){
 
 // ── 오케스트레이터 ────────────────────────────────────────
 // sbFetchAll 드롭인 대체. 캐시 hit 시 행 페치 0, 변경 시 델타만, 실패 시 전체 페치 폴백.
-export async function sbFetchAllCached(){
+// shown: 화면에 이미 띄운 캐시 행(readCachedRows 결과 또는 그 Promise) — hit이면 다시 읽지 않고 같은 배열을 돌려준다(호출 측이 === 로 재계산 생략)
+export async function sbFetchAllCached(shown){
   if(typeof indexedDB==="undefined"||(typeof localStorage!=="undefined"&&localStorage.getItem("cacheDisabled")==="true")){
     return sbFetchAll();
   }
@@ -62,6 +64,8 @@ export async function sbFetchAllCached(){
       return sortByOdDesc(rows);
     }
     if(action==="hit"){
+      const prev=await shown;
+      if(prev){console.log(`[cache] hit (0 fetched, reuse ${prev.length})`);return prev}
       const rows=await readAllRows(db);
       console.log(`[cache] hit (0 fetched, ${rows.length})`);
       return sortByOdDesc(rows);
@@ -86,4 +90,32 @@ export async function sbFetchAllCached(){
   }finally{
     try{db&&db.close()}catch(_){}
   }
+}
+
+// ── 시작 화면용 캐시 읽기(네트워크 없음) ─────────────────────
+// 지난 동기화 결과로 화면을 먼저 띄우고, sbFetchAllCached가 뒤에서 최신으로 바꾼다. 없거나 컬럼 구성이 바뀌었으면 null.
+export async function readCachedRows(){
+  if(typeof indexedDB==="undefined")return null;
+  let db=null;
+  try{
+    db=await openCache();
+    const meta=await readMeta(db);
+    if(!meta||JSON.stringify(meta.cols)!==JSON.stringify(BID_RECORDS_COLS))return null;
+    const rows=await readAllRows(db);
+    return rows.length?sortByOdDesc(rows):null;
+  }catch(_){return null}finally{try{db&&db.close()}catch(_){}}
+}
+
+// 시작 화면 스냅샷(예측·공고·보정표 등) — 실패해도 앱 동작에는 영향 없음(null/무시)
+export async function kvGet(key){
+  if(typeof indexedDB==="undefined")return null;
+  let db=null;
+  try{db=await openCache();const r=await reqP(store(db,STORE_KV,"readonly").get(key));return r?r.value:null}
+  catch(_){return null}finally{try{db&&db.close()}catch(_){}}
+}
+export async function kvSet(key,value){
+  if(typeof indexedDB==="undefined")return;
+  let db=null;
+  try{db=await openCache();await reqP(store(db,STORE_KV,"readwrite").put({key,value}))}
+  catch(e){console.warn("[cache] kvSet 실패:",e?.message||e)}finally{try{db&&db.close()}catch(_){}}
 }

@@ -24,7 +24,8 @@ import { floorModeOf, riskColor, riskLabel } from "./lib/floorRisk.js";
 import { buildAdjHistory, resolveAdjHistory, impliedAdjOfBid, passProbPct, passRiskSnapshot } from "./lib/passProb.js";
 import { buildPcDistMap, resolvePcDist, pcBucketOf, pcColor, pcSnapshot, PC_GRAIN_LABELS } from "./lib/participantCount.js";
 import { sbFetchAll, sbUpsert, sbSavePredictions, sbFetchPredictions, sbMatchPredictions, sbDeletePredictions, sbSaveDetail, sbSaveParticipants, sbRefreshParticipantDistFor, sbFetchDetails, sbFetchDetailsByAg, sbFetchAgAssumedStats, sbFetchPredBiasMap, sbFetchAccuracyMap, sbFetchFloorBench, sbFetchBasegFinetune, sbFetchAgencyPredictor, sbFetchNotices, sbRecordSnapshots, sbUpdateStrategyOutcomes, sbFetchQualityDaily, sbFetchWeeklyQuality, sbFetchBiasHotspots, sbFetchWatchlist, sbFetchWatchlistHistory, sbFetchWin1stDistMap, sbUpdatePredictionsV2, sbFetchAgencyFloorPredictions, sbFetchAgencyRateDistribution, sbFetchMatchedRecords, sbFetchAgencyHistoryByName } from "./lib/supabase.js";
-import { sbFetchAllCached } from "./lib/bidCache.js";
+import { sbFetchAllCached, readCachedRows, kvGet, kvSet } from "./lib/bidCache.js";
+const BOOT_SNAPSHOT_KEY="boot-v1"; // 시작 화면 스냅샷 키 — 담는 항목이 바뀌면 버전을 올린다
 import { useAuth, getSession } from "./auth.js";
 
 // 하한 통과 확률 계산의 공통 입력 — 저장 스냅샷·상세·목록이 같은 기준 기록·같은 요율을 쓰게 한다.
@@ -352,6 +353,7 @@ export default function App(){
   const[uploadLog,setUploadLog]=useState([]);const[dataStatus,setDataStatus]=useState(null);
   const[search,setSearch]=useState("");const[agSch,setAgSch]=useState("");const[eF,setEF]=useState("all");const[atF,setAtF]=useState("all");
   const[dataPage,setDataPage]=useState(0);const[dbLoading,setDbLoading]=useState(true);
+  const[syncing,setSyncing]=useState(true);const syncingRef=useRef(true);useEffect(()=>{syncingRef.current=syncing},[syncing]); // 캐시로 먼저 띄운 뒤 최신 동기화 중
   const[hideAbnormal,setHideAbnormal]=useState(false); // D-1: 비정상 데이터 필터
   const[predResults,setPredResults]=useState([]);
   const[predictions,setPredictions]=useState([]);
@@ -593,10 +595,11 @@ export default function App(){
       return{records:rows.length,predictions:(preds||[]).length,details:(dets||[]).length,matched}
     }catch(e){return null}},[refreshStats]);;
 
-  // DB 로드
+  // DB 로드 — ① 지난 접속 캐시(IndexedDB)로 화면을 먼저 띄우고 ② 서버 요청을 동시에 보내 최신으로 바꾼다(2026-10-25: 순차 대기 14.8초 해소)
+  // 최신 동기화 전에는 syncing — 보정표가 예전 값일 수 있어 파일 업로드(loadFiles·loadPredFiles)를 막는다
   useEffect(()=>{(async()=>{
-    try{const rows=await sbFetchAllCached();setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows))}catch(e){setMsg({type:"err",text:"DB 로드 실패: "+e.message})}
-    try{const preds=await sbFetchPredictions();setPredictions(preds||[]);
+    const applyRecs=rows=>{setRecs(rows);refreshStats(rows);setDataStatus(calcDataStatus(rows))};
+    const applyPreds=preds=>{setPredictions(preds||[]);
       const g2bP=(preds||[]).filter(p=>p.source==="g2b_auto"&&p.created_at);
       if(g2bP.length>0){const lat=g2bP.reduce((a,b)=>a.created_at>b.created_at?a:b);setLastG2bAt(lat.created_at)}
       // ★ file_upload 예측을 predResults로 복원 (새로고침 시 유지)
@@ -610,26 +613,41 @@ export default function App(){
           src:p.pred_source||"",baseAdj:Number(p.pred_base_adj||0),
           ci70:null,ci90:null,scenarios:[],bidRateRec:{avg:0,med:0,q1:0,q3:0,std:0},
           bidByRate:0,adjAvg:0,adjStd:0,biasAdj:0,driftUsed:0,detailInsight:null}
-      })))}
-    }catch(e){setPredictions([])}
-    try{const dets=await sbFetchDetails();setBidDetails(dets||[]);
-      if(dets&&dets.length>0){const latest=dets.reduce((a,b)=>(a.created_at>b.created_at?a:b));setLastSucviewAt(latest.created_at)}
-    }catch(e){setBidDetails([])}
-    try{const agStats=await sbFetchAgAssumedStats();setAgAss(agStats||{})}catch(e){setAgAss({})}
-    try{const pbm=await sbFetchPredBiasMap();if(pbm)setPredBiasMap(pbm)}catch(e){}
-    try{const acc=await sbFetchAccuracyMap();if(acc)setAccuracyMap(acc)}catch(e){}
-    try{const fb=await sbFetchFloorBench();if(fb)setFloorBench(fb)}catch(e){}
-    try{const wd=await sbFetchWin1stDistMap();if(wd)setWin1stDistMap(wd)}catch(e){}
-    try{const bf=await sbFetchBasegFinetune();if(bf)setBasegFinetune(bf)}catch(e){}
+      })))}};
+    const applyDets=dets=>{setBidDetails(dets||[]);
+      if(dets&&dets.length>0){const latest=dets.reduce((a,b)=>(a.created_at>b.created_at?a:b));setLastSucviewAt(latest.created_at)}};
     // 발주처 예측기 — predictV5 입력(Generator)이라 유지
-    try{
-      const apr=await sbFetchAgencyPredictor();
-      const aprMap={};(apr||[]).forEach(r=>{aprMap[r.ag]=r});setAgencyPred(aprMap);
-    }catch(e){setAgencyPred({})}
-    // 나라장터 공고 로드
-    try{const nots=await sbFetchNotices();setNotices(nots||[])}catch(e){setNotices([])}
-    if(G2B_AUTO_SHOW){try{setG2bAuto(await sbFetchG2BAuto())}catch(e){setG2bAuto([])}}
-    setDbLoading(false)
+    const applyApr=apr=>{const aprMap={};(apr||[]).forEach(r=>{aprMap[r.ag]=r});setAgencyPred(aprMap)};
+    // 스냅샷은 아직 서버 응답이 오지 않은 항목만 채운다(got = 이미 최신으로 채운 항목)
+    const applySnap=(v,got)=>{const no=k=>!got.has(k);
+      if(no("preds"))applyPreds(v.preds);if(no("dets"))applyDets(v.dets);if(no("agStats"))setAgAss(v.agStats||{});
+      if(no("pbm")&&v.pbm)setPredBiasMap(v.pbm);if(no("acc")&&v.acc)setAccuracyMap(v.acc);if(no("fb")&&v.fb)setFloorBench(v.fb);
+      if(no("wd")&&v.wd)setWin1stDistMap(v.wd);if(no("bf")&&v.bf)setBasegFinetune(v.bf);if(no("apr"))applyApr(v.apr);if(no("nots"))setNotices(v.nots||[])};
+
+    // 캐시 읽기와 서버 요청을 같이 시작한다. 캐시보다 먼저 도착한 서버 값은 캐시로 덮지 않는다(항목별 got).
+    const pCached=readCachedRows(),pSnap=kvGet(BOOT_SNAPSHOT_KEY);
+    const got=new Set();let shownRows=null;const mark=(k,f)=>x=>{got.add(k);return f(x)};
+    const v={};
+    const pAll=Promise.all([
+      sbFetchAllCached(pCached).then(mark("recs",rows=>{if(rows!==shownRows)applyRecs(rows)})).catch(e=>setMsg({type:"err",text:"DB 로드 실패: "+e.message})),
+      sbFetchPredictions().then(mark("preds",p=>{v.preds=p;applyPreds(p)})).catch(()=>setPredictions([])),
+      sbFetchDetails().then(mark("dets",d=>{v.dets=d;applyDets(d)})).catch(()=>setBidDetails([])),
+      sbFetchAgAssumedStats().then(mark("agStats",a=>{v.agStats=a;setAgAss(a||{})})).catch(()=>setAgAss({})),
+      sbFetchPredBiasMap().then(mark("pbm",x=>{v.pbm=x;if(x)setPredBiasMap(x)})).catch(()=>{}),
+      sbFetchAccuracyMap().then(mark("acc",x=>{v.acc=x;if(x)setAccuracyMap(x)})).catch(()=>{}),
+      sbFetchFloorBench().then(mark("fb",x=>{v.fb=x;if(x)setFloorBench(x)})).catch(()=>{}),
+      sbFetchWin1stDistMap().then(mark("wd",x=>{v.wd=x;if(x)setWin1stDistMap(x)})).catch(()=>{}),
+      sbFetchBasegFinetune().then(mark("bf",x=>{v.bf=x;if(x)setBasegFinetune(x)})).catch(()=>{}),
+      sbFetchAgencyPredictor().then(mark("apr",x=>{v.apr=x;applyApr(x)})).catch(()=>setAgencyPred({})),
+      // 나라장터 공고 로드
+      sbFetchNotices().then(mark("nots",x=>{v.nots=x;setNotices(x||[])})).catch(()=>setNotices([])),
+      G2B_AUTO_SHOW?sbFetchG2BAuto().then(mark("g2b",setG2bAuto)).catch(()=>setG2bAuto([])):null,
+    ]);
+    const[cRows,snap]=await Promise.all([pCached,pSnap]);
+    if(cRows&&snap){if(!got.has("recs")){shownRows=cRows;applyRecs(cRows)}applySnap(snap,got);setDbLoading(false)}
+    await pAll;
+    if(v.preds&&v.nots)kvSet(BOOT_SNAPSHOT_KEY,v); // 다음 접속의 첫 화면용
+    setDbLoading(false);setSyncing(false);
   })()},[refreshStats]);
 
   // 예측 탭 진입 시 자동 새로고침
@@ -654,6 +672,7 @@ export default function App(){
 
   // 파일 업로드 (3종 자동 판별: SUCVIEW / 입찰서류함 / 낙찰정보리스트)
   const loadFiles=useCallback(async(fileList)=>{
+    if(syncingRef.current){setMsg({type:"err",text:"최신 데이터 동기화 중입니다 — 잠시 후 다시 올려 주세요"});return}
     const files=Array.from(fileList).filter(Boolean);if(!files.length)return;setBusy(true);setMsg({type:"",text:""});setUploadLog([]);const logs=[];
     let accPredResults=[]; // ★ 여러 파일 예측 누적
     // ★ agAss guard: 비어있으면 자동 fetch
@@ -726,6 +745,7 @@ export default function App(){
 
   // 입찰서류함 예측 (복수 파일 지원)
   const loadPredFiles=useCallback(async(fileList)=>{
+    if(syncingRef.current){setMsg({type:"err",text:"최신 데이터 동기화 중입니다 — 잠시 후 다시 올려 주세요"});return}
     if(!fileList||!fileList.length)return;
     if(!Object.keys(allS.ts||{}).length){setMsg({type:"err",text:"낙찰 데이터를 먼저 로드해주세요 (통계 없음)"});return}
     setBusy(true);setMsg({type:"",text:""});
@@ -1029,6 +1049,7 @@ export default function App(){
         <span style={{fontSize:16,fontWeight:700,color:C.gold}}>입찰 분석 시스템</span>
         <span style={{fontSize:10,color:C.txd}}>{recs.length.toLocaleString()}건 (신{nC}/구{oC})</span>
         <OwnScoreInput value={ownScore} onChange={setOwnScore} />
+        {syncing&&!dbLoading&&<span title="지난 접속 때 저장한 데이터로 먼저 표시 중입니다. 최신 데이터를 받는 중이며, 끝나면 자동으로 바뀝니다." style={{padding:"2px 7px",fontSize:9,color:C.gold,border:"1px solid rgba(212,168,52,0.35)",borderRadius:4}}>⟳ 최신 데이터 동기화 중</span>}
         {lastG2bAt&&<span title={"나라장터 공고 마지막 예측 갱신: "+new Date(lastG2bAt).toLocaleString("ko-KR")} style={{display:"inline-flex",alignItems:"center",gap:3,padding:"2px 7px",fontSize:9,color:"#5dca96",background:"rgba(93,202,150,0.08)",border:"1px solid rgba(93,202,150,0.2)",borderRadius:10,cursor:"default"}}>
           ● 공고 {fmtRelTime(lastG2bAt)} 갱신
         </span>}
