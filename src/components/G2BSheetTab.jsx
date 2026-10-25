@@ -16,8 +16,8 @@ const fmtRateTrunc = (v, d) => {
 };
 const RATE_CAVEAT = "추첨 결과 관측값(복수예비가 C(15,4)) — 발주처의 의도적 선택 아님";
 const RATE_LABEL = { br1: "1위사정율", ar1: "발주처사정율" };
-// 나라장터 자동 수집 행 표시(g2bAuto.js mergeAutoRows의 _auto) — 엑셀 대조 중인 계산값
-const AUTO_TIP = "나라장터 자동 수집 · 계산값 · 엑셀 대조 중";
+// 나라장터 자동 수집 행 표시(g2bAuto.js mergeAutoRows의 _auto) — 엑셀 대조 합격(2026-10-25)한 계산값
+const AUTO_TIP = "나라장터 자동 수집 · 계산값(엑셀 대조 합격 2026-10-25)";
 const AutoBadge = () => <span title={AUTO_TIP} style={{ fontSize: 9, padding: "0 4px", marginRight: 4, borderRadius: 3, border: "1px solid " + C.bdr, color: C.txm, fontWeight: 500 }}>자동</span>;
 
 // 개찰일(od) 글씨색 — 오늘(현재) 기준 연도 최신순 강조. 최근3년=빨강3단계, 다음3년=노랑3단계, 그이전=흰색에서 흐려짐.

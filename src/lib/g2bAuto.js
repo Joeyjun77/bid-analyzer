@@ -2,8 +2,8 @@
 // 예측 엔진 입력(recs → refreshStats·adjHist·pcDistMap·recOf)에는 절대 넘기지 않는다 — 스펙 §8, predict-architect 2026-10-23 조건.
 // 스펙: docs/superpowers/specs/2026-10-23-g2b-auto-collect-design.md
 
-// 엑셀 대조 합격(Task 5) 전까지 꺼 둔다. 켜면 집계에 포함되고 화면에 '자동' 배지·"자동 N건 포함"이 붙는다.
-export const G2B_AUTO_SHOW = false;
+// 2026-10-25 엑셀 대조 합격(ar1·floor 100%, br1 98.26%, 업종 재현율 98.42%)·사용자 승인으로 켬. 집계에 포함되고 화면에 '자동' 배지·"자동 N건 포함"이 붙는다.
+export const G2B_AUTO_SHOW = true;
 
 const base = (pnNo) => String(pnNo || "").replace(/-\d{3}$/, "");
 

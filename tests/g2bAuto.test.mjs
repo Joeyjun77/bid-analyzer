@@ -23,7 +23,7 @@ const other = mergeAutoRows([], [{ id: 12, bid_ntce_no: "R26BK6", status: "compl
 eq(other[0].cat, null, "비전기 참여 공고는 업종 비움");
 eq(mergeAutoRows([], [{ id: 13, bid_ntce_no: "R26BK7", status: "complete", ar1: 100, trade_elec: true }])[0].cat, "전기", "전기 공고");
 eq(mergeAutoRows(recs, null), recs, "null 자동 → 같은 참조");
-eq(G2B_AUTO_SHOW, false, "합격 전 기본 꺼짐");
+eq(G2B_AUTO_SHOW, true, "대조 합격 후 켬(2026-10-25)");
 
 // 엑셀 행과 겹치는 자동 행이 섞여도 dedup 뒤 엑셀 행이 남는다(음수 id가 최소 id로 이기는 사고 방지)
 const d = dedupExactRecords(mergeAutoRows(recs, auto));
