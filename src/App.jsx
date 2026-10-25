@@ -636,8 +636,6 @@ export default function App(){
       sbFetchPredBiasMap().then(mark("pbm",x=>{v.pbm=x;if(x)setPredBiasMap(x)})).catch(()=>{}),
       sbFetchAccuracyMap().then(mark("acc",x=>{v.acc=x;if(x)setAccuracyMap(x)})).catch(()=>{}),
       sbFetchFloorBench().then(mark("fb",x=>{v.fb=x;if(x)setFloorBench(x)})).catch(()=>{}),
-      sbFetchWin1stDistMap().then(mark("wd",x=>{v.wd=x;if(x)setWin1stDistMap(x)})).catch(()=>{}),
-      sbFetchBasegFinetune().then(mark("bf",x=>{v.bf=x;if(x)setBasegFinetune(x)})).catch(()=>{}),
       sbFetchAgencyPredictor().then(mark("apr",x=>{v.apr=x;applyApr(x)})).catch(()=>setAgencyPred({})),
       // 나라장터 공고 로드
       sbFetchNotices().then(mark("nots",x=>{v.nots=x;setNotices(x||[])})).catch(()=>setNotices([])),
@@ -648,6 +646,10 @@ export default function App(){
       try{if(cRows&&snap){if(!got.has("recs")){shownRows=cRows;applyRecs(cRows)}applySnap(snap,got);setDbLoading(false)}}
       catch(e){console.warn("[boot] 스냅샷 적용 실패 — 폐기:",e?.message);kvSet(BOOT_SNAPSHOT_KEY,null)}
       await pAll;
+      // 무거운 예측 입력 뷰 2개(10만 건 집계)는 다른 요청이 끝난 뒤 하나씩 — 동시에 돌리면 DB 시간 제한(8초)을 넘겨 빈 값이 온다(2026-10-25 실측). 비면 1회 재시도.
+      const heavy=async(key,fn,isEmpty,set)=>{let x=null;for(let i=0;i<2&&(!x||isEmpty(x));i++)x=await fn().catch(()=>null);v[key]=x;got.add(key);if(x)set(x)};
+      await heavy("wd",sbFetchWin1stDistMap,x=>!Object.keys(x.agBa||{}).length&&!Object.keys(x.at||{}).length,setWin1stDistMap);
+      await heavy("bf",sbFetchBasegFinetune,x=>!Object.keys(x).length,setBasegFinetune);
       if(v.preds&&v.nots)kvSet(BOOT_SNAPSHOT_KEY,v); // 다음 접속의 첫 화면용
     }finally{syncingRef.current=false;setDbLoading(false);setSyncing(false)} // 어떤 경우에도 로딩 화면·업로드 차단을 푼다
   })()},[refreshStats]);
