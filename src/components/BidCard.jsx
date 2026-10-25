@@ -25,7 +25,7 @@ const mono = { fontFamily: "monospace", color: C.txt };
 // 카드 안 보조 동작 버튼(근거·참여사 분포) — 어두운 배경에서도 눈에 띄게
 const actBtn = { marginTop: 10, fontSize: 12, fontWeight: 600, padding: "6px 14px", background: "rgba(212,168,52,0.10)", border: "1px solid " + GOLD, borderRadius: 6, color: GOLD, cursor: "pointer" };
 
-export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accuracyMap, onClose, onOpenG2B }) {
+export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScore, accuracyMap, onClose, onOpenG2B }) {
   const [showWhy, setShowWhy] = useState(false);
   const [showMatrix, setShowMatrix] = useState(false);
   if (!d) return null;
@@ -83,6 +83,12 @@ export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accur
               {r.floorSafe === false && <div style={{ marginTop: 8, fontSize: 11, color: RED, fontWeight: 600 }}>자격 미달 — 그대로 투찰 시 자동 탈락</div>}
               {r.adj == null && d.source !== "file_upload" && <div style={{ marginTop: 6, fontSize: 11, color: C.txd }}>자동 예측에는 이 공고의 추천값이 없습니다(군시설 공략안은 엑셀 업로드 예측에서만 계산). 입찰서류함 엑셀을 올리면 채워집니다.</div>}
               {r.estimated && <div style={{ marginTop: 6, fontSize: 10, color: C.txd }}>추정 기초금액(추정가격×1.1) 기준 — 기초금액 공개 후 입찰서류함 엑셀을 올리면 확정됩니다.</div>}
+              {attack && (
+                <div style={{ marginTop: 10, padding: "8px 10px", border: "1px dashed " + C.bdr, borderRadius: 6, fontSize: 11, color: C.txm }}>
+                  <div><b style={{ color: C.txt }}>공격안 (참고 · 메인 아님)</b> — 사정률 <span style={mono}>{pct4(attack.adj)}</span> · 투찰금 <span style={mono}>{won(attack.bid)}</span> · 하한 통과 <span style={{ ...mono, color: RED }}>{attack.passPct == null ? "—" : floorPassLabel(100 - attack.passPct)}</span></div>
+                  <div style={{ marginTop: 4, color: RED }}>1위 분포 평균을 겨냥한 값이라 하한 미달 탈락 위험이 큽니다. 2025~ 경기·경기북부 본부 452건 백테스트: 1위 가능 3→13건, 하한 미달 6→203건.</div>
+                </div>
+              )}
               <div style={{ marginTop: 6, fontSize: 11, color: C.txm }}>{modeA ? "군시설은 1위 가능 구간이 있습니다. 하한 통과 확률로 안전 여부를 함께 보세요." : "목표는 하한 미달 탈락 방지입니다. 1위는 추첨에 가깝습니다."}</div>
             </>
           )}

@@ -1,4 +1,4 @@
-import { recOfPred, agencyRecentHistory } from "../src/lib/bidCard.js";
+import { recOfPred, agencyRecentHistory, attackOfPred, KEPCO_ATTACK_AGENCIES } from "../src/lib/bidCard.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${got} expect ${exp}`); bad++; } };
@@ -59,6 +59,45 @@ eq(agencyRecentHistory([], "x").p50, null, "빈 입력"); eq(agencyRecentHistory
 const ha = agencyRecentHistory([...R, { canonical_ag: "고양시", od: "2026-07-02", br1: 100.5, ar1: 100.4, pn: "자동", _auto: true }], "고양시", 3);
 eq(ha.autoCount, 1, "자동 행 수"); eq(ha.rows[0].auto, true, "자동 행 표시"); eq(ha.rows[1].auto, false, "엑셀 행은 false");
 eq(h.autoCount, 0, "자동 없으면 0");
+
+// attackOfPred — 한전 두 본부 보조 공격안(표시 전용, 스펙 .scratch/kepco-aggressive/spec.md)
+// utils.js는 constants→auth(import.meta.env)를 불러 node에서 못 읽는다 — recommendV2는 대역으로 넘기는 값만 고정(산식은 브라우저에서 확인)
+{
+  const GG = "한국전력공사 경기본부";
+  eq(KEPCO_ATTACK_AGENCIES.length, 2, "허용 목록 2개 본부"); eq(KEPCO_ATTACK_AGENCIES.includes("한국전력공사 남서울본부"), false, "남서울 제외");
+  const agCell = { n: 601, mean: -0.0135, std: 0.5242 };
+  const distMap = { agBa: { [GG + "|S3"]: { n: 6, mean: 0.9, std: 0.4 } }, ag: { [GG]: agCell }, atBa: {}, at: { 한전: { n: 1220, mean: -0.0086, std: 0.52 } } };
+  let seen = null, v2ret = { mode: "B", adj: -0.0135, bid: 92000000, floor_safe: true, win_prob: null };
+  const stubV2 = (b, c, o) => { seen = { b, c, o }; return v2ret; };
+  let implied = null;
+  const ad = { recommendV2: stubV2, distMap, ownScore: 17, adjHist: { ok: true }, passKeyOf: (p) => p.at, passEffFrOf: () => 87.745,
+    resolveAdjHistory: () => ({ grain: "AG", n: 601, arr: [0] }), passProbPct: () => 52.3, impliedAdjOfBid: (x) => { implied = x; return 0; } };
+  const kp = { id: 9, source: "file_upload", match_status: "pending", at: "한전", ag: GG, canonical_ag: GG, ba: "100000000", ep: "99000000", av: "5000000", pred_floor_rate: "87.745" };
+  const a = attackOfPred(kp, ad, 95000000);
+  eq(a?.adj, -0.0135, "사정률 전달"); eq(a?.bid, 92000000, "투찰금 전달"); eq(a?.passPct, 52.3, "하한 통과 = 메인과 같은 경험적 경로");
+  eq(seen.o.targetProb, 0.5, "목표 0.5(사정률 ≈ 분포 평균)");
+  eq(seen.c.agencyDist, agCell, "분포 = AG 칸(금액대 칸 아님)"); eq("modeResolution" in seen.c, false, "modeResolution 미전달(Mode A 진입 불가)");
+  eq(seen.c.ownScore, 17, "자사 점수 전달");
+  eq(seen.b.ba, 1e8, "ba 숫자"); eq(seen.b.ep, 99000000, "ep"); eq(seen.b.av, 5000000, "A값"); eq(seen.b.fr, 87.745, "하한율 = pred_floor_rate"); eq(seen.b.agName, GG, "기관명");
+  eq(implied.bid, 92000000, "통과 확률은 공격안 투찰금으로"); eq(implied.effFr, 87.745, "통과 확률 요율 = passEffFrOf(메인과 같음)");
+  eq(attackOfPred({ ...kp, ag: "한국전력공사 인천본부", canonical_ag: "한국전력공사 인천본부" }, ad, 95000000), null, "허용 목록 밖 본부 null");
+  eq(attackOfPred({ ...kp, ag: "한국전력공사 남서울본부", canonical_ag: "한국전력공사 남서울본부" }, ad, 95000000), null, "남서울 null");
+  eq(attackOfPred({ ...kp, at: "지자체" }, ad, 95000000), null, "한전 외 null");
+  eq(attackOfPred({ ...kp, source: "g2b_auto" }, ad, 95000000), null, "자동 예측 null");
+  eq(attackOfPred({ ...kp, match_status: "matched" }, ad, 95000000), null, "개찰 후 null");
+  eq(attackOfPred({ ...kp, ba: null }, ad, 95000000), null, "기초금액 없음 null");
+  eq(attackOfPred({ ...kp, pred_floor_rate: null }, ad, 95000000), null, "하한율 없음 null");
+  eq(attackOfPred(kp, { ...ad, distMap: { agBa: {}, ag: {}, atBa: {}, at: distMap.at } }, 95000000), null, "AG 분포 없으면 null(유형 평균으로 대체 안 함)");
+  eq(attackOfPred({ ...kp, canonical_ag: null }, ad, 95000000)?.bid, 92000000, "canonical 없으면 ag로 판정");
+  v2ret = { ...v2ret, floor_safe: false }; eq(attackOfPred(kp, ad, 95000000), null, "자격 미달 null");
+  v2ret = null; eq(attackOfPred(kp, ad, 95000000), null, "계산 실패 null");
+  v2ret = { mode: "B", adj: -0.0135, bid: 92000000, floor_safe: true };
+  eq(attackOfPred(kp, { ...ad, resolveAdjHistory: () => null }, 95000000).passPct, null, "통과 확률 분포 없으면 null");
+  eq(attackOfPred({ ...kp, match_status: "expired" }, ad, 95000000), null, "개찰 후 미매칭(expired) null");
+  eq(attackOfPred(kp, ad, null), null, "메인 추천 없으면 null");
+  eq(attackOfPred(kp, ad, 92000000), null, "공격안이 메인보다 낮지 않으면 null");
+  eq(attackOfPred(null, ad, 95000000), null, "null 입력");
+}
 
 console.log(bad === 0 ? "OK bidCard" : `FAIL ${bad}`);
 process.exit(bad === 0 ? 0 : 1);

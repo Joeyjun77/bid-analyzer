@@ -25,6 +25,25 @@ export function recOfPred(p, deps) {
   return { adj, bid, passPct, jongsim, estimated, floorSafe, source: p.source, mode, distN, distGrain };
 }
 
+// 한전 보조 공격안(참고, 표시 전용·저장 안 함) — 스펙 .scratch/kepco-aggressive/spec.md
+// 2025~ 워크포워드에서 1위 분포 평균 투찰이 1위 가능을 늘린 후보 본부(같은 구간에서 골라 검증된 목록 아님, 대가: 하한 미달 급증).
+export const KEPCO_ATTACK_AGENCIES = ["한국전력공사 경기본부", "한국전력공사 경기북부본부"];
+// 업로드·개찰 전 행만(자동 예측은 서버값·A값 누락 가능, 개찰 후는 분포에 결과가 섞임). 분포는 백테스트와 같은 발주기관 단위(AG).
+// modeResolution을 넘기지 않아 recommendV2는 항상 안착 분기 — 목표만 0.5라 사정률 ≈ 1위 분포 평균.
+// mainBid = 메인 추천 투찰금 — 메인이 없거나 공격안이 더 낮지 않으면 보이지 않는다(보조 줄이 메인 없이 서거나 더 보수적이 되지 않게).
+export function attackOfPred(p, deps, mainBid) {
+  if (!p || p.at !== "한전" || p.source !== "file_upload" || p.match_status !== "pending" || !mainBid) return null;
+  const ag = p.canonical_ag || p.ag, ba = Number(p.ba), fr = Number(p.pred_floor_rate);
+  const dist = deps.distMap?.ag?.[ag];
+  if (!KEPCO_ATTACK_AGENCIES.includes(ag) || !ba || !fr || !dist) return null;
+  const v = deps.recommendV2({ at: p.at, agName: ag, ba, ep: Number(p.ep) || ba, av: Number(p.av) || 0, fr },
+    { agencyDist: dist, ownScore: deps.ownScore }, { targetProb: 0.5 });
+  if (!v || v.adj == null || v.floor_safe === false || !(v.bid < mainBid)) return null;
+  const h = deps.resolveAdjHistory(deps.adjHist, deps.passKeyOf(p));
+  const passPct = h ? deps.passProbPct(h, deps.impliedAdjOfBid({ bid: v.bid, ba, av: Number(p.av) || 0, effFr: deps.passEffFrOf(p, deps.ownScore) })) : null;
+  return { adj: v.adj, bid: v.bid, passPct };
+}
+
 const num = (v) => { if (v == null || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
 const quantile = (s, q) => { if (!s.length) return null; const i = q * (s.length - 1), lo = Math.floor(i), hi = Math.ceil(i); return Math.round((s[lo] + (s[hi] - s[lo]) * (i - lo)) * 1e4) / 1e4; };
 

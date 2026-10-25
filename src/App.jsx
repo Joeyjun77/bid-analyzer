@@ -4,7 +4,7 @@ import { C, PAGE, inpS } from "./lib/constants.js";
 import PredictionFeedback from "./components/PredictionFeedback.jsx";
 import NoticesTab from "./components/NoticesTab.jsx";
 import BidCard from "./components/BidCard.jsx";
-import { recOfPred } from "./lib/bidCard.js";
+import { recOfPred, attackOfPred } from "./lib/bidCard.js";
 import { buildTodayRows, countTodayActions } from "./lib/todayNotices.js";
 import { loadKeywords } from "./lib/eligibility.js";
 import { bidVerdict } from "./lib/rec1stPossible.js";
@@ -861,6 +861,8 @@ export default function App(){
   // 업로드 예측만 getFinalRecommendation(출처 필터 유지 — 함수 격리 주석 참조). 자동 예측은 저장된 안착안(b_pred_*, Mode B)만 읽는다.
   // 행 추천값 — 오늘의 공고 표와 투찰 카드가 같은 계산을 쓴다(bidCard.js recOfPred: 업로드 예측만 getFinalRecommendation, 출처 격리는 테스트로 고정).
   const recOf=useCallback((p)=>recOfPred(p,{getFinal:getFinalRecommendation,adjHist,ownScore,passKeyOf,passEffFrOf,resolveAdjHistory,passProbPct,impliedAdjOfBid}),[getFinalRecommendation,adjHist,ownScore]);
+  // 투찰 카드 보조 공격안(한전 두 본부, 표시 전용) — 메인 추천과 같은 통과 확률 deps, 분포는 AG 칸
+  const attackOf=useCallback((p,mainBid)=>attackOfPred(p,{recommendV2,distMap:win1stDistMap,adjHist,ownScore,passKeyOf,passEffFrOf,resolveAdjHistory,passProbPct,impliedAdjOfBid},mainBid),[win1stDistMap,adjHist,ownScore]);
   // G2B 양식·투찰 카드 1위 이력 전용 목록(자동 수집 행 합침). 예측 입력(adjHist·pcDistMap·refreshStats·recOf)은 recs 그대로 — 여기 넘기면 저장 예측값이 바뀐다.
   const g2bRecs=useMemo(()=>mergeAutoRows(recs,g2bAuto),[recs,g2bAuto]);
   // 개찰 판정(✓/✗)은 매칭된 낙찰 기록의 실제 1위 금액·하한가로 — 서버 rec_1st_possible과 같은 정의(bidVerdict)
@@ -1440,7 +1442,7 @@ export default function App(){
     </div>}
 
     {/* ═══ 나라장터 공고 탭 ═══ */}
-    {cardPred&&<BidCard pred={cardPred} rec={recOf(cardPred)} recs={g2bRecs} pcDistMap={pcDistMap} ownScore={ownScore} accuracyMap={accuracyMap} onClose={()=>setCardPredId(null)} onOpenG2B={(ag)=>{setG2bAgency(ag);setCardPredId(null);setTab("g2b_sheet")}}/>}
+    {cardPred&&<BidCard pred={cardPred} rec={recOf(cardPred)} attack={attackOf(cardPred,recOf(cardPred)?.bid)} recs={g2bRecs} pcDistMap={pcDistMap} ownScore={ownScore} accuracyMap={accuracyMap} onClose={()=>setCardPredId(null)} onOpenG2B={(ag)=>{setG2bAgency(ag);setCardPredId(null);setTab("g2b_sheet")}}/>}
     {tab==="performance"&&<PerformanceTab recs={recs} bidDetails={bidDetails}/>}
     {tab==="notices"&&<NoticesTab
       notices={notices}
