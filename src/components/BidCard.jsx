@@ -22,6 +22,8 @@ const big = (color) => ({ fontSize: 22, fontWeight: 700, fontFamily: "monospace"
 const lbl = { fontSize: 10, color: C.txd, marginBottom: 2 };
 const row = { display: "flex", justifyContent: "space-between", fontSize: 11, padding: "3px 0", color: C.txm };
 const mono = { fontFamily: "monospace", color: C.txt };
+// 카드 안 보조 동작 버튼(근거·참여사 분포) — 어두운 배경에서도 눈에 띄게
+const actBtn = { marginTop: 10, fontSize: 12, fontWeight: 600, padding: "6px 14px", background: "rgba(212,168,52,0.10)", border: "1px solid " + GOLD, borderRadius: 6, color: GOLD, cursor: "pointer" };
 
 export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accuracyMap, onClose, onOpenG2B }) {
   const [showWhy, setShowWhy] = useState(false);
@@ -84,7 +86,7 @@ export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accur
               <div style={{ marginTop: 6, fontSize: 11, color: C.txm }}>{modeA ? "군시설은 1위 가능 구간이 있습니다. 하한 통과 확률로 안전 여부를 함께 보세요." : "목표는 하한 미달 탈락 방지입니다. 1위는 추첨에 가깝습니다."}</div>
             </>
           )}
-          <button onClick={() => setShowWhy(v => !v)} style={{ marginTop: 8, background: "transparent", border: "none", color: C.txd, fontSize: 11, cursor: "pointer", padding: 0 }}>{showWhy ? "▾" : "▸"} 근거</button>
+          <button onClick={() => setShowWhy(v => !v)} style={actBtn}>{showWhy ? "▾" : "▸"} 근거</button>
           {showWhy && (
             <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid " + C.bdr }}>
               <div style={row}><span>통과 확률 표본</span><span style={mono}>{r.distN != null ? `${r.distN}건 · ${r.distGrain === "AG" ? "이 발주기관" : "기관유형"}` : "과거 기록 부족"}</span></div>
@@ -108,7 +110,7 @@ export default function BidCard({ pred: d, rec, recs, pcDistMap, ownScore, accur
               {winRate != null && <span> · 이 구간 실측 1순위율 <b style={mono}>{winRate.toFixed(1)}%</b></span>}
             </div>
           ) : <div style={{ fontSize: 12, color: C.txd }}>과거 참가자 기록이 부족합니다.</div>}
-          <button onClick={() => setShowMatrix(true)} style={{ marginTop: 8, fontSize: 11, padding: "4px 10px", background: "transparent", border: "1px solid " + C.bdr, borderRadius: 5, color: C.txm, cursor: "pointer" }}>참여사 분포 보기</button>
+          <button onClick={() => setShowMatrix(true)} style={actBtn}>참여사 분포 보기</button>
           {showMatrix && <ParticipantMatrixModal ag={ag} highlightPnno={d.pn_no} onClose={() => setShowMatrix(false)} />}
         </div>
 
