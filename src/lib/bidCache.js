@@ -16,7 +16,7 @@ function openCache(){
       if(!db.objectStoreNames.contains(STORE_META))db.createObjectStore(STORE_META,{keyPath:"key"});
       if(!db.objectStoreNames.contains(STORE_KV))db.createObjectStore(STORE_KV,{keyPath:"key"});
     };
-    req.onsuccess=()=>resolve(req.result);
+    req.onsuccess=()=>{const db=req.result;db.onversionchange=()=>db.close();resolve(db)}; // 다른 탭이 버전을 올리면 연결을 놓아 준다
     req.onerror=()=>reject(req.error);
   });
 }
@@ -44,8 +44,9 @@ function replaceAllRows(db,rows){
 // ── 오케스트레이터 ────────────────────────────────────────
 // sbFetchAll 드롭인 대체. 캐시 hit 시 행 페치 0, 변경 시 델타만, 실패 시 전체 페치 폴백.
 // shown: 화면에 이미 띄운 캐시 행(readCachedRows 결과 또는 그 Promise) — hit이면 다시 읽지 않고 같은 배열을 돌려준다(호출 측이 === 로 재계산 생략)
+const cacheOff=()=>typeof indexedDB==="undefined"||(typeof localStorage!=="undefined"&&localStorage.getItem("cacheDisabled")==="true");
 export async function sbFetchAllCached(shown){
-  if(typeof indexedDB==="undefined"||(typeof localStorage!=="undefined"&&localStorage.getItem("cacheDisabled")==="true")){
+  if(cacheOff()){
     return sbFetchAll();
   }
   let db=null;
@@ -95,7 +96,7 @@ export async function sbFetchAllCached(shown){
 // ── 시작 화면용 캐시 읽기(네트워크 없음) ─────────────────────
 // 지난 동기화 결과로 화면을 먼저 띄우고, sbFetchAllCached가 뒤에서 최신으로 바꾼다. 없거나 컬럼 구성이 바뀌었으면 null.
 export async function readCachedRows(){
-  if(typeof indexedDB==="undefined")return null;
+  if(cacheOff())return null;
   let db=null;
   try{
     db=await openCache();
@@ -108,13 +109,13 @@ export async function readCachedRows(){
 
 // 시작 화면 스냅샷(예측·공고·보정표 등) — 실패해도 앱 동작에는 영향 없음(null/무시)
 export async function kvGet(key){
-  if(typeof indexedDB==="undefined")return null;
+  if(cacheOff())return null;
   let db=null;
   try{db=await openCache();const r=await reqP(store(db,STORE_KV,"readonly").get(key));return r?r.value:null}
   catch(_){return null}finally{try{db&&db.close()}catch(_){}}
 }
 export async function kvSet(key,value){
-  if(typeof indexedDB==="undefined")return;
+  if(cacheOff())return;
   let db=null;
   try{db=await openCache();await reqP(store(db,STORE_KV,"readwrite").put({key,value}))}
   catch(e){console.warn("[cache] kvSet 실패:",e?.message||e)}finally{try{db&&db.close()}catch(_){}}

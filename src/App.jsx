@@ -604,7 +604,7 @@ export default function App(){
       if(g2bP.length>0){const lat=g2bP.reduce((a,b)=>a.created_at>b.created_at?a:b);setLastG2bAt(lat.created_at)}
       // ★ file_upload 예측을 predResults로 복원 (새로고침 시 유지)
       const filePreds=(preds||[]).filter(p=>p.source==="file_upload"&&p.pred_adj_rate!=null);
-      if(filePreds.length>0){setPredResults(filePreds.map(p=>({
+      setPredResults(filePreds.map(p=>({
         pn:p.pn,pn_no:p.pn_no,ag:p.ag,at:p.at,
         ba:p.ba?Number(p.ba):null,ep:p.ep?Number(p.ep):null,av:p.av?Number(p.av):0,
         raw_cost:p.raw_cost,cat:p.cat,open_date:p.open_date,dedup_key:p.dedup_key,
@@ -613,7 +613,7 @@ export default function App(){
           src:p.pred_source||"",baseAdj:Number(p.pred_base_adj||0),
           ci70:null,ci90:null,scenarios:[],bidRateRec:{avg:0,med:0,q1:0,q3:0,std:0},
           bidByRate:0,adjAvg:0,adjStd:0,biasAdj:0,driftUsed:0,detailInsight:null}
-      })))}};
+      })))};
     const applyDets=dets=>{setBidDetails(dets||[]);
       if(dets&&dets.length>0){const latest=dets.reduce((a,b)=>(a.created_at>b.created_at?a:b));setLastSucviewAt(latest.created_at)}};
     // 발주처 예측기 — predictV5 입력(Generator)이라 유지
@@ -643,11 +643,13 @@ export default function App(){
       sbFetchNotices().then(mark("nots",x=>{v.nots=x;setNotices(x||[])})).catch(()=>setNotices([])),
       G2B_AUTO_SHOW?sbFetchG2BAuto().then(mark("g2b",setG2bAuto)).catch(()=>setG2bAuto([])):null,
     ]);
-    const[cRows,snap]=await Promise.all([pCached,pSnap]);
-    if(cRows&&snap){if(!got.has("recs")){shownRows=cRows;applyRecs(cRows)}applySnap(snap,got);setDbLoading(false)}
-    await pAll;
-    if(v.preds&&v.nots)kvSet(BOOT_SNAPSHOT_KEY,v); // 다음 접속의 첫 화면용
-    setDbLoading(false);setSyncing(false);
+    try{
+      const[cRows,snap]=await Promise.all([pCached,pSnap]);
+      try{if(cRows&&snap){if(!got.has("recs")){shownRows=cRows;applyRecs(cRows)}applySnap(snap,got);setDbLoading(false)}}
+      catch(e){console.warn("[boot] 스냅샷 적용 실패 — 폐기:",e?.message);kvSet(BOOT_SNAPSHOT_KEY,null)}
+      await pAll;
+      if(v.preds&&v.nots)kvSet(BOOT_SNAPSHOT_KEY,v); // 다음 접속의 첫 화면용
+    }finally{syncingRef.current=false;setDbLoading(false);setSyncing(false)} // 어떤 경우에도 로딩 화면·업로드 차단을 푼다
   })()},[refreshStats]);
 
   // 예측 탭 진입 시 자동 새로고침
@@ -913,6 +915,7 @@ export default function App(){
   const v2BackfillDone=useRef(null); // null | ownScore 값 저장
   useEffect(()=>{
     if(v2BackfillDone.current===ownScore)return; // 같은 score로 이미 실행됨
+    if(syncing)return; // 첫 로드 동기화 전 입력은 지난 접속 스냅샷 — 저장되는 값이라 최신으로 바뀐 뒤 계산
     if(!Object.keys(win1stDistMap?.agBa||{}).length&&!Object.keys(win1stDistMap?.at||{}).length)return;
     if(!predictions||!predictions.length)return;
     // NULL≡20 동치 규칙: stale row 감지 — bid1st_v2_adj NULL 또는 own_score≠current
@@ -953,7 +956,7 @@ export default function App(){
         }
       }catch(e){console.warn("v2 backfill 실패:",e?.message);}
     })();
-  },[predictions,win1stDistMap,ownScore]);
+  },[predictions,win1stDistMap,ownScore,syncing]);
 
   // ─── B2.4: V2 Mode B/A 자동채움 (bid_predictions.b_pred_* 6컬럼) ───
   // 근거: docs/v2/HANDOFF_V2_MASTER_PLAN §4 B2 + V2_DDL_SPEC §5
@@ -967,6 +970,7 @@ export default function App(){
   const v2BPredBackfillDone=useRef(null); // null | ownScore 값 저장
   useEffect(()=>{
     if(v2BPredBackfillDone.current===ownScore)return; // 같은 score로 이미 실행됨
+    if(syncing)return; // 첫 로드 동기화 전 입력은 지난 접속 스냅샷 — 저장되는 값이라 최신으로 바뀐 뒤 계산
     // 가드: win1stDistMap이 로드되어야 발주사별 분포 사용 가능
     if(!Object.keys(win1stDistMap?.agBa||{}).length&&!Object.keys(win1stDistMap?.ag||{}).length)return;
     if(!predictions||!predictions.length)return;
@@ -1014,7 +1018,7 @@ export default function App(){
         }
       }catch(e){console.warn("b_pred 자동채움 실패:",e?.message);}
     })();
-  },[predictions,win1stDistMap,ownScore]);
+  },[predictions,win1stDistMap,ownScore,syncing]);
 
   // 스타일
   const btnS=(act,c)=>({padding:"4px 12px",fontSize:11,fontWeight:act?600:400,background:act?c+"22":"#1a1a30",color:act?c:"#888",border:"1px solid "+(act?c+"44":"#252540"),borderRadius:5,cursor:"pointer"});
