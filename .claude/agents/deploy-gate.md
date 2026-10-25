@@ -32,14 +32,19 @@ npx vite build
 git fetch origin -q; BASE=$(git merge-base origin/main HEAD)
 git diff --name-only $BASE HEAD
 KW='getFinalRecommendation|opt_adj|optAdj|opt_bid|optBid|pred_bias_map|biasFix|getFloorRate|resolveRateTable|getCutoffDate|eraFR|isNewEra|isLhJongsim|RATE_TABLE|WIN_OPT_GAP|TYPE_OFF|ASSUMED_ADJ_TABLE|calcEffectiveFloorRate|parseOwnScore|ownScore|own_score|calcStats|routePrediction|predictV5|simDraws|recommendAssumedAdj|calcBenchmarkAdj|calcWin1stBid|calcRoiBase|calcRoiV2|baSegOf|amountTierOf|normalizeAgencyName|lookupWin1stDist|recommendBid1st|recommendMain|_invertBidCToAdj|recommendV2|recommendModeA|recommendModeB|calcFloorPassProb|calcWinProb|_erf|_phi|passProbPct|bidAtPassProb|impliedAdjOfBid|passRiskSnapshot|buildAdjHistory|resolveAdjHistory|passKeyOf|passEffFrOf|predict_v6'
-# (a) 추가·삭제 줄과 hunk 머리(@@ … 함수 문맥)에 예측 관련 이름이 있는가
-git diff -U0 $BASE HEAD -- 'src/*.js' 'src/*.jsx' 'src/**/*.js' 'src/**/*.jsx'   | grep -E '^(\+|-|@@)' | grep -vE '^(\+\+\+|---)' | grep -cE "$KW"
+# (a1) 추가·삭제 줄에 예측 관련 이름이 있는가
+git diff -U0 $BASE HEAD -- 'src/*.js' 'src/*.jsx' 'src/**/*.js' 'src/**/*.jsx' | grep -E '^(\+|-)' | grep -vE '^(\+\+\+|---)' | grep -cE "$KW"
+# (a2) hunk 머리(@@ … 함수 문맥)의 **함수 이름**이 예측 관련 이름인가 — 예측 함수 본문에서 키워드 없는 줄만 바뀐 경우를 잡는다.
+#      이름만 본다: 머리 전체를 대조하면 매개변수 목록(예: BidCard의 ownScore prop) 때문에 그 컴포넌트의 모든 수정이 Generator로 잡혔다(2026-10-24 정정).
+git diff -U0 $BASE HEAD -- 'src/*.js' 'src/*.jsx' 'src/**/*.js' 'src/**/*.jsx' | grep -E '^@@' | sed -E 's/^@@[^@]*@@ ?//' \
+  | grep -oE '(function[[:space:]]+[A-Za-z0-9_$]+|(const|let|var)[[:space:]]+[A-Za-z0-9_$]+[[:space:]]*=|^[A-Za-z0-9_$]+[[:space:]]*\()' | grep -cE "$KW"
 # (b) 파일 전체가 예측 상수·산식·분기인 경로가 바뀌었는가
 git diff --name-only $BASE HEAD | grep -cE '^(src/lib/constants-tables\.js|src/lib/effectiveFloor\.js|src/lib/floorRisk\.js|src/lib/passProb\.js|src/lib/modeResolver\.js|src/lib/agencyClass\.js)$'
 # (c) 분류 근거 기록용 — 바뀐 함수 문맥(hunk 머리). (a)=(b)=0인데 src/lib/utils.js·src/App.jsx가 바뀌었으면 반드시 리포트에 붙인다
 git diff -U0 $BASE HEAD -- 'src/lib/utils.js' 'src/App.jsx' | grep -E '^@@' | sed -E 's/^@@[^@]*@@ ?//' | sort -u | head -20
 ```
-- (a) 또는 (b)가 1 이상 → **Generator**
+- (a1)·(a2)·(b) 중 하나라도 1 이상 → **Generator**
+  - 검증(2026-10-24): BidCard 스타일 커밋 0fb5e0e·문구 커밋 188c2f7은 옛 정의 2·1 → 새 정의 0. 양성 대조 — calcBenchmarkAdj 본문에 키워드 없는 줄 추가 시 (a2)=1, 과거 getFinalRecommendation 변경 커밋은 (a1)=22로 그대로 잡힘.
 - 둘 다 0 → Evaluator/Neutral. 단 (c)에 출력이 있으면 그 함수 이름들을 리포트에 적고, 예측 계산에 쓰이는 함수로 보이면 Generator로 올린다(판단 근거를 한 줄로 적는다)
 - 호출자가 predict-architect 분류를 전달했고 위 결과와 다르면 **더 엄격한 쪽(Generator)** 을 따른다. (a)(b)(c) 결과와 architect 분류를 모두 리포트에 적는다.
 - KW는 이름 목록이라 빠진 것은 놓친다. `src/lib/utils.js`의 예측 계산 함수(추가·개명 포함)가 바뀌면 KW도 함께 갱신한다.
@@ -182,7 +187,7 @@ git log --oneline -5
 ### 2. 변경 분류
 - 범위: {BASE 커밋}..HEAD ({미push 커밋 수}개)
 - 파일: {목록}
-- (a) 키워드 줄: N / (b) 산식 경로: N / (c) 바뀐 함수 문맥: {목록 또는 없음}
+- (a1) 키워드 줄: N / (a2) 키워드 함수 이름: N / (b) 산식 경로: N / (c) 바뀐 함수 문맥: {목록 또는 없음}
 - predict-architect 분류: {전달받은 값 또는 미전달}
 - Generator 변경: {Y / N}
 
