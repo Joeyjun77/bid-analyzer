@@ -8,7 +8,7 @@ import { floorPassLabel } from "../lib/floorLabels.js";
 import { calcEffectiveFloorRate, formatFloorDual } from "../lib/effectiveFloor.js";
 import { resolvePcDist, pcWinRateOf, PC_GRAIN_LABELS } from "../lib/participantCount.js";
 import { predConfidenceV2 } from "../lib/predConfidence.js";
-import { agencyRecentHistory, agencyTrend } from "../lib/bidCard.js";
+import { agencyRecentHistory, agencyTrend, capSigmaOfSrc, isLargeTender } from "../lib/bidCard.js";
 import { bidVerdict } from "../lib/rec1stPossible.js";
 import ParticipantMatrixModal from "./ParticipantMatrixModal.jsx";
 
@@ -34,12 +34,15 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
   const ba = Number(d.ba) || 0, av = Number(d.av) || 0, fr = Number(d.pred_floor_rate) || 0;
   const modeA = r.mode === "A";
   const passColor = r.passPct == null ? C.txd : r.passPct < PASS_OK ? RED : GREEN;
-  const floorBid = ba > 0 && fr > 0 ? (av > 0 ? Math.ceil(av + (ba - av) * fr / 100) : Math.ceil(ba * fr / 100)) : null;
+  const effFr = fr ? calcEffectiveFloorRate(d.at, fr, ownScore) : 0;
+  // 사정률 100%(예정가격=기초금액) 가정의 자사 하한금액 참고값 — 실제 하한가는 개찰 때 예정가격으로 정해진다
+  const floorBid = ba > 0 && effFr > 0 ? (av > 0 ? Math.ceil(av + (ba - av) * effFr / 100) : Math.ceil(ba * effFr / 100)) : null;
   const conf = predConfidenceV2(d.pred_source, accuracyMap, { at: d.at, ag: d.ag, ba: d.ba });
   const pc = pcDistMap && d.at && ba ? resolvePcDist(pcDistMap, { at: d.at, canonicalAg: ag, ba }) : null;
   const winRate = pc && d.at === "지자체" && pc.grain !== "AT_BA" ? pcWinRateOf(pc.p50) : null;
-  const hist = agencyRecentHistory(recs, ag, 20);
   const trend = agencyTrend(recs, ag, { openDate: d.open_date, today: new Date().toLocaleDateString("sv-SE") });
+  const hist = agencyRecentHistory(recs, ag, 20, trend.ref); // 동향 줄과 같은 기준일 — 개찰 후 카드에 개찰 이후 결과가 섞이지 않게
+  const capSigma = modeA ? null : capSigmaOfSrc(d.source === "file_upload" ? d.bid1st_v2_src : d.b_pred_src);
   const recP100 = r.adj != null ? 100 + Number(r.adj) : null;
   const inRange = recP100 != null && hist.p25 != null ? recP100 >= hist.p25 && recP100 <= hist.p75 : null;
   // 개찰 후 결과 — 매칭된 낙찰 기록의 실제 1위 금액·하한가로 판정(서버 rec_1st_possible과 같은 정의, 동액은 1위 아님)
@@ -76,6 +79,7 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
             <div style={{ fontSize: 12, color: RED }}>종심제·순심제 대형 공사 — 예측을 지원하지 않습니다. 나라장터의 과거 낙찰률 분포를 직접 참고하세요.</div>
           ) : (
             <>
+              {isLargeTender(d) && <div style={{ marginBottom: 8, fontSize: 11, color: RED, fontWeight: 600 }}>추정가격 300억 이상 — 종합심사·종합평가 낙찰제 대상일 수 있어, 적격심사 하한율로 계산한 이 추천 투찰금은 근거가 없을 수 있습니다. 공고문의 낙찰자 결정 방법을 확인하세요.</div>}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 <div><div style={lbl}>추천 사정률</div><div style={big(r.floorSafe === false ? RED : GREEN)}>{pct4(r.adj)}</div></div>
                 <div><div style={lbl}>투찰금액</div><div style={big(r.floorSafe === false ? RED : GOLD)}>{won(r.bid)}</div></div>
@@ -83,11 +87,12 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
               </div>
               {r.floorSafe === false && <div style={{ marginTop: 8, fontSize: 11, color: RED, fontWeight: 600 }}>자격 미달 — 그대로 투찰 시 자동 탈락</div>}
               {r.adj == null && d.source !== "file_upload" && <div style={{ marginTop: 6, fontSize: 11, color: C.txd }}>자동 예측에는 이 공고의 추천값이 없습니다(군시설 공략안은 엑셀 업로드 예측에서만 계산). 입찰서류함 엑셀을 올리면 채워집니다.</div>}
+              {capSigma != null && <div style={{ marginTop: 6, fontSize: 11, color: GOLD }}>분포 폭(σ {capSigma.toFixed(2)})이 커서 상한(평균+1.5%p)을 적용했습니다 — 모형상 하한 통과 95%에 못 미칩니다. 위 하한 통과 확률(과거 기록 기준)을 확인하세요.</div>}
               {r.estimated && <div style={{ marginTop: 6, fontSize: 10, color: C.txd }}>추정 기초금액(추정가격×1.1) 기준 — 기초금액 공개 후 입찰서류함 엑셀을 올리면 확정됩니다.</div>}
               {attack && (
                 <div style={{ marginTop: 10, padding: "8px 10px", border: "1px dashed " + C.bdr, borderRadius: 6, fontSize: 11, color: C.txm }}>
                   <div><b style={{ color: C.txt }}>공격안 (참고 · 메인 아님)</b> — 사정률 <span style={mono}>{pct4(attack.adj)}</span> · 투찰금 <span style={mono}>{won(attack.bid)}</span> · 하한 통과 <span style={{ ...mono, color: RED }}>{attack.passPct == null ? "—" : floorPassLabel(100 - attack.passPct)}</span></div>
-                  <div style={{ marginTop: 4, color: RED }}>1위 분포 평균을 겨냥한 값이라 하한 미달 탈락 위험이 큽니다. 2025~ 경기·경기북부 본부 452건 백테스트: 1위 가능 3→13건, 하한 미달 6→203건.</div>
+                  <div style={{ marginTop: 4, color: RED }}>1위 분포 평균을 겨냥한 값이라 하한 미달 탈락 위험이 큽니다. 2025~ 경기·경기북부 본부 452건 백테스트: 1위 가능 3→13건, 하한 미달 6→203건 (같은 기간에서 고른 후보 — 독립 검증 아님).</div>
                 </div>
               )}
               <div style={{ marginTop: 6, fontSize: 11, color: C.txm }}>{modeA ? "군시설은 1위 가능 구간이 있습니다. 하한 통과 확률로 안전 여부를 함께 보세요." : "목표는 하한 미달 탈락 방지입니다. 1위는 추첨에 가깝습니다."}</div>
@@ -99,8 +104,8 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
               <div style={row}><span>통과 확률 표본</span><span style={mono}>{r.distN != null ? `${r.distN}건 · ${r.distGrain === "AG" ? "이 발주기관" : "기관유형"}` : "과거 기록 부족"}</span></div>
               <div style={row}><span>신뢰도</span><span style={mono}>{conf.level === "high" ? "높음" : conf.level === "med" ? "보통" : "데이터 부족"}{conf.srcLabel ? ` · ${conf.srcLabel}` : ""}</span></div>
               <div style={row}><span>2순위 안 (보수)</span><span style={mono}>{d.rec_adj_p75 != null ? `${pct4(d.rec_adj_p75)} · ${won(d.rec_bid_p75)}` : "—"}</span></div>
-              <div style={row}><span>자사 유효 하한율</span><span style={mono}>{fr ? formatFloorDual(fr, calcEffectiveFloorRate(d.at, fr, ownScore)) : "—"}</span></div>
-              <div style={row}><span>최소 하한금액 (이하 투찰 시 무효)</span><span style={mono}>{won(floorBid)}</span></div>
+              <div style={row}><span>자사 유효 하한율</span><span style={mono}>{fr ? formatFloorDual(fr, effFr) : "—"}</span></div>
+              <div style={row}><span>자사 하한금액 참고값 (자사 유효 하한율·사정률 100% 가정 — 실제 하한가는 개찰 때 예정가격으로 정해짐)</span><span style={{ ...mono, whiteSpace: "nowrap", marginLeft: 8 }}>{won(floorBid)}</span></div>
               {modeA && d.b_pred_adj != null && Number(d.b_pred_adj) !== Number(r.adj) && (
                 <div style={row}><span>V2 공략안</span><span style={mono}>{pct4(d.b_pred_adj)} · {won(d.b_pred_bid_amount)}</span></div>
               )}

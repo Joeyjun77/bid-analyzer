@@ -49,9 +49,10 @@ const quantile = (s, q) => { if (!s.length) return null; const i = q * (s.length
 
 // 발주처 최근 1위 이력(br1=1위 사정률, ar1=발주처 사정률, 100 기준 %). 원본 불변.
 // 발주처 사정률(ar1)이 있는 완전한 기록만 — ar1이 빈 행은 br1에 1위 투찰률(약 90%)이 들어 있어 사정률과 섞이면 분위수가 망가진다(G2B 양식 탭과 같은 기준).
-export function agencyRecentHistory(recs, canonicalAg, n = 20) {
+// asOf(YYYY-MM-DD, 선택): 그날까지의 기록만 — 개찰 후 카드에 개찰 이후 결과가 섞이지 않게(agencyTrend의 ref를 넘긴다).
+export function agencyRecentHistory(recs, canonicalAg, n = 20, asOf = null) {
   const rows = (recs || [])
-    .filter(r => r && r.is_excluded !== true && r.od && num(r.br1) != null && num(r.ar1) != null && (r.canonical_ag || r.ag) === canonicalAg)
+    .filter(r => r && r.is_excluded !== true && r.od && num(r.br1) != null && num(r.ar1) != null && (r.canonical_ag || r.ag) === canonicalAg && (!asOf || String(r.od).slice(0, 10) <= asOf))
     .map(r => ({ od: String(r.od).slice(0, 10), br1: num(r.br1), ar1: num(r.ar1), pn: r.pn, auto: r._auto === true }))
     .sort((a, b) => (a.od < b.od ? 1 : a.od > b.od ? -1 : 0))
     .slice(0, n);
@@ -99,4 +100,19 @@ export function agencyTrend(recs, canonicalAg, { openDate, today } = {}) {
   }
   const lastOd = R.reduce((m, x) => (m == null || x.od > m ? x.od : m), null);
   return { status: ar.status === "ok" || gap.status === "ok" ? "ok" : "insufficient", ref, refFromOpen: ref === dayBefore, autoExcluded, lastOd, ar, gap };
+}
+
+// 안착안이 상한(평균+1.5%p)에 걸렸는지 — 저장 src "modeB(N건 · μ=… · σ=…)"의 σ로 판정(스펙 .scratch/group1-display/spec.md).
+// recommendModeB는 effStd=max(σ,0.642)로 95%를 찾고 상한 1.5에 막히므로, 걸리는 조건은 1.6449·σ > 1.5 (σ > 0.9119) 하나다.
+// src의 σ는 소수 4자리라 실제 σ가 0.911935~0.91195이면 안내가 빠진다(통과율 차이 0.0001%p 미만, 무시).
+export function capSigmaOfSrc(src) {
+  const m = /^modeB\(.*σ=(-?[0-9.]+)\)/.exec(src || "");
+  const s = m ? Number(m[1]) : null;
+  return s != null && s > 0.9119 ? s : null;
+}
+
+// 추정가격 300억 이상 — 종합심사·종합평가 낙찰제 대상일 수 있어 적격심사 하한율 기반 추천이 맞지 않을 수 있다. 추정가격이 없거나 0이면 기초금액/1.1.
+export function isLargeTender(p) {
+  if (!p) return false;
+  return Number(p.ep) > 0 ? Number(p.ep) >= 3e10 : (Number(p.ba) || 0) >= 3.3e10; // 기초금액 비교(÷1.1 부동소수 경계 회피)
 }

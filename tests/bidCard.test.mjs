@@ -1,4 +1,4 @@
-import { recOfPred, agencyRecentHistory, attackOfPred, KEPCO_ATTACK_AGENCIES, agencyTrend } from "../src/lib/bidCard.js";
+import { recOfPred, agencyRecentHistory, attackOfPred, KEPCO_ATTACK_AGENCIES, agencyTrend, capSigmaOfSrc, isLargeTender } from "../src/lib/bidCard.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${got} expect ${exp}`); bad++; } };
@@ -151,6 +151,30 @@ eq(h.autoCount, 0, "자동 없으면 0");
   eq(tg2.gap.shift, "none", "비율 같으면(0%·0%) 변화 없음"); eq(tg2.gap.z, null, "분산 0이면 z 없음");
   eq(agencyTrend(base, AG, opt).gap.status, "insufficient", "여유 표본 없으면 부족");
   eq(agencyTrend([], AG, opt).status, "insufficient", "빈 입력"); eq(agencyTrend(null, AG, opt).status, "insufficient", "null 입력");
+}
+
+// 1군 표시 수정(스펙 .scratch/group1-display/spec.md)
+{
+  eq(capSigmaOfSrc("modeB(5건 · μ=-0.2729 · σ=1.0307)"), 1.0307, "σ>0.9119 → 상한 걸림 σ 반환");
+  eq(capSigmaOfSrc("modeB(27건 · μ=-0.2854 · σ=0.9120)"), 0.912, "경계 0.9120은 상한");
+  eq(capSigmaOfSrc("modeB(27건 · μ=-0.2854 · σ=0.9119)"), null, "경계 0.9119는 95% 도달");
+  eq(capSigmaOfSrc("modeB(57건 · μ=0.1507 · σ=0.6447)"), null, "보통 σ는 null");
+  eq(capSigmaOfSrc("한국전력공사 경기본부 S3(230건)"), null, "10/21 이전 형식은 null");
+  eq(capSigmaOfSrc(null), null, "null 입력");
+  eq(isLargeTender({ ep: "30000000000", ba: "1" }), true, "추정가격 300억 = 경고");
+  eq(isLargeTender({ ep: "29999999999", ba: "99999999999" }), false, "추정가격 있으면 ep 기준");
+  eq(isLargeTender({ ep: "0", ba: "33100000000" }), true, "ep 0이면 기초금액/1.1(≥300억)");
+  eq(isLargeTender({ ep: null, ba: "32999999999" }), false, "ba/1.1 < 300억");
+  eq(isLargeTender(null), false, "null 입력");
+  eq(isLargeTender({ ep: null, ba: "33000000000" }), true, "기초금액 정확히 330억(=추정 300억) 경계 포함");
+  eq(capSigmaOfSrc("modeB(0건 · μ=? · σ=?)"), null, "분포 없음 형식은 null");
+  const AG2 = "기관X";
+  const H = [{ od: "2026-10-20", br1: 99.9, ar1: 99.8, canonical_ag: AG2, pn: "a" }, { od: "2026-10-23", br1: 101.5, ar1: 101.4, canonical_ag: AG2, pn: "b" }, { od: "2026-10-25", br1: 100.5, ar1: 100.4, canonical_ag: AG2, pn: "c" }];
+  eq(agencyRecentHistory(H, AG2, 20).count, 3, "asOf 생략 시 기존 동작");
+  const hc = agencyRecentHistory(H, AG2, 20, "2026-10-23");
+  eq(hc.count, 2, "asOf 포함 이전만"); eq(hc.rows[0].od, "2026-10-23", "경계일 포함");
+  eq(agencyRecentHistory(H, AG2, 20, "2026-10-19").count, 0, "기준일 이전 기록 없음");
+  eq(agencyRecentHistory([{ ...H[1], od: "2026-10-23T09:00:00+09:00" }], AG2, 20, "2026-10-23").count, 1, "타임스탬프 od도 날짜로 비교");
 }
 
 console.log(bad === 0 ? "OK bidCard" : `FAIL ${bad}`);
