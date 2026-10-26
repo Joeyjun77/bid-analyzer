@@ -1,14 +1,15 @@
 // 투찰 카드 (P3) — 공고 하나의 추천·경쟁 구도·1위 이력 3블록. 표시 전용.
 // 추천값(rec)은 App의 recOf(=bidCard.js recOfPred)에서 받는다 — 오늘의 공고 표와 같은 값.
 // 스펙: docs/superpowers/specs/2026-10-22-bid-ops-funnel-redesign-design.md §6.3
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { C } from "../lib/constants.js";
 import { tc, normalizeAgencyName } from "../lib/utils.js";
 import { floorPassLabel } from "../lib/floorLabels.js";
 import { calcEffectiveFloorRate, formatFloorDual } from "../lib/effectiveFloor.js";
 import { resolvePcDist, pcWinRateOf, PC_GRAIN_LABELS } from "../lib/participantCount.js";
 import { predConfidenceV2 } from "../lib/predConfidence.js";
-import { agencyRecentHistory, agencyTrend, capSigmaOfSrc, isLargeTender } from "../lib/bidCard.js";
+import { agencyRecentHistory, agencyTrend, capSigmaOfSrc, isLargeTender, distOfSrc, candidateBacktest, refDateOf } from "../lib/bidCard.js";
+import { roundExpectedPrice } from "../lib/fmtAdj.js";
 import { bidVerdict } from "../lib/rec1stPossible.js";
 import ParticipantMatrixModal from "./ParticipantMatrixModal.jsx";
 
@@ -23,11 +24,17 @@ const lbl = { fontSize: 10, color: C.txd, marginBottom: 2 };
 const row = { display: "flex", justifyContent: "space-between", fontSize: 11, padding: "3px 0", color: C.txm };
 const mono = { fontFamily: "monospace", color: C.txt };
 // 카드 안 보조 동작 버튼(근거·참여사 분포) — 어두운 배경에서도 눈에 띄게
+const CELL = { padding: "3px 6px", borderBottom: "1px solid " + C.bdr + "55" };
 const actBtn = { marginTop: 10, fontSize: 12, fontWeight: 600, padding: "6px 14px", background: "rgba(212,168,52,0.10)", border: "1px solid " + GOLD, borderRadius: 6, color: GOLD, cursor: "pointer" };
 
 export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScore, accuracyMap, onClose, onOpenG2B }) {
   const [showWhy, setShowWhy] = useState(false);
   const [showMatrix, setShowMatrix] = useState(false);
+  const [showCmp, setShowCmp] = useState(false);
+  // 후보 비교표 과거 성적 — 펼칠 때만 계산(기관 행 정렬·누적). 훅이라 early return 위에 둔다
+  const cmp = useMemo(() => !showCmp || !d ? null : candidateBacktest(recs, {
+    canonicalAg: d.canonical_ag || normalizeAgencyName(d.ag), at: d.at, ref: refDateOf(d.open_date, new Date().toLocaleDateString("sv-SE")), ownScore,
+  }), [showCmp, recs, d, ownScore]);
   if (!d) return null;
   const r = rec || {};
   const ag = d.canonical_ag || normalizeAgencyName(d.ag);
@@ -42,7 +49,16 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
   const winRate = pc && d.at === "지자체" && pc.grain !== "AT_BA" ? pcWinRateOf(pc.p50) : null;
   const trend = agencyTrend(recs, ag, { openDate: d.open_date, today: new Date().toLocaleDateString("sv-SE") });
   const hist = agencyRecentHistory(recs, ag, 20, trend.ref); // 동향 줄과 같은 기준일 — 개찰 후 카드에 개찰 이후 결과가 섞이지 않게
-  const capSigma = modeA ? null : capSigmaOfSrc(d.source === "file_upload" ? d.bid1st_v2_src : d.b_pred_src);
+  const mainSrc = d.source === "file_upload" ? d.bid1st_v2_src : d.b_pred_src;
+  const capSigma = modeA ? null : capSigmaOfSrc(mainSrc);
+  // 후보 비교표 값 열 — 메인 추천과 같은 저장 분포(μ·σ), 투찰금은 카드와 같은 식(자사 유효 하한율·LH 예정가격 절상)
+  const cmpDist = modeA || r.adj == null ? null : distOfSrc(mainSrc);
+  const bidOfAdj = (x) => Math.ceil(av + (roundExpectedPrice(d.at, ba * (1 + x / 100)) - av) * effFr / 100);
+  const cands = cmpDist ? [
+    { key: "safe", label: "현재 추천 (안전선)", adj: Number(r.adj), bid: r.bid },
+    { key: "p75", label: "평균+0.67σ (1위 분포 상위 25% 지점)", adj: cmpDist.mu + 0.6745 * cmpDist.sigma },
+    { key: "p50", label: "1위 분포 평균" + (attack ? " (공격안과 같은 기준 — 공격안은 오늘까지 전체 분포)" : ""), adj: cmpDist.mu },
+  ].map(c => ({ ...c, bid: c.bid ?? (ba > 0 && effFr > 0 ? bidOfAdj(c.adj) : null) })) : null;
   const recP100 = r.adj != null ? 100 + Number(r.adj) : null;
   const inRange = recP100 != null && hist.p25 != null ? recP100 >= hist.p25 && recP100 <= hist.p75 : null;
   // 개찰 후 결과 — 매칭된 낙찰 기록의 실제 1위 금액·하한가로 판정(서버 rec_1st_possible과 같은 정의, 동액은 1위 아님)
@@ -96,6 +112,36 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
                 </div>
               )}
               <div style={{ marginTop: 6, fontSize: 11, color: C.txm }}>{modeA ? "군시설은 1위 가능 구간이 있습니다. 하한 통과 확률로 안전 여부를 함께 보세요." : "목표는 하한 미달 탈락 방지입니다. 1위는 추첨에 가깝습니다."}</div>
+              {cands && (
+                <div style={{ marginTop: 4 }}>
+                  <button onClick={() => setShowCmp(v => !v)} style={actBtn}>{showCmp ? "▾" : "▸"} 과거 기록 비교 (투찰 기준별)</button>
+                  {showCmp && cmp && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: C.txm }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                        <thead><tr>{["투찰 기준", "이 공고 사정률 · 투찰금", "과거 하한 미달", "과거 1위 가능"].map((t, i) => <th key={t} style={{ textAlign: i === 0 ? "left" : "right", color: C.txd, fontWeight: 600, padding: "4px 6px", borderBottom: "1px solid " + C.bdr }}>{t}</th>)}</tr></thead>
+                        <tbody>{cands.map(c => {
+                          const st = cmp.rows[c.key], pr = cmp.pairs[c.key];
+                          return (
+                            <tr key={c.key}>
+                              <td style={CELL}>{c.label}</td>
+                              <td style={{ ...CELL, ...mono, textAlign: "right", whiteSpace: "nowrap" }}>{pct4(c.adj)} · {won(c.bid)}</td>
+                              {cmp.n < 30 ? <td colSpan={2} style={{ ...CELL, textAlign: "right", color: C.txd }}>표본 부족 (평가 {cmp.n}건)</td> : <>
+                                <td style={{ ...CELL, ...mono, textAlign: "right" }}>{(st.below / cmp.n * 100).toFixed(0)}%</td>
+                                <td style={{ ...CELL, textAlign: "right" }}><span style={mono}>{st.wins}/{cmp.n}건</span>{pr && <div style={{ fontSize: 10, color: C.txd }}>{pr.p >= 0.05 ? `안전선과 차이는 우연 범위(p=${pr.p.toFixed(2)})` : `안전선과 차이 p=${pr.p.toFixed(3)} — 여러 기관을 보다 보면 우연히도 나옴`}</div>}</td>
+                              </>}
+                            </tr>
+                          );
+                        })}</tbody>
+                      </table>
+                      <div style={{ marginTop: 6, fontSize: 10, color: C.txd, lineHeight: 1.5 }}>
+                        평가: 이 기관 2025~ 개찰 {cmp.n}건(평가 불가 {cmp.skipped}건) — 공고마다 개찰 전날까지의 1위 기록(기관×금액대→기관)으로 다시 계산, 현재 자사 점수 반영(단 '현재 추천' 줄의 투찰금은 저장값).<br />
+                        1위 가능 = 그 금액이 실제 1위보다 낮고 자사 하한 이상이었던 공고 수 · 낙찰 보장 아님(추첨) · 결과가 개찰 전날까지 모두 올라왔다고 가정(실제 업로드는 늦음) · 같은 기간 기록에서 골라도 앞으로 재현되지 않을 수 있음.<br />
+                        참고: 2025~ 전체 운영 재현 5,170건 — 하한 미달 4.5 / 24.8 / 48.1%, 1위 가능 105 / 110 / 101건(차이 구분 안 됨, p=0.73) · 2026-10-26 계산.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
           <button onClick={() => setShowWhy(v => !v)} style={actBtn}>{showWhy ? "▾" : "▸"} 근거</button>
@@ -103,7 +149,7 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
             <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid " + C.bdr }}>
               <div style={row}><span>통과 확률 표본</span><span style={mono}>{r.distN != null ? `${r.distN}건 · ${r.distGrain === "AG" ? "이 발주기관" : "기관유형"}` : "과거 기록 부족"}</span></div>
               <div style={row}><span>신뢰도</span><span style={mono}>{conf.level === "high" ? "높음" : conf.level === "med" ? "보통" : "데이터 부족"}{conf.srcLabel ? ` · ${conf.srcLabel}` : ""}</span></div>
-              <div style={row}><span>2순위 안 (보수)</span><span style={mono}>{d.rec_adj_p75 != null ? `${pct4(d.rec_adj_p75)} · ${won(d.rec_bid_p75)}` : "—"}</span></div>
+              <div style={row}><span>옛 엔진 보수안 (참고)</span><span style={mono}>{d.rec_adj_p75 != null ? `${pct4(d.rec_adj_p75)} · ${won(d.rec_bid_p75)}` : "—"}</span></div>
               <div style={row}><span>자사 유효 하한율</span><span style={mono}>{fr ? formatFloorDual(fr, effFr) : "—"}</span></div>
               <div style={row}><span>자사 하한금액 참고값 (자사 유효 하한율·사정률 100% 가정 — 실제 하한가는 개찰 때 예정가격으로 정해짐)</span><span style={{ ...mono, whiteSpace: "nowrap", marginLeft: 8 }}>{won(floorBid)}</span></div>
               {modeA && d.b_pred_adj != null && Number(d.b_pred_adj) !== Number(r.adj) && (

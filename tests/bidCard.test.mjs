@@ -1,4 +1,4 @@
-import { recOfPred, agencyRecentHistory, attackOfPred, KEPCO_ATTACK_AGENCIES, agencyTrend, capSigmaOfSrc, isLargeTender } from "../src/lib/bidCard.js";
+import { recOfPred, agencyRecentHistory, attackOfPred, KEPCO_ATTACK_AGENCIES, agencyTrend, capSigmaOfSrc, isLargeTender, distOfSrc, binomTwoSidedP, candidateBacktest, refDateOf } from "../src/lib/bidCard.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${got} expect ${exp}`); bad++; } };
@@ -175,6 +175,82 @@ eq(h.autoCount, 0, "자동 없으면 0");
   eq(hc.count, 2, "asOf 포함 이전만"); eq(hc.rows[0].od, "2026-10-23", "경계일 포함");
   eq(agencyRecentHistory(H, AG2, 20, "2026-10-19").count, 0, "기준일 이전 기록 없음");
   eq(agencyRecentHistory([{ ...H[1], od: "2026-10-23T09:00:00+09:00" }], AG2, 20, "2026-10-23").count, 1, "타임스탬프 od도 날짜로 비교");
+}
+
+// 후보 비교표(스펙 .scratch/candidate-compare/spec.md)
+{
+  const d = distOfSrc("modeB(23건 · μ=-0.2862 · σ=0.9218)");
+  eq(d?.n, 23, "src 건수"); eq(d?.mu, -0.2862, "src μ(음수)"); eq(d?.sigma, 0.9218, "src σ");
+  eq(distOfSrc("한국전력공사 경기본부 S3(230건)"), null, "옛 형식 null"); eq(distOfSrc("modeB(0건 · μ=? · σ=?)"), null, "값 없음 null"); eq(distOfSrc(null), null, "null");
+  eq(refDateOf("2026-10-23", "2026-10-26"), "2026-10-22", "개찰 지난 카드 = 개찰 전날"); eq(refDateOf(null, "2026-10-26"), "2026-10-26", "개찰일 없음 = 오늘");
+  eq(refDateOf("2026-11-05", "2026-10-26"), "2026-10-26", "미래 개찰 = 오늘"); eq(refDateOf("2026-10-27", "2026-10-26"), "2026-10-26", "내일 개찰 = 오늘");
+  near(binomTwoSidedP(65, 70), 0.731, 0.001, "이항 정확 p(65,70)"); eq(binomTwoSidedP(0, 0), 1, "엇갈린 쌍 없으면 p=1"); near(binomTwoSidedP(0, 6), 0.03125, 1e-9, "0 vs 6");
+
+  const AG = "기관B"; let k = 0;
+  // 분포 기록: br1(1위 사정률), 금액대 S2(1억~3억)
+  const dist = (od, br1, ba = 2e8, extra = {}) => ({ id: ++k, pn_no: "D" + k, canonical_ag: AG, at: "지자체", od, br1, ba, co: "업체", is_excluded: false, ...extra });
+  // 평가 공고: 실제 하한율 frt=90(av=0) → xp=예정가격, floor=xp*0.9, bp=1위 금액
+  const ev = (od, xp, bp, ba = 2e8, extra = {}) => ({ id: ++k, pn_no: "E" + k, canonical_ag: AG, at: "지자체", od, ba, av: 0, xp, floor_price: xp * 0.9, bp, br1: 100, co: "업체", is_excluded: false, ...extra });
+  const hist = ["2024-03-01", "2024-04-01", "2024-05-01", "2024-06-01", "2024-07-01"].map((od, i) => dist(od, [99.5, 100, 100.5, 100, 100][i]));
+  // μ=0, sd: 값 -0.5,0,0.5,0,0 → 표본분산 0.125 → sd 0.35355 → 안전선 = 0+min(1.6449*max(0.35355,0.642),1.5)=1.05603, P75=0.23847, P50=0
+  // 공고1: 예정가격 = 기초×1.002(실제 사정률 +0.2) → 자사 하한 = xp*0.9. P50 투찰 = ceil(2e8*1.0*0.9)=180000000 < 하한 → 하한 미달
+  //        P75 투찰 = ceil(2e8*1.0023847*0.9)=180429246 ≥ 하한(180360000) → bp보다 낮으면 1위 가능
+  //        안전선 투찰 = ceil(2e8*1.0105603*0.9)=181900854 → bp(180500000) 이상 → 1위 아님
+  const e1 = ev("2025-02-01", 2e8 * 1.002, 180500000);
+  const r = candidateBacktest([...hist, e1, dist("2025-02-01", 103)], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 });
+  eq(r.n, 1, "평가 1건(같은 날 분포 기록은 그 공고 계산에 안 씀)"); eq(r.skipped, 1, "같은 날 분포 기록(하한가 없음)은 평가 불가로 셈");
+  eq(r.rows.p50.below, 1, "평균 → 하한 미달"); eq(r.rows.p75.wins, 1, "평균+0.67σ → 1위 가능"); eq(r.rows.safe.wins, 0, "안전선 → 1위 아님"); eq(r.rows.safe.below, 0, "안전선 통과");
+  eq(r.pairs.p75.c, 1, "P75만 1위 1쌍"); eq(r.pairs.p75.b, 0, "안전선만 1위 0쌍");
+  // 같은 날 기록이 계산에 들어갔다면 μ가 크게 올라 결과가 달라짐 → 위 기대값이 그 고정
+  // 분포 부족(4건) → 평가 불가
+  const r2 = candidateBacktest([...hist.slice(0, 4), e1], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 });
+  eq(r2.n, 0, "분포 4건이면 평가 안 함"); eq(r2.skipped, 1, "평가 불가 1");
+  // 필수 값 없음 → 평가 불가, 기준일 이후·2025 이전 공고는 제외
+  const r3 = candidateBacktest([...hist, ev("2025-03-01", 2e8, 1.8e8, 2e8, { bp: null }), ev("2026-01-05", 2e8, 1.8e8), ev("2024-12-31", 2e8, 1.8e8)], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 });
+  eq(r3.n, 0, "평가 0"); eq(r3.skipped, 1, "bp 없음은 평가 불가로 셈(기간 밖은 제외)");
+  // 필터: 다른 기관·자동·유찰·제외·범위 밖·canonical 없음은 분포에 안 들어감
+  const junk = [dist("2024-08-01", 100, 2e8, { canonical_ag: "다른" }), dist("2024-08-01", 100, 2e8, { _auto: true }), dist("2024-08-01", 100, 2e8, { co: "유찰" }),
+    dist("2024-08-01", 100, 2e8, { is_excluded: true }), dist("2024-08-01", 94, 2e8), dist("2024-08-01", 100, 2e8, { canonical_ag: null, ag: AG }), dist("2023-12-31", 100)];
+  const r4 = candidateBacktest([...hist.slice(0, 4), ...junk, e1], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 });
+  eq(r4.n, 0, "걸러진 기록은 분포 n에 안 셈(4건 그대로)");
+  // 기관×금액대 우선: S1(1억 미만) 기록 5건이 있으면 S1 공고는 그 칸을 쓴다
+  const s1 = ["2024-03-02", "2024-04-02", "2024-05-02", "2024-06-02", "2024-07-02"].map(od => dist(od, 102, 5e7));
+  const e2 = ev("2025-02-02", 5e7 * 1.002, 45100000, 5e7);
+  const r5 = candidateBacktest([...hist, ...s1, e2], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 });
+  eq(r5.rows.p50.below, 0, "S1 칸 μ=+2 → 평균 투찰이 하한 위(기관 전체 μ면 미달)");
+  // 자사 점수 18점 → 유효 하한율 +0.1%p: 자사 하한도 올라 하한 미달 판정은 같고, 투찰금은 커져 1위 가능이 줄 수 있음
+  const r6 = candidateBacktest([...hist, e1], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 18 });
+  eq(r6.rows.p50.below, 1, "점수와 무관하게 하한 미달 동일"); eq(r6.rows.p75.wins, 0, "18점: 유효 하한율 +0.1%p로 투찰금이 1위 금액을 넘어 1위 가능이 줄어듦");
+  // 경계: 투찰금 = bp면 1위 아님
+  const p75bid = Math.ceil(2e8 * (1 + 0.23847 / 100) * 0.9);
+  const r7 = candidateBacktest([...hist, ev("2025-02-01", 2e8 * 1.002, p75bid)], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 });
+  eq(r7.rows.p75.wins, 0, "투찰금 = 1위 금액이면 1위 아님");
+  eq(candidateBacktest(null, { canonicalAg: AG, at: "지자체", ref: "2025-12-31" }).n, 0, "null 입력");
+  // 리뷰 반영: 평가 대상도 br1 95~105만(다른 종류 기록은 평가 불가로 세지 않음)
+  const rb = candidateBacktest([...hist, e1, ev("2025-03-01", null, null, 2e8, { br1: 88, xp: null, floor_price: null })], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 });
+  eq(rb.skipped, 0, "br1 범위 밖 기록은 평가 불가로 세지 않음");
+  // A값(av>0) 공고: 투찰금 = ceil(av + (xp후보 − av)·eff/100)
+  const avR = { av: 1e7 }, xpA = 2e8 * 1.002, flA = 1e7 + (xpA - 1e7) * 0.9;
+  const rA = candidateBacktest([...hist, ev("2025-02-01", xpA, 182000000, 2e8, { av: 1e7, floor_price: flA })], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 });
+  const bidA = (x) => Math.ceil(1e7 + (2e8 * (1 + x / 100) - 1e7) * 0.9);
+  eq(rA.rows.p75.wins, bidA(0.23847) >= flA && bidA(0.23847) < 182000000 ? 1 : 0, "A값 공고 P75 판정"); eq(rA.rows.p50.below, bidA(0) < flA ? 1 : 0, "A값 공고 평균 판정");
+  void avR;
+  // LH: σ 바닥 0.50 → 안전선 0.82245, 예정가격 천원 절상. 실제 사정률 +0.9 → LH 안전선은 하한 미달, 지자체 바닥(0.642→1.056)이면 통과
+  const xpL = 201800000, eL = ev("2025-02-01", xpL, 190000000);
+  eq(candidateBacktest([...hist, eL], { canonicalAg: AG, at: "LH", ref: "2025-12-31", ownScore: 20 }).rows.safe.below, 1, "LH 바닥 0.50 안전선은 +0.9에서 미달");
+  eq(candidateBacktest([...hist, eL], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 }).rows.safe.below, 0, "지자체 바닥 0.642 안전선은 +0.9에서 통과");
+  // σ가 커서 상한 1.5: 값 −1.5,−1.5,0,1.5,1.5(σ=1.5) → 안전선 = 1.5. 실제 +1.6 → 미달
+  const wide = ["2024-03-01", "2024-04-01", "2024-05-01", "2024-06-01", "2024-07-01"].map((od, i) => dist(od, 100 + [-1.5, -1.5, 0, 1.5, 1.5][i]));
+  eq(candidateBacktest([...wide, ev("2025-02-01", 2e8 * 1.016, 190000000)], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 }).rows.safe.below, 1, "상한 1.5가 걸리면 +1.6에서 미달");
+  // 경계: 투찰금 = 자사 하한이면 미달 아님(1위 금액 미만이면 1위 가능)
+  const rEq = candidateBacktest([...hist, ev("2025-02-01", 2e8, 1.9e8, 2e8, { floor_price: 1.8e8 })], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 });
+  eq(rEq.rows.p50.below, 0, "투찰금 = 하한가면 미달 아님"); eq(rEq.rows.p50.wins, 1, "그리고 1위 금액 미만이면 1위 가능");
+  // 이상값 가드: 하한율 70% 미만·1위 금액 < 하한가는 평가 불가
+  const rBad = candidateBacktest([...hist, ev("2025-02-01", 2e8, 1.9e8, 2e8, { floor_price: 1.2e8 }), ev("2025-02-02", 2e8, 1.7e8)], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 });
+  eq(rBad.n, 0, "이상값 평가 안 함"); eq(rBad.skipped, 2, "이상값 2건 평가 불가");
+  // 같은 공고번호 중복 평가 1회
+  const dupE = ev("2025-02-01", 2e8 * 1.002, 180500000);
+  eq(candidateBacktest([...hist, dupE, { ...dupE, id: 999 }], { canonicalAg: AG, at: "지자체", ref: "2025-12-31", ownScore: 20 }).n, 1, "같은 공고번호는 1번만 평가");
 }
 
 console.log(bad === 0 ? "OK bidCard" : `FAIL ${bad}`);
