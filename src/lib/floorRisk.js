@@ -19,6 +19,11 @@ export function floorModeOf(at) {
   return at === "군시설" ? "A" : "B";
 }
 
+// 안착안 σ 바닥 — 예비가격 범위 ±2%(이론 σ≈0.51)인 한전·LH는 0.50, 그 외는 기존 0.642 (스펙 .scratch/kepco-lh-sigma/spec.md)
+export function modeBSigmaFloor(at) {
+  return at === "한전" || at === "LH" ? 0.5 : 0.642;
+}
+
 export function riskColor(risk) {
   if (risk == null) return null;
   if (risk >= 25) return "#e24b4a";

@@ -45,8 +45,14 @@ export function ceilToWon(amount) {
   return Math.ceil(Number(amount));
 }
 
-// 투찰금액 절상 — 천원 단위 (V2_DOMAIN_RULES_CHECK #3)
-// LH 등 일부 발주처는 천원 단위 절상
+// 천원 단위 절상 (V2_DOMAIN_RULES_CHECK #3)
+// LH는 투찰금이 아니라 '예정가격'을 천원 미만 절상한다(입찰교육자료, 2026-10-26 실측: LH 예정가격 187/187건 천원 배수, 1위 투찰금은 25/190건).
+// recommendAssumedAdj의 calcBid(utils.js)가 투찰금에 적용하는 것은 알려진 결함(1천원 미만·보수적, 옛 경로) — 안착안은 roundExpectedPrice를 쓴다.
 export function ceilToThousand(amount) {
   return Math.ceil(Number(amount) / 1000) * 1000;
+}
+
+// 예정가격(사정률 적용 후) 반올림 규칙 — LH만 천원 미만 절상, 그 외 그대로
+export function roundExpectedPrice(at, xp) {
+  return at === "LH" ? ceilToThousand(xp) : xp;
 }

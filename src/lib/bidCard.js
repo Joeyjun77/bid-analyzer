@@ -103,7 +103,7 @@ export function agencyTrend(recs, canonicalAg, { openDate, today } = {}) {
 }
 
 // 안착안이 상한(평균+1.5%p)에 걸렸는지 — 저장 src "modeB(N건 · μ=… · σ=…)"의 σ로 판정(스펙 .scratch/group1-display/spec.md).
-// recommendModeB는 effStd=max(σ,0.642)로 95%를 찾고 상한 1.5에 막히므로, 걸리는 조건은 1.6449·σ > 1.5 (σ > 0.9119) 하나다.
+// recommendModeB는 effStd=max(σ, 바닥 0.642 또는 한전·LH 0.50)로 95%를 찾고 상한 1.5에 막히므로, 걸리는 조건은 1.6449·σ > 1.5 (σ > 0.9119) 하나다(바닥은 0.9119보다 작아 무관).
 // src의 σ는 소수 4자리라 실제 σ가 0.911935~0.91195이면 안내가 빠진다(통과율 차이 0.0001%p 미만, 무시).
 export function capSigmaOfSrc(src) {
   const m = /^modeB\(.*σ=(-?[0-9.]+)\)/.exec(src || "");

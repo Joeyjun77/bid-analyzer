@@ -1,9 +1,9 @@
 import * as XLSX from "xlsx";
 import { CHO } from "./constants.js";
 import { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./constants-tables.js";
-import { ceilToWon, ceilToThousand } from "./fmtAdj.js";
+import { ceilToWon, ceilToThousand, roundExpectedPrice } from "./fmtAdj.js";
 import { calcEffectiveFloorRate } from "./effectiveFloor.js";
-import { floorModeOf } from "./floorRisk.js";
+import { floorModeOf, modeBSigmaFloor } from "./floorRisk.js";
 // 도메인 상수 테이블은 constants-tables.js에 분리. 아래는 App.jsx 호환을 위한 re-export.
 export { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH };
 
@@ -800,12 +800,12 @@ export function calcWinProb(adj,mean,effStd,floorSafe){
 // 근거: docs/v2/HANDOFF_V2_PREDICTION_DEFINITION §1.3, HANDOFF_V2_DIAGNOSIS_RESULT §6 Step2
 // 정의: P(자사투찰 ≥ 낙찰하한가) = P(실제 사정률 ≤ X) = Φ((X − mean) / std)
 //   - 정규분포 가정 (사정률 분포 위치·폭은 발주사별 학습)
-//   - mean: 발주사 사정률 분포 평균 / std: 표준편차 (노이즈 플로어 0.642%보다 작으면 floor 적용)
-// 입력: adj (자사 후보 사정률), mean (분포 중심), std (분포 폭)
+//   - mean: 발주사 사정률 분포 평균 / std: 표준편차 (stdFloor보다 작으면 floor 적용 — 기본 0.642, 안착안 한전·LH 0.50)
+// 입력: adj (자사 후보 사정률), mean (분포 중심), std (분포 폭), stdFloor (σ 바닥, 선택)
 // 반환: 0~1 확률
-export function calcFloorPassProb(adj, mean, std) {
+export function calcFloorPassProb(adj, mean, std, stdFloor = 0.642) {
   if (adj == null) return null;
-  const effStd = Math.max(Number(std) || 0, 0.642); // 노이즈 플로어
+  const effStd = Math.max(Number(std) || 0, stdFloor); // σ 바닥 — 기본 0.642, 안착안은 modeBSigmaFloor(at)
   if (effStd <= 0) return null;
   const m = Number(mean) || 0;
   const z = (Number(adj) - m) / effStd;
@@ -903,7 +903,7 @@ export function recommendModeB(distribution, options) {
   let bestAdj = null;
   let bestProb = null;
   for (let adj = startAdj; adj <= endAdj; adj += opt.gridStep) {
-    const p = calcFloorPassProb(adj, mean, std);
+    const p = calcFloorPassProb(adj, mean, std, opt.stdFloor ?? 0.642);
     if (p != null && p >= opt.targetProb) {
       bestAdj = adj;
       bestProb = p;
@@ -913,7 +913,7 @@ export function recommendModeB(distribution, options) {
   // targetProb 도달 불가 시 — 분포 우측 끝(가장 높은 X)을 fallback
   if (bestAdj == null) {
     bestAdj = endAdj;
-    bestProb = calcFloorPassProb(endAdj, mean, std);
+    bestProb = calcFloorPassProb(endAdj, mean, std, opt.stdFloor ?? 0.642);
   }
   return { adj: bestAdj, floor_pass_prob: bestProb };
 }
@@ -1056,7 +1056,7 @@ export function recommendBid1st(bid,context,options){
   };
 }
 
-// bidC 무손실 역산: 주어진 bid_amount를 만드는 사정률 adj 산출 (b_pred_adj 컬럼 표시용)
+// bidC 무손실 역산: 주어진 bid_amount를 만드는 사정률 adj 산출 (b_pred_adj 컬럼 표시용) — Mode A(군시설) 전용, LH 예정가격 절상은 반영하지 않음
 // bidC(adj) = ceil(av + (ba*(1+adj/100) − av)*(effFr/100))  (av>0)
 //           = ceil(ba*(1+adj/100)*(effFr/100))               (av≤0)
 // → adj = ((av + (bid−av)*100/effFr)/ba − 1)*100   (av>0)
@@ -1102,8 +1102,8 @@ export function recommendV2(bid, context, options) {
   // adj_range_min/max(m24) grid 클램프는 쓰지 않는다: 폭이 1.645σ보다 좁으면 95% 목표에 못 미치는 더 공격적인 값이 나온다.
   // (RPC 400으로 라이브에서 한 번도 적용된 적 없음 — 재설계는 별도 과제, 2026-10-18)
 
-  // 투찰금액 계산식 (recommendBid1st와 동일 — A값 보정, effFr 사용)
-  const xpC = (adj) => ba * (1 + adj / 100);
+  // 투찰금액 계산식 (recommendBid1st와 동일 — A값 보정, effFr 사용. 다른 점: LH 예정가격 천원 절상)
+  const xpC = (adj) => roundExpectedPrice(at, ba * (1 + adj / 100)); // LH는 예정가격 천원 미만 절상
   const bidC = (adj) => {
     const xp = xpC(adj);
     return (av && av > 0)
@@ -1128,7 +1128,7 @@ export function recommendV2(bid, context, options) {
       distribution = { mean: 0, std: 0.642, n: 0, grain: null };  // recommendBid1st와 같이 분포 미발견은 grain null
     }
 
-    const result = recommendModeB(distribution, opt);
+    const result = recommendModeB(distribution, { ...opt, stdFloor: modeBSigmaFloor(at) }); // 한전·LH 0.50, 그 외 0.642
     if (!result || result.adj == null) return null;
     const adjRaw = result.adj; // bid/floor_safe는 raw로 계산 — 투찰금/적격 판정 byte-identical 유지
     return {
