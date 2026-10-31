@@ -3,7 +3,7 @@ import { CHO } from "./constants.js";
 import { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH } from "./constants-tables.js";
 import { ceilToWon, ceilToThousand, roundExpectedPrice } from "./fmtAdj.js";
 import { calcEffectiveFloorRate } from "./effectiveFloor.js";
-import { floorModeOf, modeBSigmaFloor } from "./floorRisk.js";
+import { modeBSigmaFloor } from "./floorRisk.js";
 // 도메인 상수 테이블은 constants-tables.js에 분리. 아래는 App.jsx 호환을 위한 re-export.
 export { WIN_OPT_GAP, RATE_TABLE, TYPE_OFF, ASSUMED_ADJ_TABLE, FAIL_RATES, WIN_PROB_MATRIX, SHRINKAGE_K, GLOBAL_MEAN, INVALID_KEYWORDS, tierOf, AT_AVG_PARTICIPANTS, PARTICIPANT_THRESHOLD_HIGH };
 
@@ -956,10 +956,10 @@ export function lookupWin1stDist(at,agName,baSeg,distMap){
 }
 
 // ─── 메인 추천 (2026-10-21 안착안 교체, .scratch/main-rec-anchor/spec.md) ───
-// Mode B(군시설 외): 하한 통과 95% 안착안(recommendV2 Mode B). 1위 평균 겨냥은 1순위를 못 늘리고(추첨) 통과율만 71%로 낮췄다.
-// Mode A(군시설): 기존 recommendBid1st 그대로. 반환 형태는 recommendBid1st와 같다(auto·distribution) — 저장 매핑 무변경.
+// 전 기관: 하한 통과 95% 안착안(recommendV2 Mode B). 1위 평균 겨냥은 1순위를 못 늘리고(추첨) 통과율만 낮췄다.
+// 군시설도 2026-10-31부터 같다(.scratch/military-anchor/spec.md — 워크포워드 n1,661 하한 미달 50.3→2.1%, 1위 13→12).
+// 반환 형태는 recommendBid1st와 같다(auto·distribution) — 저장 매핑 무변경.
 export function recommendMain(bid,context){
-  if(floorModeOf(bid?.at)!=="B")return recommendBid1st(bid,context,{enableMonteCarlo:false});
   const v=recommendV2(bid,{distMap:context?.distMap,ownScore:context?.ownScore});
   if(!v||v.adj==null)return null;
   return{auto:{adj:v.adj,bid:v.bid,winProb:null,floorSafe:v.floor_safe},distribution:{grain:v.dist_grain,src:v.src}};

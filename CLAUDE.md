@@ -126,7 +126,7 @@
   - 모두 UNIQUE NULLS NOT DISTINCT + RLS + service_role INSERT 정책
   - `lookup_agency_mode(at, canonical_ag, ba)` RPC — 3단계 fallback (AG_BA→AG→AT)
 - **DB 인프라 (예정)**: B2 시점 `bid_predictions` 모드 컬럼 6개 ADD, B0b 잔여 `m8_alter_phase17_add_floor_bidrate`
-- **모드 분기**: 군시설=A(WIN-zone 노림), 그 외=B(하한 안착). 자사 낙찰률은 추적만, KPI 아님
+- **모드 분기**: 군시설=A(WIN-zone 노림), 그 외=B(하한 안착). 단 메인 추천은 2026-10-31부터 전 기관 안착안(군시설 포함, `.scratch/military-anchor/spec.md`) — A는 안착안 열(b_pred)·KPI 분류에만 남음. 자사 낙찰률은 추적만, KPI 아님
 - **검증 게이트**: `/evaluate` 4대 강제 — G-단위/G-A안/G-bias/G-모드표시 (`.claude/commands/evaluate.md`)
 - **MAE 강등**: 보조 모니터링만, 1차 KPI 아님 (V2 retire 후 제거 검토)
 

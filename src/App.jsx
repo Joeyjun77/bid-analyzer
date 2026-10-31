@@ -772,7 +772,7 @@ export default function App(){
         const results=items.map(item=>{
           const p=predictV5({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore,od:item.notice_date||item.open_date},allS.ts,allS.as,bidDetails,agencyPred,floorBench);
           const rec=recommendAssumedAdj({at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,ownScore,od:item.notice_date||item.open_date},allS.ts,allS.as,curAgAss);
-          // 메인 추천: 군시설 외 = 하한 통과 95% 안착안, 군시설 = 1위 평균 (recommendMain, 2026-10-21)
+          // 메인 추천: 전 기관 하한 통과 95% 안착안 (recommendMain, 2026-10-21 · 군시설 2026-10-31)
           const fr=p?p.fr:eraFR(item.at,item.ep||item.ba,item.notice_date||item.open_date||new Date().toISOString().slice(0,10));
           const v2=recommendMain(
             {at:item.at,agName:item.ag,ba:item.ba,ep:item.ep,av:item.av,fr},

@@ -102,7 +102,7 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
                 <div><div style={lbl}>하한 통과 확률</div><div style={big(passColor)}>{r.passPct == null ? "—" : floorPassLabel(100 - r.passPct)}</div></div>
               </div>
               {r.floorSafe === false && <div style={{ marginTop: 8, fontSize: 11, color: RED, fontWeight: 600 }}>자격 미달 — 그대로 투찰 시 자동 탈락</div>}
-              {r.adj == null && d.source !== "file_upload" && <div style={{ marginTop: 6, fontSize: 11, color: C.txd }}>자동 예측에는 이 공고의 추천값이 없습니다(군시설 공략안은 엑셀 업로드 예측에서만 계산). 입찰서류함 엑셀을 올리면 채워집니다.</div>}
+              {r.adj == null && d.source !== "file_upload" && <div style={{ marginTop: 6, fontSize: 11, color: C.txd }}>자동 예측에는 이 공고의 추천값이 없습니다(군시설 추천은 엑셀 업로드 예측에서만 계산). 입찰서류함 엑셀을 올리면 채워집니다.</div>}
               {capSigma != null && <div style={{ marginTop: 6, fontSize: 11, color: GOLD }}>분포 폭(σ {capSigma.toFixed(2)})이 커서 상한(평균+1.5%p)을 적용했습니다 — 모형상 하한 통과 95%에 못 미칩니다. 위 하한 통과 확률(과거 기록 기준)을 확인하세요.</div>}
               {r.estimated && <div style={{ marginTop: 6, fontSize: 10, color: C.txd }}>추정 기초금액(추정가격×1.1) 기준 — 기초금액 공개 후 입찰서류함 엑셀을 올리면 확정됩니다.</div>}
               {attack && (
@@ -136,7 +136,9 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
                       <div style={{ marginTop: 6, fontSize: 10, color: C.txd, lineHeight: 1.5 }}>
                         평가: 이 기관 2025~ 개찰 {cmp.n}건(평가 불가 {cmp.skipped}건) — 공고마다 개찰 전날까지의 1위 기록(기관×금액대→기관)으로 다시 계산, 현재 자사 점수 반영(단 '현재 추천' 줄의 투찰금은 저장값).<br />
                         1위 가능 = 그 금액이 실제 1위보다 낮고 자사 하한 이상이었던 공고 수 · 낙찰 보장 아님(추첨) · 결과가 개찰 전날까지 모두 올라왔다고 가정(실제 업로드는 늦음) · 같은 기간 기록에서 골라도 앞으로 재현되지 않을 수 있음.<br />
-                        참고: 2025~ 전체 운영 재현 5,170건 — 하한 미달 4.5 / 24.8 / 48.1%, 1위 가능 105 / 110 / 101건(차이 구분 안 됨, p=0.73) · 2026-10-26 계산.
+                        {d.at === "군시설"
+                          ? "참고: 2025~ 군시설 재현 1,661건 — 하한 미달 2.1 / 27.2 / 50.3%, 1위 가능 12 / 14 / 13건(차이 구분 안 됨) · 2026-10-31 계산."
+                          : "참고: 2025~ 운영 재현 5,170건(군시설 제외) — 하한 미달 4.5 / 24.8 / 48.1%, 1위 가능 105 / 110 / 101건(차이 구분 안 됨, p=0.73) · 2026-10-26 계산."}
                       </div>
                     </div>
                   )}

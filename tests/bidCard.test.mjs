@@ -30,6 +30,10 @@ eq(recOfPred({ ...auto, source: "g2b_manual" }, deps).adj, 1.1357, "수동 등�
 eq(recOfPred(matched, deps).bid, 950, "matched도 계산(예측 기록 카드)");
 eq(recOfPred({ ...up, at: "군시설" }, deps).mode, "A", "군시설 정적 모드 A");
 eq(recOfPred({ ...up, b_pred_mode: "B", at: "군시설" }, deps).mode, "B", "저장 모드 우선");
+// 군시설 메인 추천 안착안 전환(.scratch/military-anchor/spec.md): 메인 src가 modeB(…)면 b_pred_mode A여도 안착 모드
+eq(recOfPred({ ...up, at: "군시설", b_pred_mode: "A", bid1st_v2_src: "modeB(24건 · μ=0.1000 · σ=0.5500)" }, deps).mode, "B", "군시설 안착안 메인은 B");
+eq(recOfPred({ ...up, at: "군시설", b_pred_mode: "A", bid1st_v2_src: "제1보병사단 S1(84건)" }, deps).mode, "A", "옛 군시설 메인은 A 유지");
+eq(recOfPred({ ...auto, at: "군시설", b_pred_mode: "A", bid1st_v2_src: "modeB(24건 · μ=0.1000 · σ=0.5500)" }, deps).mode, "A", "자동 예측은 저장 모드 그대로");
 eq(recOfPred({ ...up, at: "LH" }, deps).passPct, null, "분포 없으면 통과 확률 null");
 eq(recOfPred({ ...up, ba: null }, deps).passPct, null, "기초금액 없으면 통과 확률 null");
 const jong = recOfPred(up, { ...deps, getFinal: () => ({ adj: null, bid: null, jongsim: true }) });

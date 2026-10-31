@@ -25,7 +25,8 @@ export function recOfPred(p, deps) {
       passPct = deps.passProbPct(dist, deps.impliedAdjOfBid({ bid: Number(bid), ba: Number(p.ba), av: Number(p.av) || 0, effFr: deps.passEffFrOf(p, deps.ownScore) }));
     }
   }
-  const mode = p.b_pred_mode || (p.at === "군시설" ? "A" : "B");
+  // 업로드 메인 추천이 안착안(src "modeB(…)")이면 안착 — 군시설 b_pred_mode(A)는 메인과 무관 (.scratch/military-anchor/spec.md)
+  const mode = p.source === "file_upload" && /^modeB\(/.test(p.bid1st_v2_src || "") ? "B" : (p.b_pred_mode || (p.at === "군시설" ? "A" : "B"));
   return { adj, bid, passPct, jongsim, estimated, floorSafe, source: p.source, mode, distN, distGrain };
 }
 
