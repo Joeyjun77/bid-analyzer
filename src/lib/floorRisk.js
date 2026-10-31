@@ -15,6 +15,7 @@ export function floorBaSeg(ba) {
 }
 
 // 모드 분기 (V2 규칙: 군시설=A WIN-zone 노림, 그 외=B 하한 안착)
+// 메인 추천과는 무관(2026-10-31~ 전 기관 안착안, recommendMain) — 안전선 스냅샷(withSafeLine) 판정 전용
 export function floorModeOf(at) {
   return at === "군시설" ? "A" : "B";
 }
