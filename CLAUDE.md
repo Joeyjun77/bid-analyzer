@@ -10,7 +10,7 @@
 - SheetJS (xlsx, codepage:949) — XLS 파싱
 
 ## 주요 경로
-- 로컬: C:\Users\home\bid-analyzer
+- 로컬: D:\2026_project\bid-analyzer
 - Supabase 프로젝트 ID: sadunejfkstxbxogzutl
 - Live: https://bid-analyzer-pi.vercel.app
 - GitHub: Joeyjun77/bid-analyzer
