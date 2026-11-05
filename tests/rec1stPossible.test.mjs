@@ -1,4 +1,4 @@
-import { rec1stPossible, bidVerdict } from "../src/lib/rec1stPossible.js";
+import { rec1stPossible, bidVerdict, isNoopRematch } from "../src/lib/rec1stPossible.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => {
@@ -52,6 +52,28 @@ eq(bidVerdict(1001, RV), "above", "1위 이상"); eq(bidVerdict(899, RV), "below
 eq(bidVerdict(900, RV), "possible", "하한과 같으면 통과"); eq(bidVerdict(950, null), null, "기록 없음");
 eq(bidVerdict(950, { bp: 1000, floor_price: null }), null, "하한가 없음"); eq(bidVerdict(null, RV), null, "투찰금 없음");
 eq(bidVerdict("950", { bp: "1000", floor_price: "900" }), "possible", "문자열 숫자");
+
+// isNoopRematch — 이미 매칭된 행을 같은 값으로 다시 저장하는지(저장 생략 판정). matched_at은 비교하지 않는다.
+const SP = { match_status: "matched", matched_record_id: 7, actual_adj_rate: null, actual_expected_price: null, actual_bid_amount: 1000, actual_winner: "A사", actual_participant_count: 50, adj_rate_error: null, bid_amount_error: -50, rec_1st_possible: null };
+const SU = { match_status: "matched", matched_record_id: 7, actual_adj_rate: null, actual_expected_price: null, actual_bid_amount: 1000, actual_winner: "A사", actual_participant_count: 50, adj_rate_error: null, bid_amount_error: -50, matched_at: "2026-11-05T00:00:00Z" };
+eq(isNoopRematch(SP, SU), true, "값이 모두 같으면 생략");
+eq(isNoopRematch({ ...SP, actual_bid_amount: "1000", matched_record_id: "7" }, SU), true, "문자열 숫자도 같은 값");
+eq(isNoopRematch({ ...SP, actual_bid_amount: 1000.0 }, { ...SU, actual_bid_amount: "1000.00" }), true, "숫자 표기 차이는 같은 값");
+eq(isNoopRematch({ ...SP, match_status: "pending" }, SU), false, "대기 행은 항상 저장");
+eq(isNoopRematch(SP, { ...SU, actual_adj_rate: 0.1234 }), false, "결과(ar1)가 도착하면 저장");
+eq(isNoopRematch(SP, { ...SU, actual_bid_amount: 1100 }), false, "1위 금액이 바뀌면 저장");
+eq(isNoopRematch({ ...SP, actual_bid_amount: null }, SU), false, "비어 있던 1위 금액이 오면 저장");
+eq(isNoopRematch(SP, { ...SU, matched_record_id: 8 }), false, "다른 레코드로 바뀌면 저장");
+eq(isNoopRematch(SP, { ...SU, actual_winner: "B사" }), false, "낙찰자가 바뀌면 저장");
+eq(isNoopRematch(SP, { ...SU, bid_amount_error: -60 }), false, "오차 값이 다르면 저장");
+const R1 = { existing: false, aggressive: true, balanced: false, conservative: false };
+eq(isNoopRematch({ ...SP, rec_1st_possible: JSON.stringify(R1) }, { ...SU, rec_1st_possible: JSON.stringify(R1) }), true, "1위 가능 판정이 같으면 생략");
+eq(isNoopRematch({ ...SP, rec_1st_possible: '{"balanced":false,"existing":false,"aggressive":true,"conservative":false}' }, { ...SU, rec_1st_possible: JSON.stringify(R1) }), true, "키 순서만 다르면 같은 값");
+eq(isNoopRematch({ ...SP, rec_1st_possible: JSON.stringify({ ...R1, balanced: true }) }, { ...SU, rec_1st_possible: JSON.stringify(R1) }), false, "1위 가능 판정이 바뀌면 저장");
+eq(isNoopRematch(SP, { ...SU, rec_1st_possible: JSON.stringify(R1) }), false, "하한가 도착으로 판정이 새로 생기면 저장");
+eq(isNoopRematch({ ...SP, rec_1st_possible: "깨진값" }, { ...SU, rec_1st_possible: JSON.stringify(R1) }), false, "저장값을 못 읽으면 저장");
+eq(isNoopRematch({ ...SP, rec_1st_possible: JSON.stringify(R1) }, SU), true, "이번에 판정을 안 쓰면 비교 안 함(기존 값 유지)");
+eq(isNoopRematch(null, SU), false, "null 입력");
 
 console.log(bad === 0 ? "OK rec1stPossible all cases" : `FAIL ${bad}`);
 process.exit(bad === 0 ? 0 : 1);

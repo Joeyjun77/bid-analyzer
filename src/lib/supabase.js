@@ -1,6 +1,6 @@
 import { sanitizeJson } from "./utils.js";
 import { authedFetch } from "../auth.js";
-import { rec1stPossible } from "./rec1stPossible.js";
+import { rec1stPossible, isNoopRematch } from "./rec1stPossible.js";
 import { buildNoticesQuery, NOTICE_REGIONS } from "./noticesQuery.js";
 import { loadKeywords } from "./eligibility.js";
 
@@ -116,6 +116,8 @@ export async function sbMatchPredictions(predictions,records){
   const usedKey=(src,recId)=>(src||"")+"|"+recId;
   const usedRecIds=new Set(predictions.filter(p=>p.match_status==="matched"&&p.matched_record_id&&p.actual_adj_rate!=null).map(p=>usedKey(p.source,p.matched_record_id)));
   const updates=[];
+  const affectedAgs=new Set(); // 기관 통계 갱신 대상 — 저장을 생략한 행도 포함(추천 입력인 통계의 갱신 범위를 바꾸지 않는다)
+  let noopCount=0;
   for(const p of predictions){
     // matched이지만 actual_adj_rate가 NULL이면 재매칭 시도 (ar1 늦게 도착 케이스 백필)
     if(p.match_status==="matched"&&p.actual_adj_rate!=null)continue;
@@ -162,20 +164,22 @@ export async function sbMatchPredictions(predictions,records){
     const actualAdj=match.ar1!=null?Math.round((match.ar1>=50?match.ar1-100:match.ar1)*10000)/10000:null;
     const adjErr=p.pred_adj_rate!=null&&actualAdj!=null?Math.round((p.pred_adj_rate-actualAdj)*10000)/10000:null;
     const bidErr=p.pred_bid_amount!=null&&match.bp!=null?Math.round(p.pred_bid_amount-match.bp):null;
-    updates.push({id:p.id,actual_adj_rate:actualAdj,actual_expected_price:match.xp,actual_bid_amount:match.bp,actual_winner:match.co,actual_participant_count:match.pc,adj_rate_error:adjErr,bid_amount_error:bidErr,match_status:"matched",matched_record_id:match.id,matched_at:new Date().toISOString(),
+    const upd={id:p.id,actual_adj_rate:actualAdj,actual_expected_price:match.xp,actual_bid_amount:match.bp,actual_winner:match.co,actual_participant_count:match.pc,adj_rate_error:adjErr,bid_amount_error:bidErr,match_status:"matched",matched_record_id:match.id,matched_at:new Date().toISOString(),
       // ★ rec_1st_possible: 각 전략이 1위 가능했는지 판정 — 서버 cron과 동일 정의(rec1stPossible.js 단일 정의)
-      ...(()=>{const r1=rec1stPossible(p,match);return r1?{rec_1st_possible:JSON.stringify(r1)}:{}})()})
+      ...(()=>{const r1=rec1stPossible(p,match);return r1?{rec_1st_possible:JSON.stringify(r1)}:{}})()};
+    if(match.ag)affectedAgs.add(match.ag);
+    if(isNoopRematch(p,upd)){noopCount++;continue} // 결과 없는 행 재시도 중 바뀐 값이 없으면 저장 생략(업로드당 약 2,700건 PATCH)
+    updates.push(upd);
   }
   for(const u of updates){
     const{id,...data}=u;
     await authedFetch("/rest/v1/bid_predictions?id=eq."+id,{method:"PATCH",headers:{...JSON_H,"Prefer":"return=minimal"},body:JSON.stringify(data)})
   }
   // ★ V5.2: 매칭된 기관의 ag_assumed_stats 자동 갱신
-  if(updates.length>0){
-    const affectedAgs=[...new Set(updates.map(u=>{const rec=records.find(r=>r.id===u.matched_record_id);return rec?rec.ag:null}).filter(Boolean))];
-    try{await sbRefreshAgAssumedStats(affectedAgs,records)}catch(e){console.warn("agAss 갱신 실패:",e)}
+  if(affectedAgs.size>0){
+    try{await sbRefreshAgAssumedStats([...affectedAgs],records)}catch(e){console.warn("agAss 갱신 실패:",e)}
   }
-  return updates.length}
+  return updates.length+noopCount} // 호출부의 전략 결과 백필·새로고침 조건을 바꾸지 않도록 생략분도 센다
 
 // ★ V5.2: 매칭된 기관의 ag_assumed_stats를 bid_records 최신 데이터로 재계산
 // 1순위 가정사정률 역산: 사정률(br1-100)을 가정사정률의 프록시로 사용
