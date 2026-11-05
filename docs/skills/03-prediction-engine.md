@@ -159,7 +159,7 @@ optAdj = -0.10 + 0.594 = +0.494%
 ### 호환성 stub (Phase 11 청산 후)
 이 함수들은 시그니처만 유지하고 빈 응답 반환:
 - `setWinProbMatrix`, `setBiasMap`, `setTrendMap`
-- `getEnhancedAdj`, `buildAiContext`, `callClaudeAi`
+- `getEnhancedAdj`
 
 ## 예측 엔진 진화 이력
 
