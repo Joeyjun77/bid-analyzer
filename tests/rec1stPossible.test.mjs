@@ -74,6 +74,13 @@ eq(isNoopRematch(SP, { ...SU, rec_1st_possible: JSON.stringify(R1) }), false, "�
 eq(isNoopRematch({ ...SP, rec_1st_possible: "깨진값" }, { ...SU, rec_1st_possible: JSON.stringify(R1) }), false, "저장값을 못 읽으면 저장");
 eq(isNoopRematch({ ...SP, rec_1st_possible: JSON.stringify(R1) }, SU), true, "이번에 판정을 안 쓰면 비교 안 함(기존 값 유지)");
 eq(isNoopRematch(null, SU), false, "null 입력");
+// 리뷰 반영: 낙찰자는 텍스트 — 숫자처럼 보여도 문자 그대로 비교
+eq(isNoopRematch({ ...SP, actual_winner: "007" }, { ...SU, actual_winner: "7" }), false, "낙찰자 007과 7은 다른 값");
+eq(isNoopRematch({ ...SP, actual_winner: "" }, { ...SU, actual_winner: "0" }), false, "낙찰자 빈 문자열과 0은 다른 값");
+eq(isNoopRematch({ ...SP, actual_winner: null }, { ...SU, actual_winner: "" }), false, "낙찰자 null과 빈 문자열은 다른 값");
+// 리뷰 반영: 저장 컬럼이 늘어나도 그 컬럼이 다르면 저장(목록 누락으로 조용히 건너뛰지 않음)
+eq(isNoopRematch(SP, { ...SU, 새컬럼: 1 }), false, "비교 목록에 없는 새 컬럼이 다르면 저장");
+eq(isNoopRematch(SP, { ...SU, id: 123 }), true, "id는 비교하지 않음");
 
 console.log(bad === 0 ? "OK rec1stPossible all cases" : `FAIL ${bad}`);
 process.exit(bad === 0 ? 0 : 1);
