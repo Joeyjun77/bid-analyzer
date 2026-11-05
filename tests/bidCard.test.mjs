@@ -33,7 +33,10 @@ eq(recOfPred({ ...up, b_pred_mode: "B", at: "군시설" }, deps).mode, "B", "저
 // 군시설 메인 추천 안착안 전환(.scratch/military-anchor/spec.md): 메인 src가 modeB(…)면 b_pred_mode A여도 안착 모드
 eq(recOfPred({ ...up, at: "군시설", b_pred_mode: "A", bid1st_v2_src: "modeB(24건 · μ=0.1000 · σ=0.5500)" }, deps).mode, "B", "군시설 안착안 메인은 B");
 eq(recOfPred({ ...up, at: "군시설", b_pred_mode: "A", bid1st_v2_src: "제1보병사단 S1(84건)" }, deps).mode, "A", "옛 군시설 메인은 A 유지");
-eq(recOfPred({ ...auto, at: "군시설", b_pred_mode: "A", bid1st_v2_src: "modeB(24건 · μ=0.1000 · σ=0.5500)" }, deps).mode, "A", "자동 예측은 저장 모드 그대로");
+// 자동 예측은 메인 추천을 안 보여 주므로(adj null) 저장 b_pred_mode A여도 공략 표시를 하지 않는다
+eq(recOfPred({ ...autoA, at: "군시설" }, deps).mode, "B", "자동 예측 군시설 mode A도 공략 표시 안 함");
+eq(recOfPred({ ...autoA, at: "지자체" }, deps).mode, "B", "자동 예측 군시설 외 mode A도 공략 표시 안 함");
+eq(recOfPred({ ...autoA, at: "군시설" }, deps).adj, null, "자동 예측 mode A는 여전히 추천 비움");
 eq(recOfPred({ ...up, at: "LH" }, deps).passPct, null, "분포 없으면 통과 확률 null");
 eq(recOfPred({ ...up, ba: null }, deps).passPct, null, "기초금액 없으면 통과 확률 null");
 const jong = recOfPred(up, { ...deps, getFinal: () => ({ adj: null, bid: null, jongsim: true }) });

@@ -111,7 +111,7 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
                   <div style={{ marginTop: 4, color: RED }}>1위 분포 평균을 겨냥한 값이라 하한 미달 탈락 위험이 큽니다. 2025~ 경기·경기북부 본부 452건 백테스트: 1위 가능 3→13건, 하한 미달 6→203건 (같은 기간에서 고른 후보 — 독립 검증 아님).</div>
                 </div>
               )}
-              <div style={{ marginTop: 6, fontSize: 11, color: C.txm }}>{modeA ? "군시설은 1위 가능 구간이 있습니다. 하한 통과 확률로 안전 여부를 함께 보세요." : "목표는 하한 미달 탈락 방지입니다. 1위는 추첨에 가깝습니다."}</div>
+              <div style={{ marginTop: 6, fontSize: 11, color: C.txm }}>{modeA ? "전환 전 기준(1위 분포 평균 겨냥)으로 계산된 행입니다. 하한 통과 확률로 안전 여부를 함께 보세요." :"목표는 하한 미달 탈락 방지입니다. 1위는 추첨에 가깝습니다."}</div>
               {cands && (
                 <div style={{ marginTop: 4 }}>
                   <button onClick={() => setShowCmp(v => !v)} style={actBtn}>{showCmp ? "▾" : "▸"} 과거 기록 비교 (투찰 기준별)</button>
