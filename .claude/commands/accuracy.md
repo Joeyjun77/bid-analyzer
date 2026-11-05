@@ -235,6 +235,15 @@ SELECT * FROM v_cron_health WHERE jobid IN (14,15,16);
 → success_pct < 95% → 해당 jobid 실패 패턴 분석
 → avg_duration_sec 평소 대비 2배 이상 → 함수 성능 회귀 의심
 
+### 체크 12-b — 수집 실제 결과 (`v_collect_health`, m69)
+> cron `succeeded`는 호출 성공만 뜻한다. 함수 실패(546·500)와 빈 응답은 이 뷰로만 보인다.
+```sql
+SELECT * FROM v_collect_health WHERE verdict IN ('FAIL','WARN') ORDER BY kst_day DESC, collector;
+```
+→ 최근 3일 FAIL → 원인 확인(`get_logs`/`query_logs`, 빈 응답이면 나라장터 장애 여부)
+→ `results_*` 연속 2일 FAIL 또는 7일 내 끊김(WARN) 2회 → 수집 호출 분리 검토(수집 범위 머무는 기간이 약 3일이라 누락 위험)
+→ `g2b_sheet` FAIL → `g2b_auto_candidates` 8초 제한 재발 확인. 일일 실행 1회뿐이라 다음 날까지 복구되지 않는다
+
 ### 체크 13 — g2b_auto 슬라이스 보조 모니터링 (`G2B_VERSION`, m43 분리)
 > `MODEL_VERSION` 슬라이스는 file_upload(상품 추천) 전용 — g2b_auto(자동수집, 정보용) 품질은 이 보조 체크로만 관측된다.
 > **주의**: g2b_auto는 게이트·핵심 KPI 대상이 아니다. 여기 수치로 릴리스 판정·bias 재학습을 트리거하지 말 것 (관측 전용).
@@ -318,6 +327,10 @@ FROM recent r, prior p;
 ### 12. cron 건강 (체크12)
 [표 — jobid / jobname / success_pct / avg_duration_sec / last_run_at]
 {success_pct < 100% 또는 last_run_at가 schedule 대비 누락이면 ⚠}
+
+### 12-b. 수집 실제 결과 (체크12-b)
+[표 — kst_day / collector / verdict / pages/expected 또는 errors/calls / detail, FAIL·WARN만. 없으면 "최근 14일 이상 없음"]
+{cron이 성공이어도 여기 FAIL이면 수집 실패다}
 
 ### 13. g2b_auto 보조 관측 (체크13, 게이트 무관)
 - n_14d: X / mae_14d: X.XXXX (MODEL_VERSION 대비 Δ X.XXXX) / floor_safe_14d: X%
