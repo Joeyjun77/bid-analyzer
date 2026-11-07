@@ -104,7 +104,7 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
               {r.floorSafe === false && <div style={{ marginTop: 8, fontSize: 11, color: RED, fontWeight: 600 }}>자격 미달 — 그대로 투찰 시 자동 탈락</div>}
               {r.adj == null && d.source !== "file_upload" && <div style={{ marginTop: 6, fontSize: 11, color: C.txd }}>자동 예측에는 이 공고의 추천값이 없습니다(군시설 추천은 엑셀 업로드 예측에서만 계산). 입찰서류함 엑셀을 올리면 채워집니다.</div>}
               {capSigma != null && <div style={{ marginTop: 6, fontSize: 11, color: GOLD }}>분포 폭(σ {capSigma.toFixed(2)})이 커서 상한(평균+1.5%p)을 적용했습니다 — 모형상 하한 통과 95%에 못 미칩니다. 위 하한 통과 확률(과거 기록 기준)을 확인하세요.</div>}
-              {r.estimated && <div style={{ marginTop: 6, fontSize: 10, color: C.txd }}>추정 기초금액(추정가격×1.1) 기준 — 기초금액 공개 후 입찰서류함 엑셀을 올리면 확정됩니다.</div>}
+              {r.estimated && <div style={{ marginTop: 6, fontSize: 10, color: C.txd }}>추정 기초금액(추정가격×1.1)·A값 미반영 기준 — 실제 하한보다 낮을 수 있습니다. 기초금액이 공개되면(보통 개찰 1주 전) 자동으로 다시 계산됩니다.</div>}
               {attack && (
                 <div style={{ marginTop: 10, padding: "8px 10px", border: "1px dashed " + C.bdr, borderRadius: 6, fontSize: 11, color: C.txm }}>
                   <div><b style={{ color: C.txt }}>공격안 (참고 · 메인 아님)</b> — 사정률 <span style={mono}>{pct4(attack.adj)}</span> · 투찰금 <span style={mono}>{won(attack.bid)}</span> · 하한 통과 <span style={{ ...mono, color: RED }}>{attack.passPct == null ? "—" : floorPassLabel(100 - attack.passPct)}</span></div>

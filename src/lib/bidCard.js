@@ -15,7 +15,9 @@ export function recOfPred(p, deps) {
     const r = deps.getFinal(p) || {};
     adj = r.adj ?? null; bid = r.bid1st || r.bid || null; jongsim = !!r.jongsim; floorSafe = r.floorSafe ?? null;
   } else if (p.b_pred_mode === "B" && p.b_pred_adj != null && p.b_pred_bid_amount != null) {
-    adj = Number(p.b_pred_adj); bid = Number(p.b_pred_bid_amount); estimated = true;
+    // A값은 기초금액 API(m70)가 기초금액과 함께 채운다 → A값 있으면 실제 기초금액·A값 기준
+    // shortcut: A값 미적용 공고(bidPrceCalclAYn=N)는 기초금액이 확정돼도 "추정"으로 남는다, dry-run 74건 중 0건이라 공고 ba 대조는 보류
+    adj = Number(p.b_pred_adj); bid = Number(p.b_pred_bid_amount); estimated = !(Number(p.av) > 0);
   }
   let passPct = null, distN = null, distGrain = null;
   if (!jongsim && bid && p.ba) {

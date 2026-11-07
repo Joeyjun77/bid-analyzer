@@ -25,6 +25,9 @@ eq(r1.mode, "B", "기본 모드"); eq(r1.estimated, false, "업로드는 확정"
 const r2 = recOfPred(auto, deps);
 eq(calls, 1, "자동 예측은 getFinal 미호출(보정 2겹 금지)"); eq(r2.adj, 1.1357, "저장 안착안"); eq(r2.bid, 905, "저장 투찰금");
 eq(r2.estimated, true, "추정"); eq(r2.passPct, 96.4, "자동 예측도 같은 통과 확률 경로");
+// 기초금액 API로 개찰 전 값이 들어온 자동 예측(m70)은 A값이 채워져 있다 → 확정 표시
+eq(recOfPred({ ...auto, av: "4853091" }, deps).estimated, false, "A값 있는 자동 예측은 확정");
+eq(recOfPred({ ...auto, av: "0" }, deps).estimated, true, "A값 0이면 여전히 추정");
 eq(recOfPred(autoA, deps).adj, null, "자동 예측 mode A는 비움"); eq(calls, 1, "여전히 미호출");
 eq(recOfPred({ ...auto, source: "g2b_manual" }, deps).adj, 1.1357, "수동 등록도 저장값만"); eq(calls, 1, "g2b_manual도 미호출");
 eq(recOfPred(matched, deps).bid, 950, "matched도 계산(예측 기록 카드)");

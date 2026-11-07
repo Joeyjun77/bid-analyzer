@@ -125,11 +125,11 @@ export default function NoticesTab({
                     {r.p50 != null ? tc(r.p50) + (winRate != null ? ` (1순위율 ${winRate.toFixed(1)}%)` : "") : "—"}
                   </td>
                   <td style={td({ ...mono, color: rec?.floorSafe === false ? RED : rec?.adj != null ? (rec.estimated ? C.txm : GREEN) : C.txd, fontWeight: rec?.adj != null ? 700 : 400 })}
-                    title={rec?.floorSafe === false ? "자격 미달 — 그대로 투찰 시 자동 탈락 (예측 탭과 같은 판정)" : rec?.estimated ? "추정 기초금액 기준 안착안" : r.status === STATUS.PRED_AUTO && !rec?.adj ? "새로고침 후 표시됩니다" : ""}>
+                    title={rec?.floorSafe === false ? "자격 미달 — 그대로 투찰 시 자동 탈락 (예측 탭과 같은 판정)" : rec?.estimated ? "추정 기초금액·A값 미반영 기준 안착안 — 실제 하한보다 낮을 수 있음" : r.status === STATUS.PRED_AUTO && !rec?.adj ? "새로고침 후 표시됩니다" : ""}>
                     {rec?.adj != null ? (100 + Number(rec.adj)).toFixed(4) + "%" : "—"}
                   </td>
                   <td style={td({ ...mono, color: rec?.floorSafe === false ? RED : rec?.bid ? (rec.estimated ? C.txm : C.gold) : C.txd, fontWeight: rec?.bid ? 700 : 400 })}
-                    title={rec?.floorSafe === false ? "자격 미달" : rec?.estimated ? "추정 기초금액 기준" : ""}>
+                    title={rec?.floorSafe === false ? "자격 미달" : rec?.estimated ? "추정 기초금액·A값 미반영 기준" : ""}>
                     {rec?.bid ? tc(Math.round(Number(rec.bid))) + "원" : "—"}
                   </td>
                   <td style={td({ ...mono, color: passColor, fontWeight: rec?.passPct != null ? 700 : 400 })}>
