@@ -8,5 +8,7 @@ export function readBssamt(items, ord) {
   const ba = it ? Number(it.bssamt) : NaN;
   if (!it || !Number.isFinite(ba) || ba <= 0) return { found: false, ba: null, av: null, aApplies: null, items: null, openDt: null, ord: it?.bidNtceOrd ?? null };
   const a = sumAValue(it);
-  return { found: true, ba, av: a.av, aApplies: a.aApplies, items: a.items, openDt: it.bssamtOpenDt || null, ord: it.bidNtceOrd ?? null };
+  // 공개 시각은 'YYYY-MM-DD HH:MM(:SS)' KST만 넘긴다 — 형식이 다른 값 하나가 DB 캐스트에서 묶음 전체를 실패시키지 않게
+  const openDt = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(it.bssamtOpenDt || "") ? it.bssamtOpenDt : null;
+  return { found: true, ba, av: a.av, aApplies: a.aApplies, items: a.items, openDt, ord: it.bidNtceOrd ?? null };
 }

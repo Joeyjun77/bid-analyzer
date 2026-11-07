@@ -25,5 +25,10 @@ eq(readBssamt([{ ...item, bssamt: "0" }], "000").found, false, "0원은 미공�
 const r4 = readBssamt([{ ...item, bidPrceCalclAYn: "N" }], "000");
 eq(r4.found, true, "A 미적용도 기초금액 확정"); eq(r4.av, 0, "A 미적용 A값 0"); eq(r4.aApplies, false, "A 미적용 표시");
 
+// 공개 시각 형식이 다르면 null(기초금액·A값은 그대로 저장)
+const r5 = readBssamt([{ ...item, bssamtOpenDt: "20261029094906" }], "000");
+eq(r5.openDt, null, "형식 다른 공개 시각은 null"); eq(r5.ba, 263285000, "기초금액은 유지");
+eq(readBssamt([{ ...item, bssamtOpenDt: "2026-10-29 09:49" }], "000").openDt, "2026-10-29 09:49", "초 없는 형식 허용");
+
 console.log(bad === 0 ? "OK bssamt" : `FAIL ${bad}`);
 process.exit(bad === 0 ? 0 : 1);

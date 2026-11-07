@@ -1,4 +1,4 @@
-// fn-collect-bssamt v2 (2026-11-07) — 대상 조회를 bssamt_targets RPC로 (m70 적용 후에만 동작)
+// fn-collect-bssamt v3 (2026-11-07) — 대상은 bssamt_targets RPC(m70), 건별 예외·요청 타임아웃(리뷰 반영)
 // 개찰 전 공고의 기초금액·A값을 나라장터 기초금액 API로 받아 자동 예측(g2b_auto) 재계산 재료로 쓴다.
 // dry_run이면 조회·로그만 하고 저장하지 않는다. 스펙: .scratch/auto-pred-bssamt/spec.md
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
@@ -11,6 +11,7 @@ const KEY_NAME = 'prod_bid_public';
 const OP = 'getBidPblancListInfoCnstwkBsisAmount';
 const TIME_BUDGET_MS = 100_000; // 함수 실행 한도(150초) 전에 멈춘다
 const MAX_LIMIT = 100;          // 실행당 상한 — 하루 2회, 키 한도 1,000 중 공고 수집 48건/일
+const FETCH_TIMEOUT_MS = 15_000; // 한 요청이 멈춰도 시간 예산 확인이 돌게
 
 // baSegOf(utils.js)와 같은 금액대 경계 — 추정 기초금액과 실제값의 금액대가 바뀌는 건수 측정용
 const seg = (ba: number) => (ba < 1e8 ? 'S1' : ba < 3e8 ? 'S2' : ba < 1e9 ? 'S3' : ba < 3e9 ? 'S4' : 'S5');
@@ -42,7 +43,12 @@ Deno.serve(async (req: Request) => {
     const no = String(t.pn_no).split('-')[0];
     const url = buildUrl(SERVICE, OP, key.decrypted_secret, { inqryDiv: 2, bidNtceNo: no, pageNo: 1, numOfRows: 5 });
     const t0 = Date.now();
-    const resp = await fetchG2B(url);
+    let resp: Awaited<ReturnType<typeof fetchG2B>>;
+    // 네트워크 오류·타임아웃 한 건이 실행 전체(앞서 받은 결과·소진한 호출)를 버리지 않게 건별로 잡는다
+    try { resp = await fetchG2B(url, FETCH_TIMEOUT_MS); }
+    catch (e) {
+      resp = { ok: false, status: 0, items: [], totalCount: 0, error: String(e).slice(0, 200), resultCode: undefined, resultMsg: undefined, raw: null };
+    }
     stats.called++;
     await incrementApiCall(KEY_NAME, 1).catch(() => 0);
     const ok = resp.ok;

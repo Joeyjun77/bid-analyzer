@@ -20,8 +20,9 @@ export function buildUrl(
   return `${G2B_BASE}/${path}/${operation}?${qs.toString()}`;
 }
 
-export async function fetchG2B<T = any>(url: string) {
-  const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+// timeoutMs: 넘기면 그 시간 뒤 요청을 끊는다(AbortError throw). 생략하면 기존 동작.
+export async function fetchG2B<T = any>(url: string, timeoutMs?: number) {
+  const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' }, signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined });
   const status = res.status;
   let body: any = null;
   try { body = await res.json(); }

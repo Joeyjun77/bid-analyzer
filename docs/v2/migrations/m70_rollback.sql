@@ -18,13 +18,14 @@ UPDATE public.bid_predictions pr SET
   b_pred_bid_amount = (b.row_before->>'b_pred_bid_amount')::numeric,
   b_pred_floor_pass_prob = (b.row_before->>'b_pred_floor_pass_prob')::numeric,
   b_pred_grain = b.row_before->>'b_pred_grain', b_pred_src = b.row_before->>'b_pred_src'
-FROM b WHERE pr.id = b.pred_id AND pr.match_status = 'pending';
+FROM b WHERE pr.id = b.pred_id AND pr.match_status = 'pending'
+  AND pr.opt_adj = (b.row_before->>'opt_adj')::numeric; -- 백업 뒤 다시 예측된 행에 옛 금액을 덮지 않게
 
 -- 2) (필요 시) 이 수집이 채운 공고 값 비우기
 -- UPDATE public.bid_notices SET ba = NULL, av = NULL WHERE bssamt_checked_at IS NOT NULL;
 
 -- 3) 함수·뷰 원복
-DROP FUNCTION IF EXISTS public.apply_bssamt_batch(jsonb);
+DROP FUNCTION IF EXISTS public.apply_bssamt_batch(jsonb); -- m71 판도 함께 제거
 DROP FUNCTION IF EXISTS public.bssamt_targets(integer);
 
 DO $m$ DECLARE d text := pg_get_functiondef('public.auto_predict_from_notices'::regproc);
@@ -42,10 +43,13 @@ BEGIN
 END $m$;
 
 DO $m$ DECLARE d text := pg_get_viewdef('public.v_collect_health'::regclass, true);
+  o1 text := E', ''getBidPblancListInfoCnstwkBsisAmount''::text])';
+  o2 text := E', (''bssamt''::text,''getBidPblancListInfoCnstwkBsisAmount''::text,''WARN''::text))';
 BEGIN
-  d := replace(d, E', ''getBidPblancListInfoCnstwkBsisAmount''::text])', E'])');
-  d := replace(d, E', (''bssamt''::text,''getBidPblancListInfoCnstwkBsisAmount''::text,''WARN''::text))', E')');
-  EXECUTE 'CREATE OR REPLACE VIEW public.v_collect_health AS ' || d;
+  IF position(o1 IN d) = 0 OR position(o2 IN d) = 0 THEN RAISE EXCEPTION 'rollback: v_collect_health bssamt 줄 없음'; END IF;
+  d := replace(replace(d, o1, E'])'), o2, E')');
+  -- m69가 만든 security_invoker를 유지(OR REPLACE는 WITH 없으면 옵션을 지운다 — m71)
+  EXECUTE 'CREATE OR REPLACE VIEW public.v_collect_health WITH (security_invoker = true) AS ' || d;
 END $m$;
 
 -- 컬럼·백업 표는 기록용으로 남긴다(지우려면 아래)
