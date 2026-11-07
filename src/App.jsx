@@ -688,7 +688,7 @@ export default function App(){
         // 1) SUCVIEW 상세 파일
         if(isSucviewFile(raw)){
           const detail=parseSucview(raw,file.name);if(!detail.pn_no)throw new Error("공고번호 없음");
-          await sbSaveDetail(detail);
+          const detailOk=await sbSaveDetail(detail); // 실패를 조용히 넘기지 않게 업로드 기록에 표시
           if(detail.participants&&detail.participants.length){
             try{
               await sbSaveParticipants({pn_no:detail.pn_no,od:detail.od,ag:detail.ag,canonical_ag:detail.ag,at:detail.at},detail.participants);
@@ -696,7 +696,7 @@ export default function App(){
             }
             catch(e){console.warn("참여업체 저장 실패:",e.message);}
           }
-          logs.push({name:file.name,type:"ok",text:`[상세] ${detail.ag} | 예가15개 + 참여${detail.participant_count}건`});
+          logs.push({name:file.name,type:detailOk?"ok":"err",text:`[상세] ${detail.ag} | 예가15개 + 참여${detail.participant_count}건${detailOk?"":" — 상세(bid_details) 저장 실패"}`});
           setUploadLog([...logs]);continue}
         // 2) 입찰서류함 (기초금액/추정가격 컬럼이 있는 경우) → 예측으로 처리
         const hdr0=(raw[0]||[]).map(v=>String(v).trim());const hdr1=(raw[1]||[]).map(v=>String(v).trim());

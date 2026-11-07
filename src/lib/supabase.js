@@ -319,7 +319,9 @@ export async function sbFetchWatchlistHistory(days=14){
 
 // ─── bid_details CRUD ────────────────────────────────────
 export async function sbSaveDetail(detail){
-  const body=sanitizeJson(JSON.stringify(detail));
+  // participants는 bid_participants로 따로 저장 — bid_details에 없는 컬럼이라 함께 보내면 PostgREST가 행 전체를 거부한다(2026-06-09~11-07 상세 미저장 원인)
+  const {participants,...row}=detail;
+  const body=sanitizeJson(JSON.stringify(row));
   const res=await authedFetch("/rest/v1/bid_details?on_conflict=pn_no",{method:"POST",headers:{...JSON_H,"Prefer":"resolution=merge-duplicates,return=minimal"},body});
   return res.ok}
 export async function sbFetchDetails(){
