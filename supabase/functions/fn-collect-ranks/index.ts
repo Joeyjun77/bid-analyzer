@@ -1,4 +1,5 @@
-// fn-collect-ranks v1 (2026-11-08) — 개찰 전체 순위 수집 (goyang-focus P3)
+// fn-collect-ranks v2 (2026-11-08) — 개찰 전체 순위 수집 (goyang-focus P3)
+// v2: 페이지 로그를 저장 뒤에 남겨 마지막 페이지 rows_saved에 실제 저장 건수 기록(v_collect_health ranks 줄)
 // 대상은 rank_targets RPC(m76): 고양 include × 대상 업종 × 개찰 완료 × 미수집. 저장은 save_bid_ranks(m76) → api_bid_ranks.
 // dry_run이 기본 — 조회·로그만, 저장은 dry_run:false를 명시할 때만. nos를 주면 대상 RPC 대신 그 공고만 본다(dry_run 전용).
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
@@ -39,6 +40,7 @@ Deno.serve(async (req: Request) => {
   for (const no of targets) {
     if (Date.now() - started > TIME_BUDGET_MS) { stats.stopped_by = 'time_budget'; break; }
     const items: unknown[] = [];
+    const logs: Record<string, unknown>[] = [];
     let total = 0, pages = 0, err: string | null = null;
     for (let page = 1; page <= MAX_PAGES; page++) {
       if (key.calls_today + stats.calls >= key.daily_limit) { err = 'daily_limit'; stats.stopped_by = 'daily_limit'; break; }
@@ -49,10 +51,10 @@ Deno.serve(async (req: Request) => {
       catch (e) { resp = { ok: false, status: 0, items: [], totalCount: 0, error: String(e).slice(0, 200), resultCode: undefined, resultMsg: undefined, raw: null }; }
       stats.calls++;
       await incrementApiCall(KEY_NAME, 1).catch(() => 0);
-      await logApiIngestion({ operation: OP, service: SERVICE, params, page_no: page, rows_requested: PAGE,
+      logs.push({ operation: OP, service: SERVICE, params, page_no: page, rows_requested: PAGE,
         rows_received: resp.items.length, total_count: resp.totalCount ?? null, rows_saved: 0,
         status: resp.ok ? 'ok' : 'error', result_code: resp.resultCode ?? null, result_msg: resp.resultMsg ?? null,
-        error_detail: resp.ok ? null : (resp.error ?? null), duration_ms: Date.now() - t0 }).catch(() => {});
+        error_detail: resp.ok ? null : (resp.error ?? null), duration_ms: Date.now() - t0 });
       if (!resp.ok) { err = `p${page} [${resp.status}] ${resp.resultCode ?? ''} ${resp.error ?? resp.resultMsg ?? ''}`.slice(0, 200); break; }
       pages++;
       total = resp.totalCount || total;
@@ -74,6 +76,8 @@ Deno.serve(async (req: Request) => {
         stats.rows_saved += saved;
       }
     }
+    if (logs.length) logs[logs.length - 1].rows_saved = saved;
+    for (const l of logs) await logApiIngestion(l).catch(() => {});
     per.push({ no, state, total, received: items.length, pages, saved, err });
     if (stats.stopped_by === 'daily_limit') break;
   }

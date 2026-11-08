@@ -7,7 +7,8 @@ eq(TOP_TABS.map(t => t.id).join(), "notices,predict,performance,g2b_sheet,data",
 eq(SUB_TABS.some(t => t.id === "v2_preview"), false, "V2 미리보기 삭제");
 eq(SUB_TABS.some(t => t.id === "dash") || TOP_TABS.some(t => t.id === "dash"), false, "대시보드 삭제");
 eq(SUB_TABS.map(t => t.id).includes("analysis") && SUB_TABS.map(t => t.id).includes("chat"), true, "분석·AI 상담은 보조");
-eq(SUB_TABS.map(t => t.id).join(), "analysis,chat,feedback,quality,agency_predict_v6,agency_floor", "보조 순서");
+eq(SUB_TABS.map(t => t.id).join(), "analysis,chat,feedback,quality,agency_predict_v6,agency_floor,goyang", "보조 순서");
+eq(REF_ONLY_TABS.has("goyang"), false, "고양 탭은 정보 표시 — 추천 배너 대상 아님");
 eq(DEFAULT_TAB, "notices", "첫 화면");
 eq(REF_ONLY_TABS.has("agency_predict_v6") && REF_ONLY_TABS.has("agency_floor") && REF_ONLY_TABS.has("chat"), true, "참고용 배너 대상");
 eq(REF_ONLY_TABS.has("analysis"), false, "분석은 배너 없음");

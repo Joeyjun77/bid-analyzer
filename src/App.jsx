@@ -11,7 +11,9 @@ import { bidVerdict } from "./lib/rec1stPossible.js";
 import DataTab from "./components/DataTab.jsx";
 import { TOP_TABS, SUB_TABS, DEFAULT_TAB, REF_ONLY_TABS, REF_ONLY_BANNER } from "./lib/tabs.js";
 import { G2B_AUTO_SHOW, mergeAutoRows } from "./lib/g2bAuto.js";
-import { sbFetchG2BAuto } from "./lib/supabase.js";
+import { sbFetchG2BAuto, sbFetchGoyangAgTexts } from "./lib/supabase.js";
+import GoyangTab from "./components/GoyangTab.jsx";
+import { filterGoyang } from "./lib/goyang.js";
 import PerformanceTab from "./components/PerformanceTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
@@ -385,6 +387,9 @@ export default function App(){
   const[claudeApiKey,setClaudeApiKey]=useState(""); // Phase 5.4-B: Edge Function 프록시 사용, 레거시 호환 유지
   const[compFilter,setCompFilter]=useState("all");
   const[agFilter,setAgFilter]=useState(""); // 예측 리스트 발주기관 필터 (""=전체)
+  const[goyangOnly,setGoyangOnly]=useState(false); // 예측 리스트 '고양만' (기관 마스터 include 표기, 목록 필터만)
+  const[goyangAgs,setGoyangAgs]=useState(null);
+  useEffect(()=>{if(goyangOnly&&!goyangAgs)sbFetchGoyangAgTexts().then(a=>setGoyangAgs(new Set(a)))},[goyangOnly,goyangAgs]);
   const[predListShow,setPredListShow]=useState(50); // 리스트 표시 건수 (더보기)
   const[hideYuchal,setHideYuchal]=useState(true); // 유찰 건 숨김 (기본 ON)
   const[hideSuui,setHideSuui]=useState(true); // 수의계약 건 숨김 (기본 ON)
@@ -907,12 +912,13 @@ export default function App(){
     if(hideYuchal)list=list.filter(x=>!(x.actual_winner&&(x.actual_winner==="유찰"||x.actual_winner==="유찰(무)")));
     if(hideSuui)list=list.filter(x=>!(x.is_negotiation===true&&x.actual_adj_rate==null));
     if(agFilter){const q=agFilter.trim().toLowerCase();if(q)list=list.filter(x=>(x.ag||"").trim().toLowerCase()===q)} // 발주기관 정확일치 (각 기관 개별 — 고양시≠고양시 덕양구)
+    if(goyangOnly)list=filterGoyang(list,goyangAgs); // 목록만 거름 — 행 객체 그대로라 카드 계산값 불변
     // Phase ①: 예상 참가자수 버킷 필터 (분포 미해석·종심제 행은 필터 활성 시 제외)
     if(pcFilter&&pcDistMap){list=list.filter(x=>{if(isLhJongsim(x.at,x.ba,x.pn))return false;const d=resolvePcDist(pcDistMap,{at:x.at,canonicalAg:x.canonical_ag||x.ag,ba:x.ba});return d&&pcBucketOf(d.p50)===pcFilter})}
     // Phase ①: 예상 참가자수 정렬 (계산 필드 — 공용 sortFn 미변경, null은 항상 뒤로)
     if(predSort.key==="exp_pc"){const val=x=>{const d=pcDistMap?resolvePcDist(pcDistMap,{at:x.at,canonicalAg:x.canonical_ag||x.ag,ba:x.ba}):null;return d?d.p50:null};
       return[...list].sort((a,b)=>{const va=val(a),vb=val(b);if(va==null&&vb==null)return 0;if(va==null)return 1;if(vb==null)return -1;return predSort.dir==="asc"?va-vb:vb-va})}
-    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,agFilter,predSort,hideYuchal,hideSuui,pcFilter,pcDistMap]);
+    return[...list].sort((a,b)=>sortFn(a,b,predSort.key,predSort.dir))},[predictions,compFilter,agFilter,goyangOnly,goyangAgs,predSort,hideYuchal,hideSuui,pcFilter,pcDistMap]);
 
   // Phase 23-9: pending 건 v2 backfill (분포 map 로드 후 NULL 행에 적용)
   // 라운드 11 권고: ref를 scoreSnap으로 변환 — ownScore 변경 시 stale row 재계산
@@ -1330,6 +1336,8 @@ export default function App(){
               style={{padding:"6px 12px",fontSize:12,background:C.bg3,border:"1px solid "+(agFilter?C.gold+"66":C.bdr),borderRadius:5,color:C.txt,minWidth:320,flex:"1 1 320px",maxWidth:480}}/>
             <datalist id="agFilterOptions">{agOptions.map(a=><option key={a} value={a}/>)}</datalist>
             {agFilter&&<button onClick={()=>{setAgFilter("");setPredListShow(50)}} title="전체 보기" style={{padding:"4px 8px",fontSize:10,background:C.bg3,border:"1px solid "+C.bdr,borderRadius:5,color:C.txd,cursor:"pointer"}}>✕</button>}
+            <label title="고양 기관 마스터(핵심 영역 포함 기관) 기준으로 목록만 거릅니다. 예측값은 바뀌지 않습니다." style={{fontSize:12,color:goyangOnly?C.gold:C.txm,display:"inline-flex",alignItems:"center",gap:3,cursor:"pointer"}}>
+              <input type="checkbox" checked={goyangOnly} onChange={e=>{setGoyangOnly(e.target.checked);setPredListShow(50)}}/>고양만</label>
             {/* Phase ①: 예상 참가자수 버킷 필터 — 팩트 필터일 뿐, 낙찰 보장 아님 */}
             <select value={pcFilter} onChange={e=>{setPcFilter(e.target.value);setPredListShow(50)}} title="예상 참가자수 필터 — 같은 발주기관·금액대의 직전 1년 개찰 실측 중앙값 기준. 참가자가 적을수록 1순위 구간이 넓어집니다 (100명 미만 실측 1~3%, 그 외 약 0.6% — 낙찰 보장 아님)"
               style={{padding:"6px 10px",fontSize:12,background:C.bg3,border:"1px solid "+(pcFilter?"#5dca9666":C.bdr),borderRadius:5,color:pcFilter?"#5dca96":C.txt,cursor:"pointer"}}>
@@ -1828,6 +1836,9 @@ export default function App(){
 
     {/* ═══ 발주사 하한 예측 탭 (V1, 2026-05-13) ═══ */}
     {tab==="agency_floor"&&<AgencyFloorTab/>}
+
+    {/* ═══ 고양 집중 탭 (goyang-focus P4) ═══ */}
+    {tab==="goyang"&&<GoyangTab/>}
 
     {/* ═══ G2B 양식 탭 ═══ */}
     {tab==="g2b_sheet"&&<G2BSheetTab key={g2bAgency} recs={g2bRecs} initialAgency={g2bAgency}/>}

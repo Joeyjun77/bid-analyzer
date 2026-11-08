@@ -376,6 +376,24 @@ export async function sbFetchParticipantDistribution(ag,n=30,bucket=0.01){
     return await res.json();
   }catch(e){return null;}
 }
+// 고양 탭 집계(m78 goyang_profile) — 탭을 열 때만 호출. 실패 시 null.
+export async function sbFetchGoyangProfile({ grp = null, agCode = null, targetOnly = false, at = null } = {}){
+  try{
+    const res=await authedFetch("/rest/v1/rpc/goyang_profile",
+      {method:"POST",headers:JSON_H,body:JSON.stringify({p_grp:grp,p_ag_code:agCode,p_target_only:targetOnly,p_at:at})});
+    if(!res.ok)return null;
+    return await res.json();
+  }catch(e){return null;}
+}
+// '고양만' 목록 필터용 include 기관 표기(m78 goyang_ag_texts). 실패 시 빈 배열.
+export async function sbFetchGoyangAgTexts(){
+  try{
+    const res=await authedFetch("/rest/v1/rpc/goyang_ag_texts",{method:"POST",headers:JSON_H,body:"{}"});
+    if(!res.ok)return [];
+    const v=await res.json();
+    return Array.isArray(v)?v.map(r=>typeof r==="string"?r:r.goyang_ag_texts):[];
+  }catch(e){return [];}
+}
 // 경쟁사 추적 — 발주처 최근 n건에서 특정 업체(co_no 정확 또는 co_name 부분)의 사정율 추이 배열. 실패 시 빈 배열.
 export async function sbFetchParticipantCompanyTrace(ag,query,n=30){
   try{

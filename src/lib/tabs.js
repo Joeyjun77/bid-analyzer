@@ -15,6 +15,7 @@ export const SUB_TABS = [
   { id: "quality", ch: "🔬 검증" },
   { id: "agency_predict_v6", ch: "💎 발주처 예측 V6" },
   { id: "agency_floor", ch: "🎯 발주사 하한" },
+  { id: "goyang", ch: "🏙 고양" },
 ];
 
 export const DEFAULT_TAB = "notices";
