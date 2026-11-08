@@ -49,6 +49,13 @@
 - 대상: 고양 마스터 include 코드 × `is_target` 업종 × 개찰 완료 공고(D1). 키: `prod_scsbid_info`, 사용량은 `v_collect_health`로 감시.
 - 업체 추첨번호(`drwtNo1/2`)는 `bid_prelim_sets.drwt_nums`(번호별 선택 횟수)와 교차 검증 가능.
 
+### 2.3 P3 수집기 구현·1회 실행 (2026-11-08, m76 + `fn-collect-ranks` v1)
+- 테이블 `api_bid_ranks`(공고 자연키 4 + bizno PK) · `api_bid_rank_notices`(전 페이지 수집 완료 표시), RPC `rank_targets`·`save_bid_ranks`(service_role만). 함수 소스 `supabase/functions/fn-collect-ranks/index.ts`.
+- 1회 실행: 대상 26공고 → 25공고 51,315행 저장(수신=저장), 미개찰/0건 1공고, API 64회, 37.9초, 오류 0.
+- 용량: 11 MB(행당 226 B), DB 766 MB(1 GB 조치 기준 미만).
+- 업로드 대조 6,771쌍: 금액 일치 6,770. 순위 차이 2,050건은 모두 API 순위 NULL(낙찰하한선 미달 등) — 업로드는 0 이하로 표기. 둘 다 순위가 있는데 다른 경우 0.
+- 정기 실행(cron)은 미등록 — 사용자 승인 후. 신규 대상은 하루 0~1공고 수준.
+
 ## 3. D1(업종 범위)에 따라 달라지는 수치
 현재 수집 범위 = `bid_notices.is_target`(전기·정보통신·전문소방). 고양 공고는 2026-04-17부터 코드로 잡힘(약 7개월).
 
