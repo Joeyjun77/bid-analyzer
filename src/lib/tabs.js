@@ -1,11 +1,13 @@
 // 탭 구성 — 스펙 docs/superpowers/specs/2026-10-22-bid-ops-funnel-redesign-design.md §6.1 + 사용자 결정(2026-10-23):
 // 예측 기록·G2B 양식은 상단 유지, 분석·AI 상담은 보조, 대시보드·V2 미리보기 삭제.
+// 사용자 결정(2026-11-08): 고양 탭(정보 표시 전용, 추천 없음)은 상단 끝.
 export const TOP_TABS = [
   { id: "notices", ch: "오늘의 공고" },
   { id: "predict", ch: "예측 기록" },
   { id: "performance", ch: "성과" },
   { id: "g2b_sheet", ch: "G2B 양식" },
   { id: "data", ch: "데이터" },
+  { id: "goyang", ch: "🏙 고양" },
 ];
 
 export const SUB_TABS = [
@@ -15,7 +17,6 @@ export const SUB_TABS = [
   { id: "quality", ch: "🔬 검증" },
   { id: "agency_predict_v6", ch: "💎 발주처 예측 V6" },
   { id: "agency_floor", ch: "🎯 발주사 하한" },
-  { id: "goyang", ch: "🏙 고양" },
 ];
 
 export const DEFAULT_TAB = "notices";

@@ -348,7 +348,7 @@ function AgencyFloorTab(){
 export default function App(){
   const{isAdmin}=useAuth();
   const[tab,setTab]=useState(DEFAULT_TAB);
-  const[moreTabs,setMoreTabs]=useState(false); // 보조 메뉴(SUB_TABS) 접기 — 상단은 TOP_TABS 5개만 기본 노출
+  const[moreTabs,setMoreTabs]=useState(false); // 보조 메뉴(SUB_TABS) 접기 — 상단은 TOP_TABS 6개만 기본 노출
   const[recs,setRecs]=useState([]);
   const[allS,setAllS]=useState({ts:{},as:{}});const[newS,setNewS]=useState({ts:{},as:{}});const[oldS,setOldS]=useState({ts:{},as:{}});
   const[drag,setDrag]=useState(false);const[dragPred,setDragPred]=useState(false);const[busy,setBusy]=useState(false);const[msg,setMsg]=useState({type:"",text:""});
