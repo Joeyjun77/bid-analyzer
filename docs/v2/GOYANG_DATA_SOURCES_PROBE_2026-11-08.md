@@ -4,7 +4,7 @@
 | 원천 | 판정 | 근거 |
 |---|---|---|
 | 복수예비가격 15개 · 추첨 4개 · 예정가격 | **API로 이미 충분 — 보강 불필요** | `fn-collect-prepc`가 매일 `bid_prelim_sets`에 공사 전 업종을 적재(2024-07-15~, 약 25만 세트). 고양 기록 2024-07 이후 687건 중 672건(97.8%) 연결, 추첨 4개 평균 = 예정가격 일치 621/627 세트(99%) |
-| 참여업체 전체 순위 | **업로드로는 부족 — API 후보 1개 실측 필요** | `bid_participants`는 SUCVIEW 업로드 전용(2026-08-20~, 공고 342개). 고양 공고는 25개뿐 |
+| 참여업체 전체 순위 | **API로 수집 가능 — 보강 대상** (11/8 실측) | 업로드(`bid_participants`, 공고 342개 중 고양 25)로는 부족. `getOpengResultListInfoOpengCompt`가 공고별 전체 투찰자 순위·금액·추첨번호를 반환, 업로드 행과 순위·사업자번호·금액 일치 |
 
 업로드 행 변경 0건, 마이그레이션 0건. 운영 DB는 가벼운 조회만 사용.
 
@@ -29,8 +29,25 @@
 - API 현황:
   - `getOpengResultListInfoCnstwk`: 낙찰자 1명만(`opengCorpInfo`).
   - 2026-05-22 실측(Z_DETAIL_API_PROBE): 순위 후보 3개(`getBidPrtcptRankListInfoCnstwk`·`getBidRankListInfoCnstwk`·`getOpengResultRankListInfoCnstwk`) 모두 404.
-  - **미실측 후보**: `getOpengResultListInfoOpengCompt`(개찰결과 개찰완료 목록 — 업체별 순위·투찰금액 반환으로 알려짐, **미검증**). 실측하려면 테스트 Edge Function 배포(또는 `fn-test-prepc-api` 후보 목록 수정 후 재배포)가 필요 → 운영 배포라 사용자 승인 대상.
-- 저장 제안(실측 성공 시): `bid_participants`에 섞지 않고 별도 테이블(예: `api_bid_ranks`), 고양 마스터 include 코드의 개찰 완료 공고만. 업로드 행 UPDATE 금지.
+  - **`getOpengResultListInfoOpengCompt` 실측 성공 (2026-11-08, 사용자 승인 후 1회성 함수 `fn-test-opengcompt` 배포 → 호출 4회 → 410 스텁으로 닫음, 저장 없음)**
+
+### 2.1 실측 결과 (ScsbidInfoService, 파라미터 `bidNtceNo`만, `numOfRows=999`)
+| 공고 | 업종 | totalCount | 비고 |
+|---|---|---|---|
+| R26BK01786665 (고양시) | 전기 | 3,445 | 999행/페이지 → 4페이지 필요 |
+| R26BK01799293 (고양시) | 정보통신 | 1,885 | 2페이지 |
+| R26BK01798745 (고양시) | 전문소방 | 1,035 | 2페이지 |
+| R26BK01565204 (고양) | — | 223 | 업로드 223행과 건수 일치 |
+
+- 필드(20개): `opengRsltDivNm`(개찰완료), `bidNtceNo·Ord·bidClsfcNo·rbidNo`, **`opengRank`**, **`prcbdrBizno`**(사업자번호), `prcbdrNm`, `prcbdrCeoNm`, **`bidprcAmt`**(투찰금액), **`bidprcrt`**(투찰률), `rmrk`(정상 등), **`drwtNo1`·`drwtNo2`**(업체가 고른 추첨번호 2개), `bidprcDt`(투찰 시각), `bidPrceEvlVal`·`techEvlVal`·`totalEvlAmtVal`·`techEvlNaturVal`(평가값), `cnsttyAccotBidAmtUrl`.
+- 업로드 대조(R26BK01565204 상위 3위): 순위·사업자번호·투찰금액 **완전 일치**.
+- **단위 주의(V2 측정 공간)**: API `bidprcrt` = 투찰금액 ÷ **예정가격** ×100 (89.898 ≈ 32,094,568 ÷ 35,700,700). 업로드 `bid_participants.bid_rate`(89.7709)는 예정가격·기초금액(88.644) 어느 쪽과도 다른 기준(미확인). **두 값을 같은 칸에 섞지 말 것** — 저장 시 금액을 원본으로, 비율은 기준을 칼럼명에 명시.
+- 호출량: 공고당 ⌈투찰자/999⌉회(대상 업종 고양 공고 1~4회). D1(대상 업종만) 기준 고양 하루 약 0.1~0.5회.
+
+### 2.2 저장 제안 (P3 구현 시)
+- `bid_participants`(업로드)에 섞지 않고 별도 테이블(예: `api_bid_ranks`: 자연키 4개 + opengRank + bizno + amount + bidprcrt_plnprc + drwt_no1/2 + bidprc_dt). 업로드 행 UPDATE 금지.
+- 대상: 고양 마스터 include 코드 × `is_target` 업종 × 개찰 완료 공고(D1). 키: `prod_scsbid_info`, 사용량은 `v_collect_health`로 감시.
+- 업체 추첨번호(`drwtNo1/2`)는 `bid_prelim_sets.drwt_nums`(번호별 선택 횟수)와 교차 검증 가능.
 
 ## 3. D1(업종 범위)에 따라 달라지는 수치
 현재 수집 범위 = `bid_notices.is_target`(전기·정보통신·전문소방). 고양 공고는 2026-04-17부터 코드로 잡힘(약 7개월).
@@ -53,7 +70,7 @@
 
 ## 4. 다음 단계 제안
 1. ~~D1 결정~~ → 위 결정 반영.
-2. 참여업체 API 후보 `getOpengResultListInfoOpengCompt` 실측(테스트 함수 배포 승인 필요). 실패 시 참여업체는 업로드 유지로 확정.
+2. ~~참여업체 API 후보 실측~~ → 성공(§2.1). 다음: P3 수집기(`api_bid_ranks` + 수집 함수) 설계 — 새 테이블·Edge Function이라 착수 전 승인.
 3. P4에서 고양 프로파일은 `bid_prelim_sets`를 `bid_ntce_no`로 붙여 추첨 번호 빈도·예비가격 분포를 표시(새 수집 불필요).
 
 ## 하네스
@@ -62,3 +79,4 @@
 | 분류 | Neutral (조회만, 저장값 미접촉) |
 | 마이그레이션 | 0 |
 | 업로드 행 변경 | 0 |
+| Edge Function | `fn-test-opengcompt` v1(실측, API 4회) → v2 410 스텁(닫음 확인 http=410). 소스 저장소 미보관(1회성) |
