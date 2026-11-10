@@ -7,6 +7,7 @@ import { GOYANG_GRP_LABEL, drawExpected, rebin, withShare, summarize } from "../
 // 정보 표시 전용: 사정률은 기술 통계(100% 기준)만, 승률·WIN-zone·확정/제출 없음. 모든 수치에 n.
 // 투찰금액은 여기서 계산하지 않는다 — 낙찰하한율·A값이 반영된 값은 투찰 카드에만 있다.
 // 데이터는 goyang_profile RPC 한 번 호출 — 선택이 바뀔 때만 다시 부른다.
+// 불러오는 동안: 로딩바 표시, 이전 내용은 흐리게 두고 클릭·키보드 조작을 막는다(inert), 선택줄도 잠근다.
 
 const GREEN = "#5dca96", RED = "#e24b4a";
 const box = { background: C.bg2, border: "1px solid " + C.bdr, borderRadius: 8, padding: 14, marginBottom: 12 };
@@ -133,7 +134,7 @@ export default function GoyangTab() {
     <div style={{ padding: "4px 0" }}>
       <div style={{ ...box, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <span style={note}>기관</span>
-        <select value={scope} onChange={(e) => setScope(e.target.value)} style={{ ...sel, minWidth: 260 }}>
+        <select value={scope} disabled={loading} onChange={(e) => setScope(e.target.value)} style={{ ...sel, minWidth: 260 }}>
           <option value="all">고양 전체</option>
           {Object.entries(GOYANG_GRP_LABEL).map(([g, l]) => <option key={g} value={g}>{g} {l}</option>)}
           <optgroup label="개별 기관 (기록 건수)">
@@ -141,19 +142,26 @@ export default function GoyangTab() {
           </optgroup>
         </select>
         <span style={note}>업종</span>
-        <label style={{ fontSize: 12, color: C.txt }}><input type="radio" checked={!targetOnly} onChange={() => setTargetOnly(false)} /> 전체</label>
-        <label style={{ fontSize: 12, color: C.txt }}><input type="radio" checked={targetOnly} onChange={() => setTargetOnly(true)} /> 대상 업종(전기·통신·소방)</label>
+        <label style={{ fontSize: 12, color: C.txt }}><input type="radio" disabled={loading} checked={!targetOnly} onChange={() => setTargetOnly(false)} /> 전체</label>
+        <label style={{ fontSize: 12, color: C.txt }}><input type="radio" disabled={loading} checked={targetOnly} onChange={() => setTargetOnly(true)} /> 대상 업종(전기·통신·소방)</label>
         <span style={note}>계약유형</span>
-        <select value={at} onChange={(e) => setAt(e.target.value)} style={sel}>
+        <select value={at} disabled={loading} onChange={(e) => setAt(e.target.value)} style={sel}>
           <option value="">전체</option>
           {["지자체", "교육청", "조달청", "기타"].map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
-        {loading && <span style={note}>불러오는 중…</span>}
       </div>
+
+      {loading && <div role="status" style={{ ...box, borderColor: C.gold, textAlign: "center" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.gold }}>고양 자료를 불러오는 중…</div>
+        <div style={{ height: 4, background: C.bg3, borderRadius: 2, overflow: "hidden", marginTop: 8 }}>
+          <div style={{ width: "40%", height: "100%", background: C.gold, borderRadius: 2, animation: "goyangLoad 1.1s ease-in-out infinite alternate" }} />
+        </div>
+        <style>{`@keyframes goyangLoad{from{margin-left:0}to{margin-left:60%}}`}</style>
+      </div>}
 
       {!loading && !data && <div style={{ ...box, color: RED, fontSize: 12 }}>고양 데이터를 불러오지 못했습니다(로그인·권한 확인).</div>}
 
-      {data && s && <>
+      {data && s && <div inert={loading ? "" : undefined} aria-busy={loading} style={{ opacity: loading ? 0.3 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
         <div style={box}>
           <div style={h}>한눈에 보기</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -331,7 +339,7 @@ export default function GoyangTab() {
             고양 정의: 기관 마스터(include) 기준. 학교 2곳(저동고·자운학교)은 소재 미확인이나 포함.
           </div>
         </div>
-      </>}
+      </div>}
     </div>
   );
 }
