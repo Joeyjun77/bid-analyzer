@@ -43,3 +43,20 @@ export function summarize(vals) {
   const h = v.length >> 1;
   return { n: v.length, med: v.length % 2 ? v[h] : (v[h - 1] + v[h]) / 2, min: v[0], max: v[v.length - 1], lt100: v.filter((x) => x < 100).length };
 }
+
+// 값 목록을 u(0.0001 단위 개수: 1=0.0001, 10=0.001, 100=0.01, 1000=0.1, 2000=0.2) 폭 구간으로 묶는다(절삭).
+// 0.0001 단위 정수로 계산해 부동소수 오차를 피한다. fill이면 빈 구간도 0으로 채운다(구간이 적은 큰 단위에서만 쓴다).
+export function binVals(vals, u, fill = false) {
+  const m = new Map();
+  for (const v of vals || []) {
+    if (v == null || !isFinite(v)) continue;
+    const k = Math.floor(Math.round(v * 1e4) / u) * u;
+    m.set(k, (m.get(k) || 0) + 1);
+  }
+  if (!m.size) return [];
+  const ks = [...m.keys()].sort((a, b) => a - b);
+  const out = [];
+  if (fill) for (let k = ks[0]; k <= ks[ks.length - 1]; k += u) out.push({ lo: k / 1e4, n: m.get(k) || 0 });
+  else for (const k of ks) out.push({ lo: k / 1e4, n: m.get(k) });
+  return out;
+}

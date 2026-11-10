@@ -1,4 +1,4 @@
-import { filterGoyang, drawExpected, GOYANG_GRP_LABEL, rebin, withShare, summarize } from "../src/lib/goyang.js";
+import { filterGoyang, drawExpected, GOYANG_GRP_LABEL, rebin, withShare, summarize, binVals } from "../src/lib/goyang.js";
 
 let bad = 0;
 const eq = (got, exp, msg) => { if (got !== exp) { console.error(`XX ${msg}: got ${got} expect ${exp}`); bad++; } };
@@ -28,6 +28,16 @@ eq(JSON.stringify(rebin(h, 2)), JSON.stringify([{ lo: 99.6, n: 3 }, { lo: 99.8, 
 eq(JSON.stringify(rebin([[-0.1, 4], [0, 6]], 1)), JSON.stringify([{ lo: -0.1, n: 4 }, { lo: 0, n: 6 }]), "음수 구간");
 eq(JSON.stringify(rebin([[-0.1, 4], [0, 6]], 2)), JSON.stringify([{ lo: -0.2, n: 4 }, { lo: 0, n: 6 }]), "음수 0.2 구간은 아래로 내림");
 eq(rebin(null, 2).length, 0, "히스토그램 없으면 빈 배열");
+
+// 사정률 원래 값을 0.0001 단위 개수(u)만큼의 폭으로 묶기(절삭). fill이면 빈 구간을 0으로 채운다
+const vals = [99.5712, 99.5712, 99.5799, 100.01];
+eq(JSON.stringify(binVals(vals, 1)), JSON.stringify([{ lo: 99.5712, n: 2 }, { lo: 99.5799, n: 1 }, { lo: 100.01, n: 1 }]), "0.0001 단위: 같은 값끼리");
+eq(JSON.stringify(binVals(vals, 10)), JSON.stringify([{ lo: 99.571, n: 2 }, { lo: 99.579, n: 1 }, { lo: 100.01, n: 1 }]), "0.001 단위: 절삭");
+eq(JSON.stringify(binVals(vals, 100)), JSON.stringify([{ lo: 99.57, n: 3 }, { lo: 100.01, n: 1 }]), "0.01 단위");
+eq(JSON.stringify(binVals(vals, 1000, true)), JSON.stringify([{ lo: 99.5, n: 3 }, { lo: 99.6, n: 0 }, { lo: 99.7, n: 0 }, { lo: 99.8, n: 0 }, { lo: 99.9, n: 0 }, { lo: 100, n: 1 }]), "0.1 단위: 빈 구간 0");
+eq(JSON.stringify(binVals(vals, 2000, true)), JSON.stringify([{ lo: 99.4, n: 3 }, { lo: 99.6, n: 0 }, { lo: 99.8, n: 0 }, { lo: 100, n: 1 }]), "0.2 단위: 짝수 0.1 자리에서 시작");
+eq(binVals(null, 1).length, 0, "값 없으면 빈 배열");
+eq(binVals([null, 99.5], 1).length, 1, "빈 값은 제외");
 
 const sh = withShare([{ lo: 1, n: 1 }, { lo: 2, n: 3 }]);
 eq(sh[0].pct, 25, "비율");

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { C } from "../lib/constants.js";
 import { sbFetchGoyangProfile } from "../lib/supabase.js";
-import { GOYANG_GRP_LABEL, drawExpected, rebin, withShare, summarize } from "../lib/goyang.js";
+import { GOYANG_GRP_LABEL, drawExpected, rebin, withShare, summarize, binVals } from "../lib/goyang.js";
 
 // ─── 고양 집중 탭 (goyang-focus P4, issue 04 · m80 초보자용 개편) ─────────────────────
 // 정보 표시 전용: 사정률은 기술 통계(100% 기준)만, 승률·WIN-zone·확정/제출 없음. 모든 수치에 n.
@@ -45,16 +45,37 @@ function Bars({ bins, color, xLabel, tip, every = 1, height = 130 }) {
   );
 }
 
-// 구간·건수·비율·누적 표. 길어서 3단으로 나눠 놓는다
-function ShareTable({ rows, label }) {
+// 잘게 나눈 구간용: 값 위치에 세로선을 세운다(구간이 수백~수만 개라 막대를 나란히 놓을 수 없다). 빈 구간은 그리지 않는다
+function Stems({ bins, w, color, tip, height = 130 }) {
+  const lo = bins[0].lo, hi = bins[bins.length - 1].lo + w, span = hi - lo || 1;
+  const max = Math.max(...bins.map((b) => b.n));
+  const ticks = [];
+  for (let t = Math.ceil(lo * 2) / 2; t <= hi; t += 0.5) ticks.push(t);
+  return (
+    <div style={{ marginTop: 4 }}>
+      <svg viewBox={"0 0 1000 " + height} preserveAspectRatio="none" style={{ width: "100%", height, display: "block", background: C.bg3, borderRadius: 4 }}>
+        {bins.map((b) => {
+          const hgt = (b.n / max) * (height - 6);
+          return <rect key={b.lo} x={((b.lo - lo) / span) * 1000} y={height - hgt} width={Math.max(1.2, (w / span) * 1000)} height={hgt} fill={color(b)}><title>{tip(b)}</title></rect>;
+        })}
+      </svg>
+      <div style={{ position: "relative", height: 14 }}>
+        {ticks.map((t) => <span key={t} style={{ position: "absolute", left: ((t - lo) / span) * 100 + "%", transform: "translateX(-50%)", fontSize: 9, color: C.txd }}>{t.toFixed(1)}</span>)}
+      </div>
+    </div>
+  );
+}
+
+// 구간·건수·비율·누적 표. 길어서 3단으로 나눠 놓는다. cum=false면 누적 열을 뺀다(건수순 정렬일 때)
+function ShareTable({ rows, label, cum = true }) {
   const per = Math.ceil(rows.length / 3) || 1;
   return (
-    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 6 }}>
+    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start", marginTop: 6 }}>
       {[0, 1, 2].map((c) => rows.slice(c * per, (c + 1) * per)).filter((part) => part.length).map((part) => (
         <table key={part[0].lo} style={{ borderCollapse: "collapse", flex: "1 1 220px" }}>
-          <thead><tr><th style={{ ...th, textAlign: "left" }}>구간</th><th style={th}>건수</th><th style={th}>비율</th><th style={th}>누적</th></tr></thead>
+          <thead><tr><th style={{ ...th, textAlign: "left" }}>구간</th><th style={th}>건수</th><th style={th}>비율</th>{cum && <th style={th}>누적</th>}</tr></thead>
           <tbody>{part.map((r) => (
-            <tr key={r.lo}><td style={{ ...td, textAlign: "left" }}>{label(r)}</td><td style={td}>{n0(r.n)}</td><td style={td}>{pc1(r.pct)}</td><td style={{ ...td, color: C.txm }}>{pc1(r.cum)}</td></tr>
+            <tr key={r.lo}><td style={{ ...td, textAlign: "left" }}>{label(r)}</td><td style={td}>{n0(r.n)}</td><td style={td}>{pc1(r.pct)}</td>{cum && <td style={{ ...td, color: C.txm }}>{pc1(r.cum)}</td>}</tr>
           ))}</tbody>
         </table>
       ))}
@@ -70,6 +91,9 @@ const Card = ({ label, value, sub }) => (
   </div>
 );
 
+// 사정률 구간 단위: [0.0001 단위 개수, 표시]
+const UNITS = [[2000, "0.2"], [1000, "0.1"], [100, "0.01"], [10, "0.001"], [1, "0.0001"]];
+
 const BR1_KIND = {
   exact: { mark: "", tip: "업로드 기록의 값" },
   rank: { mark: "≈", tip: "순위 수집분으로 계산(낙찰선이 0.01%p 안팎으로 잡힘)" },
@@ -83,7 +107,7 @@ export default function GoyangTab() {
   const [data, setData] = useState(null);
   const [orgs, setOrgs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [step, setStep] = useState(2); // 사정률 구간 폭(0.1 단위 개수)
+  const [unit, setUnit] = useState(2000); // 사정률 구간 폭(0.0001 단위 개수)
   const [recentN, setRecentN] = useState(30);
   const [baIn, setBaIn] = useState("100000000");
 
@@ -106,9 +130,17 @@ export default function GoyangTab() {
   const s = data?.summary;
   const d24 = (data?.dist || []).find((r) => r.label === "최근 24개월");
   const q = d24?.pct; // [p10, p25, 중앙, p75, p90]
-  const adjBins = withShare(rebin(data?.hist, step));
-  const w = step / 10;
-  const adjLabel = (b) => b.lo.toFixed(1) + "~" + (b.lo + w).toFixed(1);
+  const coarse = unit >= 1000; // 0.2·0.1은 막대, 그보다 잘면 세로선
+  const dec = coarse ? 1 : unit === 100 ? 2 : unit === 10 ? 3 : 4;
+  const w = unit / 1e4;
+  const adjBins = withShare(binVals(data?.vals, unit, coarse));
+  const adjLabel = (b) => (dec <= 2 ? b.lo.toFixed(dec) + "~" + (b.lo + w).toFixed(dec) : b.lo.toFixed(dec));
+  const adjTip = (b) => adjLabel(b) + ": " + b.n + "건 (" + pc1(b.pct) + ", 누적 " + pc1(b.cum) + ")";
+  const adjColor = (b) => (b.lo + w > q[1] && b.lo < q[3] ? C.gold : "#6b5a2a");
+  const adjUsed = adjBins.filter((b) => b.n > 0);
+  const adjMax = Math.max(0, ...adjBins.map((b) => b.n));
+  const adjDup = adjUsed.filter((b) => b.n >= 2);
+  const adjTop = [...adjDup].sort((a, b) => b.n - a.n || a.lo - b.lo).slice(0, 30); // 1건짜리는 순서에 의미가 없어 뺀다
 
   const bids = data?.bids;
   const bidRaw = rebin(bids?.hist, 1);
@@ -204,14 +236,22 @@ export default function GoyangTab() {
               중앙 <b>{f2(q[2])}</b> · 10건 중 5건이 <b>{f2(q[1])}~{f2(q[3])}</b> · 10건 중 8건이 {f2(q[0])}~{f2(q[4])} · 100 미만 <b>{pc1(Number(d24.lt100))}</b>
               <span style={{ marginLeft: 12 }}>
                 <span style={note}>구간 단위 </span>
-                {[2, 1].map((v) => <label key={v} style={{ fontSize: 12, color: C.txt, marginLeft: 6 }}><input type="radio" checked={step === v} onChange={() => setStep(v)} /> {(v / 10).toFixed(1)}</label>)}
+                {UNITS.map(([v, l]) => <label key={v} style={{ fontSize: 12, color: C.txt, marginLeft: 6 }}><input type="radio" checked={unit === v} onChange={() => setUnit(v)} /> {l}</label>)}
               </span>
             </div>
-            <Bars bins={adjBins} every={step === 2 ? 1 : 2} xLabel={(b) => b.lo.toFixed(1)}
-              tip={(b) => `${adjLabel(b)}: ${b.n}건 (${pc1(b.pct)}, 누적 ${pc1(b.cum)})`}
-              color={(b) => (b.lo + w > q[1] && b.lo < q[3] ? C.gold : "#6b5a2a")} />
-            <div style={note}>밝은 막대 = 10건 중 5건이 들어가는 구간. 막대 위 숫자 = 건수. 예정가격은 매번 추첨으로 정해지므로 다음 공고의 값을 알려 주지는 않습니다.</div>
-            <ShareTable rows={adjBins} label={adjLabel} />
+            {adjBins.length > 0 && (coarse
+              ? <Bars bins={adjBins} every={unit === 2000 ? 1 : 2} xLabel={(b) => b.lo.toFixed(1)} tip={adjTip} color={adjColor} />
+              : <Stems bins={adjBins} w={w} tip={adjTip} color={adjColor} />)}
+            <div style={note}>
+              밝은 색 = 10건 중 5건이 들어가는 구간. {coarse ? "막대 위 숫자 = 건수." : "세로선 하나 = 값이 있는 구간 하나, 가장 높은 선 = " + adjMax + "건(선에 마우스를 올리면 값이 보입니다)."} 예정가격은 매번 추첨으로 정해지므로 다음 공고의 값을 알려 주지는 않습니다.
+            </div>
+            <div style={{ ...key, marginTop: 6, marginBottom: 0 }}>
+              구간 단위 {w.toFixed(dec)} · 값이 있는 구간 <b>{n0(adjUsed.length)}개</b> · 한 구간 최대 <b>{adjMax}건</b> · 2건 이상 겹친 구간 <b>{n0(adjDup.length)}개</b>({n0(adjDup.reduce((a, b) => a + b.n, 0))}건)
+            </div>
+            {coarse ? <ShareTable rows={adjBins} label={adjLabel} /> : <>
+              <div style={note}>2건 이상 겹친 구간{adjDup.length > adjTop.length ? " 상위 " + adjTop.length + "개" : ""}(건수 많은 순){dec >= 3 ? " · 소수 " + dec + "자리 절삭 값" : ""}. 나머지 {n0(adjUsed.length - adjDup.length)}개 구간은 모두 1건입니다. 같은 값이 다시 나온 것은 추첨의 우연이며, 다음에도 나온다는 뜻이 아닙니다.</div>
+              {adjTop.length > 0 && <ShareTable rows={adjTop} label={adjLabel} cum={false} />}
+            </>}
             <table style={{ borderCollapse: "collapse", width: "100%", maxWidth: 720, marginTop: 12 }}>
               <thead><tr><th style={{ ...th, textAlign: "left" }}>기간</th><th style={th}>n</th>{["하위 10%", "하위 25%", "중앙", "상위 25%", "상위 10%", "평균", "100 미만"].map((k) => <th key={k} style={th}>{k}</th>)}</tr></thead>
               <tbody>{(data.dist || []).map((r) => (
