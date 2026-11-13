@@ -1,5 +1,6 @@
-// fn-collect-ranks v2 (2026-11-08) — 개찰 전체 순위 수집 (goyang-focus P3)
+// fn-collect-ranks v3 (2026-11-13) — 개찰 전체 순위 수집 (goyang-focus P3)
 // v2: 페이지 로그를 저장 뒤에 남겨 마지막 페이지 rows_saved에 실제 저장 건수 기록(v_collect_health ranks 줄)
+// v3: 대상이 없는 날도 '대상 없음' 한 줄을 남긴다 — 호출 기록이 0줄이면 v_collect_health가 '실행 기록 없음' WARN을 띄웠다(11/11)
 // 대상은 rank_targets RPC(m76): 고양 include × 대상 업종 × 개찰 완료 × 미수집. 저장은 save_bid_ranks(m76) → api_bid_ranks.
 // dry_run이 기본 — 조회·로그만, 저장은 dry_run:false를 명시할 때만. nos를 주면 대상 RPC 대신 그 공고만 본다(dry_run 전용).
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
@@ -32,6 +33,13 @@ Deno.serve(async (req: Request) => {
       ? body.nos.slice(0, limit)
       : (await rpc<Array<{ bid_ntce_no: string }>>('rank_targets', { p_since: body.since ?? '2026-04-01', p_limit: limit })).map((t) => t.bid_ntce_no);
   } catch (e) { return json({ ok: false, stage: 'targets', error: String(e) }, 500); }
+
+  if (!targets.length && !dryRun) {
+    // API를 부르지 않았지만 실행은 됐다는 기록(page_no 0, bidNtceNo 없음 — rank_targets의 0건 재시도 집계와 무관)
+    await logApiIngestion({ operation: OP, service: SERVICE, params: { note: 'no_targets' }, page_no: 0, rows_requested: 0,
+      rows_received: 0, total_count: null, rows_saved: 0, status: 'ok', result_code: null, result_msg: '대상 없음',
+      error_detail: null, duration_ms: Date.now() - started }).catch(() => {});
+  }
 
   const stats = { dry_run: dryRun, targets: targets.length, calls: 0, done: 0, not_opened: 0, incomplete: 0, errors: 0,
     rows_received: 0, rows_saved: 0, json_bytes: 0, stopped_by: null as string | null };
