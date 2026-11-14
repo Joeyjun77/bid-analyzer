@@ -3,7 +3,7 @@
 // 기존 supabase.js 옆에 배치. 기존 direct REST 호출과 병행 사용.
 //
 // 사용법:
-//   import { getSession, signIn, signUp, signOut, authedFetch } from './auth';
+//   import { getSession, signIn, signOut, authedFetch } from './auth';
 //   import { useAuth } from './auth'; // Context 훅 (로그인 상태 조회)
 
 import { createContext, useContext } from 'react';
@@ -93,31 +93,6 @@ export function isAuthenticated() {
 // ============================================================================
 // Auth API 호출
 // ============================================================================
-
-export async function signUp(email, password) {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify({ email, password }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.msg || data.error_description || data.error || '회원가입 실패');
-  }
-  // Supabase 설정에 따라 session이 바로 오거나, email confirmation 기다리는 상태
-  if (data.access_token) {
-    setSession({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      expires_at: data.expires_at,
-      user: data.user,
-    });
-  }
-  return data;
-}
 
 export async function signIn(email, password) {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {

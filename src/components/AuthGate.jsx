@@ -14,16 +14,14 @@
 //   }
 
 import { useState, useEffect } from 'react';
-import { getSession, signIn, signUp, signOut, getUser, refreshSession, AuthContext, isAdminEmail, installAutoRefresh, AUTH_EVENT_NAME } from '../auth';
+import { getSession, signIn, signOut, getUser, refreshSession, AuthContext, isAdminEmail, installAutoRefresh, AUTH_EVENT_NAME } from '../auth';
 
 export default function AuthGate({ children }) {
   const [user, setUser] = useState(getUser());
-  const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
 
   // 세션 자동 유지 (keepalive + visibilitychange + online) 설치
   // 세션 만료 이벤트 수신 시 로그인 화면으로 복귀하여 "데이터 0" 현상 방지
@@ -58,22 +56,10 @@ export default function AuthGate({ children }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setInfo('');
     setLoading(true);
     try {
-      if (mode === 'signin') {
-        const u = await signIn(email.trim(), password);
-        setUser(u);
-      } else {
-        const data = await signUp(email.trim(), password);
-        if (data.user && !data.access_token) {
-          // 이메일 확인 대기 상태
-          setInfo('확인 이메일을 보냈습니다. 이메일의 링크를 클릭한 뒤 로그인하세요.');
-          setMode('signin');
-        } else if (data.user) {
-          setUser(data.user);
-        }
-      }
+      const u = await signIn(email.trim(), password);
+      setUser(u);
     } catch (err) {
       setError(err.message || '오류가 발생했습니다');
     } finally {
@@ -95,14 +81,12 @@ export default function AuthGate({ children }) {
     );
   }
 
-  // 로그인 화면
+  // 로그인 화면 — 회원가입은 닫음(2026-11-14 사용자 결정, 계정은 Supabase 대시보드에서만 추가)
   return (
     <div style={styles.page}>
       <div style={styles.card}>
         <h1 style={styles.title}>bid-analyzer</h1>
-        <p style={styles.subtitle}>
-          {mode === 'signin' ? '로그인' : '회원가입'}
-        </p>
+        <p style={styles.subtitle}>로그인</p>
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <label style={styles.label}>
@@ -124,7 +108,7 @@ export default function AuthGate({ children }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+              autoComplete="current-password"
               minLength={6}
               style={styles.input}
               disabled={loading}
@@ -132,30 +116,11 @@ export default function AuthGate({ children }) {
           </label>
 
           {error && <div style={styles.error}>{error}</div>}
-          {info && <div style={styles.info}>{info}</div>}
 
           <button type="submit" disabled={loading} style={styles.submitBtn}>
-            {loading ? '처리 중...' : (mode === 'signin' ? '로그인' : '회원가입')}
+            {loading ? '처리 중...' : '로그인'}
           </button>
         </form>
-
-        <div style={styles.toggleRow}>
-          {mode === 'signin' ? (
-            <>
-              계정이 없으신가요?{' '}
-              <button onClick={() => { setMode('signup'); setError(''); setInfo(''); }} style={styles.toggleBtn}>
-                회원가입
-              </button>
-            </>
-          ) : (
-            <>
-              이미 계정이 있으신가요?{' '}
-              <button onClick={() => { setMode('signin'); setError(''); setInfo(''); }} style={styles.toggleBtn}>
-                로그인
-              </button>
-            </>
-          )}
-        </div>
       </div>
     </div>
   );
@@ -216,32 +181,10 @@ const styles = {
     fontWeight: 600,
     cursor: 'pointer',
   },
-  toggleRow: {
-    marginTop: 24,
-    textAlign: 'center',
-    fontSize: 13,
-    color: '#718096',
-  },
-  toggleBtn: {
-    background: 'none',
-    border: 'none',
-    color: '#3182ce',
-    cursor: 'pointer',
-    fontWeight: 600,
-    padding: 0,
-    fontSize: 13,
-  },
   error: {
     padding: '10px 12px',
     background: '#fed7d7',
     color: '#c53030',
-    borderRadius: 6,
-    fontSize: 13,
-  },
-  info: {
-    padding: '10px 12px',
-    background: '#c6f6d5',
-    color: '#22543d',
     borderRadius: 6,
     fontSize: 13,
   },
