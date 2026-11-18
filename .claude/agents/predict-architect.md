@@ -44,7 +44,7 @@ WITH base AS (
     CASE
       WHEN classify_agency_type(ag)='한전' THEN '한전'
       WHEN classify_agency_type(ag)='군시설' THEN '군부대'
-      WHEN ag ILIKE '%고양시%' OR ag ILIKE '%고양교육%' THEN '고양시'
+      WHEN matched_record_id IN (SELECT id FROM v_goyang_records) THEN '고양시'  -- 2026-11-18 P2: 기관 마스터(include=true) 기준
     END AS focus,
     opt_adj - actual_adj_rate AS err
   FROM bid_predictions

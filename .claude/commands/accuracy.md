@@ -57,7 +57,7 @@ WITH base AS (
   SELECT
     CASE WHEN classify_agency_type(p.ag)='한전' THEN '한전'
          WHEN classify_agency_type(p.ag)='군시설' THEN '군부대'
-         WHEN p.ag ILIKE '%고양시%' OR p.ag ILIKE '%고양교육%' THEN '고양시' END AS focus,
+         WHEN p.matched_record_id IN (SELECT id FROM v_goyang_records) THEN '고양시' END AS focus,  -- 2026-11-18 P2: 기관 마스터(include=true) 기준
     CASE WHEN COALESCE(NULLIF(p.ep,0),p.ba) >= 3e8 THEN '3억 이상'
          WHEN p.pred_floor_rate IN (89.745, 87.745) THEN '3억 미만·정정 요율'
          ELSE '3억 미만·옛 요율' END AS rate_tier,
@@ -94,7 +94,7 @@ WITH base AS (
       -- 재계산 기준으로 바꾸면 양쪽이 동시에 해소되고 ILIKE 군 키워드 목록도 불필요해진다.
       WHEN classify_agency_type(ag)='한전' THEN '한전'
       WHEN classify_agency_type(ag)='군시설' THEN '군부대'
-      WHEN ag ILIKE '%고양시%' OR ag ILIKE '%고양교육%' THEN '고양시'
+      WHEN matched_record_id IN (SELECT id FROM v_goyang_records) THEN '고양시'  -- 2026-11-18 P2: 기관 마스터(include=true) 기준
     END AS focus,
     opt_adj - actual_adj_rate AS err
   FROM bid_predictions

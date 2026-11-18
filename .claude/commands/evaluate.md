@@ -69,7 +69,7 @@ WITH base AS (
   SELECT
     CASE WHEN classify_agency_type(p.ag)='한전' THEN '한전'
          WHEN classify_agency_type(p.ag)='군시설' THEN '군부대'
-         WHEN p.ag ILIKE '%고양시%' OR p.ag ILIKE '%고양교육%' THEN '고양시' END AS focus,
+         WHEN p.matched_record_id IN (SELECT id FROM v_goyang_records) THEN '고양시' END AS focus,  -- 2026-11-18 P2: 기관 마스터(include=true) 기준
     p.bid1st_v2_adj - p.actual_adj_rate AS err,
     CASE WHEN r.floor_price IS NULL OR COALESCE(p.ba,0)<=0 OR COALESCE(r.ba,0)<=0 THEN NULL
          WHEN p.bid1st_v2_bid/p.ba >= r.floor_price/r.ba THEN 1 ELSE 0 END AS floor_pass
@@ -95,7 +95,7 @@ WITH base AS (
       -- 저장 at에는 분류기 수정 이전 값이 남아 군부대 집계가 오염·누락됨.
       WHEN classify_agency_type(ag)='한전' THEN '한전'
       WHEN classify_agency_type(ag)='군시설' THEN '군부대'
-      WHEN ag ILIKE '%고양시%' OR ag ILIKE '%고양교육%' THEN '고양시'
+      WHEN matched_record_id IN (SELECT id FROM v_goyang_records) THEN '고양시'  -- 2026-11-18 P2: 기관 마스터(include=true) 기준
     END AS focus,
     opt_adj - actual_adj_rate AS err
   FROM bid_predictions
@@ -160,6 +160,14 @@ SELECT * FROM evaluate_model_release(
 > - 근거: 운영 저장값(10/13~ 생성, n209) 3억 미만 53.8%·3억 이상 42.9%·1위 0. 워크포워드(2025-01~, n1,661) 하한 미달 50.3→2.1%, 1위 13→12(추첨 수준 — 이득 주장 금지). 같은 행 재현(n209, 현재 분포 — 낙관적) 통과 53.1→98.6%, 1위 0→1.
 > - `bid1st_v2_bid = b_pred_bid_amount` mismatch 점검에서 **군시설은 제외한다**(b_pred는 agency_mode_lookup A → Mode A 종형 유지). 카드 모드 표시는 recOfPred가 메인 src(`modeB(`)로 판정한다.
 > - 롤백: 새 규칙 군시설 매칭 n≥30에서 하한 미달 >10%이면 `recommendMain` 군시설 분기를 복원하고 대기 행을 백업에서 되돌린다.
+>
+> **재기준화 (핵심 영역 '고양시' 정의 → 기관 마스터, 2026-11-18, 사용자 결정 D2~D4)**: 고양시 판정 집단을 이름 매칭(`ag ILIKE '%고양시%' OR '%고양교육%'`)에서 `p.matched_record_id IN (SELECT id FROM v_goyang_records)`로 바꿨다(= `goyang_org_master` include=true: 본청·구청·시 산하기관·고양교육지원청·산하 학교, 고양 지명 국가·공기업 지사 제외). 스펙 `.scratch/goyang-focus/spec.md` P2. 예측·화면 값은 바뀌지 않는다(Evaluator 변경).
+> - **경계 = 정의(날짜 아님)** — 과거 행에도 소급된다. **2026-12-18까지(또는 다음 Generator 변경 1회 중 긴 쪽)** 고양시는 옛·새 정의 두 행을 나란히 보고한다: 위 쿼리의 고양시 줄을 옛 조건으로 바꾼 행을 함께 낸다. "고양시 MAE +0.02 즉시 FAIL"은 **같은 정의끼리만** 비교한다.
+> - 변화량은 공통 행(옛 수치와 같아야 함 — 다르면 alias 결함)·추가 행·제외 행으로 나눠 본다. 매 보고에 마스터 지문 `SELECT count(*) FILTER (WHERE include), max(verified_at) FROM goyang_org_master`를 남긴다(include 변경도 정의 변경).
+> - 교체 전후 기준선(2026-11-18 실측, 전 기간): 메인 추천 shown — 옛 정의 = 공통 행(옛 메인 n36 MAE 0.6923 하한 75.0%, 안착안 n5 MAE 1.2663 하한 100%), 새 정의 추가 2행(옛 메인, MAE 0.7079)만 다름 → 새 정의 옛 메인 n38 MAE 0.6931 하한 76.3%. 제외 행 0. 원시 엔진 opt — 옛 n146(최근 60일 n16 MAE 0.6672 bias −0.4016 / 그 이전 n130 0.5497), 새 정의는 그 이전에 7행 추가(MAE 0.5866) → 그 이전 n137 MAE 0.5516, 최근 60일 동일. 마스터 지문(2026-11-18) include 70/92, max(verified_at) 2026-11-08 02:52 UTC.
+> - 교체 점검(2026-11-18): 매칭인데 matched_record_id가 없는 고양 이름 행 0, 매칭 레코드 중 '고양' 이름인데 별칭 누락 0, 새 정의 행 중 한전·군시설로 먼저 분류되는 행 0(CASE 순서 무관), `IN (SELECT id FROM v_goyang_records)`는 idx_bid_ag로 약 10ms(전체 스캔 아님). 옛·새를 한 CASE에 두 WHEN으로 넣지 말 것(겹치는 행이 앞 라벨로만 감) — 병기는 쿼리를 두 번 돌리거나 불리언 열 두 개로 집계.
+> - 업종 차이(새 정의, opt, 전 기간): 대상 업종(전기·통신·소방) n119 MAE 0.5220 bias +0.0707 / 그 외 업종 n34 MAE 0.7096 bias −0.2491. 업로드 메인 추천 채점 행은 대부분 그 외 업종(n33 vs 5). 차이는 있으나 표본이 작아 업종 층 게이트는 두지 않고 보고만 한다 — 고양시 수치가 움직이면 업종 구성 변화부터 확인.
+> - `pred_baseg_finetune_live`(예측 경로, 자체 ILIKE)와 `v_shadow_bias_goyang`(canonical_ag 4개 고정, accuracy 체크 11)은 바꾸지 않았다 — 전자는 Generator(issue 05), 후자는 관측 전용이라 옛 정의 그대로 둔다.
 
 ### 5. 변경 로직 직접 시뮬레이션 (Generator가 변경한 공식을 재현)
 Generator가 변경한 로직이 결정론적이면 여기서 샘플로 재현. 예:
@@ -185,7 +193,7 @@ GROUP BY ROLLUP (p.floor_risk_grain) ORDER BY 1;
 - n < 30 → "판정 불가(표본 부족)". 보고만 한다.
 - n ≥ 30 이고 |predicted_pass − realized_pass| ≤ 10 → 통과. 초과 → **WARN** (원인 규명: 요율표·자사 점수·A값·최근 사정률 이동 중 무엇이 어긋났는지).
 - `floor_risk_grain`이 `'AG'`·`'AT'`인 행만 본다(이전 방식 `'AG_BA'`·`'AT_BA'`와 섞지 않는다). 자사 점수 20점 행만 채점한다 — 20점 미만은 유효 하한이 법정 하한보다 높아 실제 통과율이 추정보다 높게 나온다.
-- 핵심 영역(한전·고양시·군부대)은 위 쿼리에 `classify_agency_type(p.ag)`·`p.ag ILIKE '%고양시%'` 조건을 붙여 보고만 한다(판정은 n ≥ 30부터).
+- 핵심 영역(한전·고양시·군부대)은 위 쿼리에 `classify_agency_type(p.ag)`·`p.ag ILIKE '%고양시%'` 조건을 붙여 보고만 한다(판정은 n ≥ 30부터). 고양시는 2026-11-18부터 `p.matched_record_id IN (SELECT id FROM v_goyang_records)`(아래 §4 재기준화).
 - 배포 전 워크포워드(2026-10-13, n=812, 현재 요율표 기준): 메인 추천 위치 추정 51.5% / 실제 54.8%. 메인에서 ±1.5%p 범위 전 구간에서 추정이 실제보다 0~3.3%p 낮았다(조심스러운 방향). 고양시는 최근 사정률이 3년 평균보다 낮아(180일 −0.40 vs 3년 −0.13) 추정이 약 12%p 낮게 나온다(n=22).
 - 불변식: `floor_risk_grain='AT'`인데 그 `canonical_ag`의 최근 3년 기록이 30건 이상인 행은 0건이어야 한다(저장 시 기관명 정규화가 화면과 어긋났다는 신호).
 - 릴리스 게이트의 `floor_safe_pct ≥ 50`(절대 기준)은 메인 추천 통과율이 설계상 약 54%라 14일 창에서 우연히 깨질 수 있다. 기준 재정의는 별도 결정 사항이다.

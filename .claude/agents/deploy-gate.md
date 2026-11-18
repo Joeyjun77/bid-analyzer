@@ -106,7 +106,7 @@ WITH base AS (
   SELECT
     CASE WHEN classify_agency_type(p.ag)='한전' THEN '한전'
          WHEN classify_agency_type(p.ag)='군시설' THEN '군부대'
-         WHEN p.ag ILIKE '%고양시%' OR p.ag ILIKE '%고양교육%' THEN '고양시' END AS focus,
+         WHEN p.matched_record_id IN (SELECT id FROM v_goyang_records) THEN '고양시' END AS focus,  -- 2026-11-18 P2: 기관 마스터(include=true) 기준
     p.bid1st_v2_adj - p.actual_adj_rate AS err,
     CASE WHEN r.floor_price IS NULL OR COALESCE(p.ba,0)<=0 OR COALESCE(r.ba,0)<=0 THEN NULL
          WHEN p.bid1st_v2_bid/p.ba >= r.floor_price/r.ba THEN 1 ELSE 0 END AS floor_pass
@@ -129,7 +129,7 @@ WITH base AS (
   SELECT
     CASE WHEN classify_agency_type(ag)='한전' THEN '한전'
          WHEN classify_agency_type(ag)='군시설' THEN '군부대'
-         WHEN ag ILIKE '%고양시%' OR ag ILIKE '%고양교육%' THEN '고양시' END AS focus,
+         WHEN matched_record_id IN (SELECT id FROM v_goyang_records) THEN '고양시' END AS focus,  -- 2026-11-18 P2: 기관 마스터(include=true) 기준
     opt_adj - actual_adj_rate AS err
   FROM bid_predictions
   WHERE match_status='matched' AND opt_adj IS NOT NULL AND actual_adj_rate IS NOT NULL
