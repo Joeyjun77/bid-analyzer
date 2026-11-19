@@ -44,6 +44,13 @@ eq(Math.abs(goyangBand(dist, { ...base, av: 5000000, bid: 90000000 }).lo - 89539
   eq(seen.low > 0 && seen.mid > 0 && seen.high > 0, true, "세 구간 모두 검사됨");
 }
 
+// 정확한 정수 하한선(올림 오차로 경계가 1원 밀리는 자리)에서도 문구 = 통과 확률 구간 (리뷰 재현값)
+{
+  const at = (bid) => ({ g: goyangBand(dist, { ...base, bid }), pass: passProbPct(dist, impliedAdjOfBid({ bid, ...base })) });
+  const a = at(89027040); eq(a.g.tier === "low", a.pass < 10, `p10 정확 하한선: 문구 ${a.g.tier} · 통과 ${a.pass}`);
+  const b = at(90462960); eq(b.g.tier === "high", b.pass >= 90, `p90 정확 하한선: 문구 ${b.g.tier} · 통과 ${b.pass}`);
+}
+
 // 계산 불가
 eq(goyangBand(null, { ...base, bid: 90000000 }), null, "분포 없음");
 eq(goyangBand({ arr: [] }, { ...base, bid: 90000000 }), null, "빈 분포");

@@ -389,14 +389,14 @@ export default function App(){
   const[agFilter,setAgFilter]=useState(""); // 예측 리스트 발주기관 필터 (""=전체)
   const[goyangOnly,setGoyangOnly]=useState(false); // 예측 리스트 '고양만' (기관 마스터 include 표기, 목록 필터만)
   const[goyangAgs,setGoyangAgs]=useState(null);
-  useEffect(()=>{if(goyangOnly&&!goyangAgs)sbFetchGoyangAgTexts().then(a=>setGoyangAgs(new Set(a)))},[goyangOnly,goyangAgs]);
+  useEffect(()=>{if(goyangOnly&&!goyangAgs)sbFetchGoyangAgTexts().then(a=>setGoyangAgs(a.length?new Set(a):null))},[goyangOnly,goyangAgs]);
   const[predListShow,setPredListShow]=useState(50); // 리스트 표시 건수 (더보기)
   const[hideYuchal,setHideYuchal]=useState(true); // 유찰 건 숨김 (기본 ON)
   const[hideSuui,setHideSuui]=useState(true); // 수의계약 건 숨김 (기본 ON)
   const[bidDetails,setBidDetails]=useState([]);
   const[agAss,setAgAss]=useState({});
   const[cardPredId,setCardPredId]=useState(null); // 투찰 카드로 연 예측 id (P3)
-  useEffect(()=>{if(cardPredId!=null&&!goyangAgs)sbFetchGoyangAgTexts().then(a=>setGoyangAgs(new Set(a)))},[cardPredId,goyangAgs]); // 카드 '고양 기준' 띠(issue 06)용 기관 표기
+  useEffect(()=>{if(cardPredId!=null&&!goyangAgs)sbFetchGoyangAgTexts().then(a=>setGoyangAgs(a.length?new Set(a):null))},[cardPredId,goyangAgs]); // 카드 '고양 기준' 띠(issue 06)용 기관 표기 — 빈 응답(조회 실패)이면 null로 두어 다음 카드·필터 때 다시 조회
   const[g2bAgency,setG2bAgency]=useState(""); // 카드 → G2B 양식 이동 시 선택할 발주처
   // ★ v7-ops-4B: 모델 검증 탭 데이터
   const[qualityDaily,setQualityDaily]=useState([]);
