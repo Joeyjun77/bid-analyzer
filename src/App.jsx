@@ -13,7 +13,7 @@ import { TOP_TABS, SUB_TABS, DEFAULT_TAB, REF_ONLY_TABS, REF_ONLY_BANNER } from 
 import { G2B_AUTO_SHOW, mergeAutoRows } from "./lib/g2bAuto.js";
 import { sbFetchG2BAuto, sbFetchGoyangAgTexts } from "./lib/supabase.js";
 import GoyangTab from "./components/GoyangTab.jsx";
-import { filterGoyang } from "./lib/goyang.js";
+import { filterGoyang, goyangBand } from "./lib/goyang.js";
 import PerformanceTab from "./components/PerformanceTab.jsx";
 import AdminTab from "./components/AdminTab.jsx";
 import AgencyPredictorTab from "./components/AgencyPredictorTab.jsx";
@@ -396,6 +396,7 @@ export default function App(){
   const[bidDetails,setBidDetails]=useState([]);
   const[agAss,setAgAss]=useState({});
   const[cardPredId,setCardPredId]=useState(null); // 투찰 카드로 연 예측 id (P3)
+  useEffect(()=>{if(cardPredId!=null&&!goyangAgs)sbFetchGoyangAgTexts().then(a=>setGoyangAgs(new Set(a)))},[cardPredId,goyangAgs]); // 카드 '고양 기준' 띠(issue 06)용 기관 표기
   const[g2bAgency,setG2bAgency]=useState(""); // 카드 → G2B 양식 이동 시 선택할 발주처
   // ★ v7-ops-4B: 모델 검증 탭 데이터
   const[qualityDaily,setQualityDaily]=useState([]);
@@ -882,6 +883,13 @@ export default function App(){
     return m;
   },[predictions,recOf]);
   const cardPred=cardPredId!=null?predMap[cardPredId]:null; // id로 찾아 백필 후에도 최신값
+  // 고양 기관 카드의 '고양 기준' 띠(issue 06, 표시 전용) — 카드 '하한 통과 확률'과 같은 분포·유효 하한율
+  const cardRec=cardPred?recOf(cardPred):null;
+  // 개찰 전(pending)만 — 분포가 오늘 기준이라 개찰 뒤 카드엔 자기 결과가 섞인다. 기관 기록(AG)일 때만 — 기관유형(AT)이면 고양 분포가 아니다.
+  const cardGoyangDist=cardPred&&cardRec&&!cardRec.jongsim&&cardRec.passPct!=null&&cardPred.match_status==="pending"&&goyangAgs?.has((cardPred.ag||"").trim())
+    ?resolveAdjHistory(adjHist,passKeyOf(cardPred)):null;
+  const cardGoyang=cardGoyangDist?.grain==="AG"
+    ?goyangBand(cardGoyangDist,{bid:cardRec.bid,ba:cardPred.ba,av:cardPred.av,effFr:passEffFrOf(cardPred,ownScore)}):null;
   const fmtRelTime=(iso)=>{if(!iso)return null;const d=Date.now()-new Date(iso).getTime();const m=Math.floor(d/60000);if(m<1)return"방금";if(m<60)return m+"분 전";const h=Math.floor(m/60);if(h<24)return h+"시간 전";return new Date(iso).toLocaleDateString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})};
 
   const compStats=useMemo(()=>{
@@ -1450,7 +1458,7 @@ export default function App(){
     </div>}
 
     {/* ═══ 나라장터 공고 탭 ═══ */}
-    {cardPred&&<BidCard pred={cardPred} rec={recOf(cardPred)} attack={attackOf(cardPred,recOf(cardPred)?.bid)} recs={g2bRecs} pcDistMap={pcDistMap} ownScore={ownScore} accuracyMap={accuracyMap} onClose={()=>setCardPredId(null)} onOpenG2B={(ag)=>{setG2bAgency(ag);setCardPredId(null);setTab("g2b_sheet")}}/>}
+    {cardPred&&<BidCard pred={cardPred} rec={cardRec} attack={attackOf(cardPred,cardRec?.bid)} goyang={cardGoyang} recs={g2bRecs} pcDistMap={pcDistMap} ownScore={ownScore} accuracyMap={accuracyMap} onClose={()=>setCardPredId(null)} onOpenG2B={(ag)=>{setG2bAgency(ag);setCardPredId(null);setTab("g2b_sheet")}}/>}
     {tab==="performance"&&<PerformanceTab recs={recs} bidDetails={bidDetails}/>}
     {tab==="notices"&&<NoticesTab
       notices={notices}

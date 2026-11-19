@@ -27,7 +27,10 @@ const mono = { fontFamily: "monospace", color: C.txt };
 const CELL = { padding: "3px 6px", borderBottom: "1px solid " + C.bdr + "55" };
 const actBtn = { marginTop: 10, fontSize: 12, fontWeight: 600, padding: "6px 14px", background: "rgba(212,168,52,0.10)", border: "1px solid " + GOLD, borderRadius: 6, color: GOLD, cursor: "pointer" };
 
-export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScore, accuracyMap, onClose, onOpenG2B }) {
+// 고양 기준 띠(issue 06) 세 구간 문구 — 새 확률이 아니라 하한선 범위 안 위치만 말한다
+const GOYANG_TIER = { low: ["탈락 가능성 큼", RED], mid: ["예정가격에 따라 갈림", GOLD], high: ["대부분 통과", GREEN] };
+
+export default function BidCard({ pred: d, rec, attack, goyang, recs, pcDistMap, ownScore, accuracyMap, onClose, onOpenG2B }) {
   const [showWhy, setShowWhy] = useState(false);
   const [showMatrix, setShowMatrix] = useState(false);
   const [showCmp, setShowCmp] = useState(false);
@@ -102,6 +105,21 @@ export default function BidCard({ pred: d, rec, attack, recs, pcDistMap, ownScor
                 <div><div style={lbl}>하한 통과 확률</div><div style={big(passColor)}>{r.passPct == null ? "—" : floorPassLabel(100 - r.passPct)}</div></div>
               </div>
               {r.floorSafe === false && <div style={{ marginTop: 8, fontSize: 11, color: RED, fontWeight: 600 }}>자격 미달 — 그대로 투찰 시 자동 탈락</div>}
+              {goyang && (
+                <div style={{ marginTop: 10, padding: "8px 10px", border: "1px solid " + C.bdr, borderRadius: 6, fontSize: 11, color: C.txm }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <b style={{ color: C.txt }}>고양 기준 — 하한선 범위 안 투찰금 위치{r.estimated ? " (추정 기초금액)" : ""}</b>
+                    <b style={{ color: GOYANG_TIER[goyang.tier][1] }}>{GOYANG_TIER[goyang.tier][0]}</b>
+                  </div>
+                  <div style={{ position: "relative", height: 8, margin: "10px 0 4px", borderRadius: 4, background: `linear-gradient(90deg, ${RED}66, ${GOLD}66, ${GREEN}66)` }}>
+                    <div title={"추천 투찰금 " + won(goyang.bid)} style={{ position: "absolute", left: `calc(${(goyang.pos * 100).toFixed(1)}% - 2px)`, top: -4, width: 4, height: 16, borderRadius: 2, background: C.txt }} />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, ...mono }}><span>{won(goyang.lo)}</span><span>{won(goyang.hi)}</span></div>
+                  <div style={{ marginTop: 4, fontSize: 10, color: C.txd, lineHeight: 1.5 }}>
+                    예정가격이 이 발주기관 과거 기록({goyang.n}건)의 하위 10%~상위 10%일 때 하한선이 움직이는 범위입니다. 투찰금이 왼쪽 끝보다 낮으면 대부분 탈락, 오른쪽 끝 이상이면 대부분 통과합니다. 정확한 비율은 위 '하한 통과 확률'을 보세요.
+                  </div>
+                </div>
+              )}
               {r.adj == null && d.source !== "file_upload" && <div style={{ marginTop: 6, fontSize: 11, color: C.txd }}>자동 예측에는 이 공고의 추천값이 없습니다(군시설 추천은 엑셀 업로드 예측에서만 계산). 입찰서류함 엑셀을 올리면 채워집니다.</div>}
               {capSigma != null && <div style={{ marginTop: 6, fontSize: 11, color: GOLD }}>분포 폭(σ {capSigma.toFixed(2)})이 커서 상한(평균+1.5%p)을 적용했습니다 — 모형상 하한 통과 95%에 못 미칩니다. 위 하한 통과 확률(과거 기록 기준)을 확인하세요.</div>}
               {r.estimated && <div style={{ marginTop: 6, fontSize: 10, color: C.txd }}>추정 기초금액(추정가격×1.1)·A값 미반영 기준 — 실제 하한보다 낮을 수 있습니다. 기초금액이 공개되면(보통 개찰 1주 전) 자동으로 다시 계산됩니다.</div>}

@@ -1,5 +1,6 @@
 // 고양 집중(goyang-focus P4): 기관 마스터 기준 목록 필터와 표시용 라벨.
 // 정의는 DB goyang_org_master(include=true) — 클라이언트는 goyang_ag_texts() 표기 목록만 받는다.
+import { bidAtPassProb } from "./passProb.js";
 
 export const GOYANG_GRP_LABEL = {
   G1: "본청", G2: "구청", G3: "공사·재단", G4: "교육지원청", G5: "학교",
@@ -9,6 +10,20 @@ export const GOYANG_GRP_LABEL = {
 export function filterGoyang(list, agTexts) {
   if (!agTexts || !agTexts.size) return list;
   return list.filter((x) => agTexts.has((x.ag || "").trim()));
+}
+
+// 공고 카드 '고양 기준' 띠(issue 06): 예정가격이 이 분포의 p10~p90일 때 낙찰하한선이 움직이는 범위와 투찰금 위치.
+// dist는 카드의 '하한 통과 확률'과 같은 분포(resolveAdjHistory), effFr도 같은 유효 하한율 — 막대와 숫자가 어긋나지 않게. 새 확률은 만들지 않는다.
+// 경계는 passProb.js bidAtPassProb(통과 확률이 q가 되는 투찰금)를 그대로 쓴다 — 같은 분위 인덱스·같은 하한선 식이라
+// '탈락 가능성 큼' ⇔ 통과 확률 10% 미만, '대부분 통과' ⇔ 90% 이상이 맞물린다(tests/goyangBand.test.mjs).
+export function goyangBand(dist, { bid, ba, av, effFr }) {
+  const b = Number(bid);
+  if (!(b > 0)) return null;
+  const lo = bidAtPassProb(dist, 0.1, { ba, av, effFr }), hi = bidAtPassProb(dist, 0.9, { ba, av, effFr });
+  if (lo == null || hi == null) return null;
+  const tier = b < lo ? "low" : b >= hi ? "high" : "mid";
+  const pos = hi > lo ? Math.min(1, Math.max(0, (b - lo) / (hi - lo))) : tier === "low" ? 0 : 1;
+  return { lo, hi, bid: b, tier, pos, n: dist.n ?? dist.arr.length, grain: dist.grain ?? null };
 }
 
 // 추첨 번호 1~15 균등 기댓값: 공고마다 4개 추첨
